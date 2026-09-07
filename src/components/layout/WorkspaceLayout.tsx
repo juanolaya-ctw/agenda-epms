@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { useDashboardData } from '@/hooks/useDashboardData'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/contexts/RoleContext'
 
@@ -74,7 +75,8 @@ type WorkspaceLayoutProps = {
 export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
   const { id } = useParams()
   const { workspaces, workspace, setWorkspace } = useWorkspace()
-  const [requestCount] = useState(0)
+  const dashboard = useDashboardData(role === 'agenda' ? id : null)
+  const requestCount = dashboard.requestsPendientes
 
   const found = workspaces.find((w) => w.id === id)
 
@@ -135,7 +137,7 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
       </div>
 
       <main className="flex-1 overflow-auto px-8 py-6">
-        <Outlet />
+        <Outlet context={dashboard} />
       </main>
     </div>
   )

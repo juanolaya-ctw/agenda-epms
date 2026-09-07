@@ -21,9 +21,12 @@ export type Workspace = {
 const STORAGE_KEY = 'epms_workspace'
 const LIST_STORAGE_KEY = 'epms_workspaces'
 
+const GOVTECH_EVENT_ID = '2f042639-cc2d-4c06-bea3-f8316a3419c1'
+const LEGACY_GOVTECH_ID = 'govtech-2026'
+
 const MOCK_WORKSPACES: Workspace[] = [
   {
-    id: 'govtech-2026',
+    id: GOVTECH_EVENT_ID,
     nombre: 'GovTech Summit | 2026',
     fechaInicio: '2026-08-13',
     fechaFin: '2026-08-14',
@@ -47,13 +50,24 @@ const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
   undefined,
 )
 
+function migrateWorkspaceId(id: string): string {
+  return id === LEGACY_GOVTECH_ID ? GOVTECH_EVENT_ID : id
+}
+
+function migrateWorkspaces(list: Workspace[]): Workspace[] {
+  return list.map((workspace) => ({
+    ...workspace,
+    id: migrateWorkspaceId(workspace.id),
+  }))
+}
+
 function readStoredList(): Workspace[] {
   try {
     const raw = localStorage.getItem(LIST_STORAGE_KEY)
     if (!raw) return MOCK_WORKSPACES
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed) || parsed.length === 0) return MOCK_WORKSPACES
-    return parsed as Workspace[]
+    return migrateWorkspaces(parsed as Workspace[])
   } catch {
     return MOCK_WORKSPACES
   }
@@ -62,7 +76,9 @@ function readStoredList(): Workspace[] {
 function readStoredActiveId(list: Workspace[]): string | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw && list.some((w) => w.id === raw)) return raw
+    if (!raw) return null
+    const id = migrateWorkspaceId(raw)
+    if (list.some((w) => w.id === id)) return id
   } catch {
     // localStorage no disponible
   }
