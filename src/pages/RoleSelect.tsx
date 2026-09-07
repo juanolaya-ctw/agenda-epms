@@ -6,7 +6,6 @@ import { LOGOS } from '@/assets/logos'
 type RoleOption = {
   role: Exclude<Role, null>
   label: string
-  path: string
   variant: 'default' | 'secondary'
   description: string
 }
@@ -15,21 +14,18 @@ const OPTIONS: RoleOption[] = [
   {
     role: 'agenda',
     label: 'Agenda',
-    path: '/admin',
     variant: 'default',
     description: 'Gestión completa de la programación',
   },
   {
     role: 'sales',
     label: 'Sales',
-    path: '/sales',
     variant: 'secondary',
     description: 'Explorar agenda y proponer speakers',
   },
   {
     role: 'cs',
     label: 'CS',
-    path: '/cs',
     variant: 'secondary',
     description: 'Consultar speakers y reportar conflictos',
   },
@@ -41,7 +37,7 @@ export function RoleSelect() {
 
   function pick(option: RoleOption) {
     setRole(option.role)
-    navigate(option.path)
+    navigate('/home')
   }
 
   return (
