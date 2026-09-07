@@ -1,0 +1,164 @@
+// supabase/functions/tally-webhook/index.ts
+// Edge Function — Webhook de Tally → INSERT en epms.speakers
+// Deploy: supabase functions deploy tally-webhook --no-verify-jwt
+//
+// Variables de entorno requeridas (Supabase Dashboard → Edge Functions → Secrets):
+//   SUPABASE_URL        → https://ydqbjyhcntszvrytdkml.supabase.co
+//   SUPABASE_SERVICE_KEY → service_role key (nunca la anon key)
+//
+// En Tally: Settings → Webhooks → URL = https://ydqbjyhcntszvrytdkml.supabase.co/functions/v1/tally-webhook
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// ─── Mapeo de labels de Tally → campos de Supabase ──────────────────────────
+// Los labels son el texto exacto de la pregunta en el formulario de Tally.
+// Si renombras una pregunta en Tally, actualiza el mapeo aquí.
+const FIELD_MAP: Record<string, string> = {
+  // Formulario GovTech Summit (pbNMvy) — 12 campos confirmados
+  "Nombres y Apellidos/ Full Name":                                    "nombre",
+  "Nombres y Apellidos / Full Name":                                   "nombre",   // variante con espacio
+  "Pais / Country":                                                    "pais",
+  "País / Country":                                                    "pais",     // variante con tilde
+  "Email":                                                             "email",
+  "Ciudad/City":                                                       "ciudad",
+  "Ciudad / City":                                                     "ciudad",
+  "Número telefónico personal / Personal Phone Number":                "telefono",
+  "LinkedIn":                                                          "linkedin_url",
+  "Tipo de Documento de Identidad / ID type":                          "tipo_documento",
+  "Número de Identificación / ID Number":                              "numero_documento",
+  "Empresa / Organización - Company / Organization":                   "empresa",
+  "Cargo / Rol Actual - Job Title / Current Role":                     "cargo",
+  "Correo Electrónico Secundario o de Asistente (Opcional) / Secondary or Assistant Email Address (Optional)": "email_secundario",
+  "Material Gráfico (OBLIGATORIO) / Media Assets (REQUIRED)":          "foto_url",
+};
+
+// ─── Extrae el valor de un campo Tally por su label ─────────────────────────
+function extractField(fields: any[], label: string): string | null {
+  const field = fields.find((f: any) => {
+    const fieldLabel = f.label?.trim() ?? "";
+    return fieldLabel === label.trim();
+  });
+  if (!field) return null;
+
+  const value = field.value;
+  if (!value) return null;
+
+  // Archivos subidos a Tally (foto): entrega array de objetos con `url`
+  if (Array.isArray(value) && value[0]?.url) {
+    return value[0].url;
+  }
+  // Valor simple (texto, email, teléfono)
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number") return String(value);
+
+  return null;
+}
+
+// ─── Handler principal ───────────────────────────────────────────────────────
+serve(async (req: Request) => {
+  // Tally envía POST; rechazar cualquier otro método
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
+
+  // El payload de Tally tiene la forma: { data: { fields: [...] } }
+  const fields: any[] = body?.data?.fields ?? [];
+  if (fields.length === 0) {
+    return new Response("No fields in payload", { status: 400 });
+  }
+
+  // ── Construir objeto speaker desde el payload ──────────────────────────────
+  const speaker: Record<string, string | null> = {};
+  for (const [tallyLabel, supabaseField] of Object.entries(FIELD_MAP)) {
+    speaker[supabaseField] = extractField(fields, tallyLabel);
+  }
+
+  // `nombre` y `email` son obligatorios — si faltan, rechazar
+  if (!speaker.nombre || !speaker.email) {
+    console.error("Payload sin nombre o email:", JSON.stringify(speaker));
+    return new Response(
+      JSON.stringify({ error: "nombre y email son obligatorios" }),
+      { status: 422, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // Normalizar email (lowercase, sin espacios)
+  speaker.email = speaker.email.toLowerCase().trim();
+  speaker.fuente = "tally";
+
+  // ── Cliente Supabase con service_role (bypassa RLS) ───────────────────────
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_KEY")!
+  );
+
+  // ── Regla de no-duplicado: verificar si el email ya existe ────────────────
+  const { data: existing, error: checkError } = await supabase
+    .schema("epms")
+    .from("speakers")
+    .select("id, email")
+    .eq("email", speaker.email)
+    .maybeSingle();
+
+  if (checkError) {
+    console.error("Error al verificar duplicado:", checkError);
+    return new Response(
+      JSON.stringify({ error: "Error interno al verificar email" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  if (existing) {
+    // Email ya existe → guardar en tabla de duplicados pendientes para revisión manual
+    console.warn(`Email duplicado detectado: ${speaker.email} — enviando a tally_duplicados_pendientes`);
+
+    const { error: dupError } = await supabase
+      .schema("epms")
+      .from("tally_duplicados_pendientes")
+      .insert({
+        email: speaker.email,
+        payload_raw: body,   // payload completo de Tally para que Agenda revise
+      });
+
+    if (dupError) {
+      console.error("Error al guardar duplicado:", dupError);
+      // No falla la request hacia Tally (Tally reintentaría si recibe 5xx)
+    }
+
+    return new Response(
+      JSON.stringify({
+        status: "duplicado",
+        message: "Email ya registrado. Submit guardado en cola de revisión.",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // ── INSERT del speaker nuevo ───────────────────────────────────────────────
+  const { error: insertError } = await supabase
+    .schema("epms")
+    .from("speakers")
+    .insert(speaker);
+
+  if (insertError) {
+    console.error("Error al insertar speaker:", insertError);
+    return new Response(
+      JSON.stringify({ error: "Error al insertar speaker", detail: insertError.message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  console.log(`Speaker insertado correctamente: ${speaker.nombre} <${speaker.email}>`);
+  return new Response(
+    JSON.stringify({ status: "ok", message: `Speaker ${speaker.nombre} registrado.` }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+});

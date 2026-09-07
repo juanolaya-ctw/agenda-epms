@@ -1,0 +1,192 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: 'Mosvita';
+  src: url('/src/assets/fonts/Mosvita-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Mosvita';
+  src: url('/src/assets/fonts/Mosvita-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Mosvita';
+  src: url('/src/assets/fonts/Mosvita-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: 'Mosvita', system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+
+@theme inline {
+  /* ── Colores base ── */
+  --color-background:           oklch(1.000 0.000 0);        /* blanco puro */
+  --color-foreground:           oklch(0.107 0.010 109.733);  /* negro marca #1D1D1B */
+
+  /* ── Primary — negro marca (botones H1, acciones principales) ── */
+  --color-primary:              oklch(0.107 0.010 109.733);  /* #1D1D1B */
+  --color-primary-foreground:   oklch(1.000 0.000 0);        /* blanco */
+
+  /* ── Secondary — azul Colombiatech (botones H2, links activos) ── */
+  --color-secondary:            oklch(0.694 0.283 254.725);  /* #42B3F3 */
+  --color-secondary-foreground: oklch(1.000 0.000 0);        /* blanco */
+
+  /* ── Accent 1 — azul claro (hover states, chips, tags) ── */
+  --color-accent:               oklch(0.830 0.177 258.256);  /* #A4D4FF */
+  --color-accent-foreground:    oklch(0.107 0.010 109.733);  /* negro para contraste */
+
+  /* ── Accent 2 — violeta (badges puntuales, highlights) ── */
+  /* No asignar a tokens funcionales — uso puntual solo */
+  --color-accent-2:             oklch(0.697 0.449 326.843);  /* #EE82EE */
+
+  /* ── Surface / Card — crema del prototipo validado ── */
+  --color-card:                 oklch(0.950 0.030 86.133);   /* #F5F0E8 */
+  --color-card-foreground:      oklch(0.107 0.010 109.733);
+
+  /* ── Muted — gris claro para texto secundario y fondos sutiles ── */
+  --color-muted:                oklch(0.960 0.000 0);
+  --color-muted-foreground:     oklch(0.450 0.000 0);
+
+  /* ── Estados de request (del sistema de trazabilidad) ── */
+  --color-status-pending:       oklch(0.850 0.150 85.000);   /* amarillo */
+  --color-status-approved:      oklch(0.750 0.150 145.000);  /* verde */
+  --color-status-rejected:      oklch(0.577 0.245 27.325);   /* rojo (del preset) */
+  --color-status-review:        oklch(0.694 0.283 254.725);  /* azul = secondary */
+
+  /* ── Bordes e inputs ── */
+  --color-border:               oklch(0.900 0.000 0);
+  --color-input:                oklch(0.900 0.000 0);
+  --color-ring:                 oklch(0.694 0.283 254.725);  /* azul al hacer focus */
+
+  /* ── Popover (igual que card) ── */
+  --color-popover:              oklch(0.950 0.030 86.133);
+  --color-popover-foreground:   oklch(0.107 0.010 109.733);
+
+  /* ── Destructive (mantener del preset) ── */
+  --color-destructive:          oklch(0.577 0.245 27.325);
+
+  /* ── Sidebar ── */
+  --color-sidebar:              oklch(0.107 0.010 109.733);  /* negro — sidebar oscuro */
+  --color-sidebar-foreground:   oklch(0.950 0.030 86.133);  /* crema sobre negro */
+  --color-sidebar-primary:      oklch(0.694 0.283 254.725);  /* azul para items activos */
+  --color-sidebar-primary-foreground: oklch(1.000 0.000 0);
+  --color-sidebar-accent:       oklch(0.200 0.010 109.733);  /* negro ligeramente más claro para hover */
+  --color-sidebar-accent-foreground: oklch(0.950 0.030 86.133);
+  --color-sidebar-border:       oklch(0.200 0.010 109.733);
+  --color-sidebar-ring:         oklch(0.694 0.283 254.725);
+
+  /* ── Charts — sin cambios del preset (no son tokens de la paleta) ── */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* ── Radios — sin tocar (no son tokens de color) ── */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  /* Fix hover de botones — necesario porque @theme inline no sobreescribe
+     :root y button.tsx lee var(--secondary) / var(--primary) desde :root */
+  --primary: oklch(0.107 0.010 109.733);        /* negro #1D1D1B */
+  --primary-foreground: oklch(1.000 0.000 0);   /* blanco */
+  --secondary: oklch(0.694 0.283 254.725);      /* azul #42B3F3 */
+  --secondary-foreground: oklch(1.000 0.000 0); /* blanco */
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
