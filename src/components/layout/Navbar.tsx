@@ -95,8 +95,8 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 grid h-14 grid-cols-3 items-center border-b border-border bg-white px-4">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-50 flex h-14 items-center border-b border-border bg-white px-4">
+      <div className="flex min-w-0 items-center gap-4">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-semibold text-card">
           {area.initials}
         </div>
@@ -106,47 +106,50 @@ export function Navbar() {
             {workspace?.nombre ?? 'Sin evento seleccionado'}
           </p>
         </div>
+        <div className="flex flex-col">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Workspace
+          </p>
+          <Dropdown
+            align="start"
+            trigger={
+              <button
+                type="button"
+                className="inline-flex max-w-[240px] items-center gap-1 text-sm font-semibold"
+              >
+                <span className="truncate">
+                  {workspace?.nombre ?? 'Elegir workspace'}
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+              </button>
+            }
+          >
+            {workspaces.map((ws) => (
+              <button
+                key={ws.id}
+                type="button"
+                className={cn(
+                  'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
+                  ws.id === workspace?.id && 'font-semibold',
+                )}
+                onClick={() => selectWorkspace(ws.id)}
+              >
+                {ws.nombre}
+              </button>
+            ))}
+            <div className="my-1 border-t border-border" />
+            <button
+              type="button"
+              className="block w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
+              onClick={() => navigate('/home')}
+            >
+              Ver todos los eventos
+            </button>
+          </Dropdown>
+        </div>
       </div>
 
-      <div className="flex flex-col items-center">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-          Workspace
-        </p>
-        <Dropdown
-          align="center"
-          trigger={
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-sm font-semibold"
-            >
-              {workspace?.nombre ?? 'Elegir workspace'}
-              <ChevronDown className="size-4 text-muted-foreground" />
-            </button>
-          }
-        >
-          {workspaces.map((ws) => (
-            <button
-              key={ws.id}
-              type="button"
-              className={cn(
-                'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
-                ws.id === workspace?.id && 'font-semibold',
-              )}
-              onClick={() => selectWorkspace(ws.id)}
-            >
-              {ws.nombre}
-            </button>
-          ))}
-          <div className="my-1 border-t border-border" />
-          <button
-            type="button"
-            className="block w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-            onClick={() => navigate('/home')}
-          >
-            Ver todos los eventos
-          </button>
-        </Dropdown>
-      </div>
+      <div className="flex-1" />
 
       <div className="flex flex-col items-end">
         <p className="text-xs text-muted-foreground">Ingresar como</p>

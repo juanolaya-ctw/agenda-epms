@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
@@ -11,7 +11,7 @@ type TabItem = {
   label: string
   to: string
   end?: boolean
-  badge?: number
+  count?: number
 }
 
 const VIEW: Record<
@@ -38,7 +38,7 @@ const VIEW: Record<
   },
 }
 
-function tabsFor(id: string, role: ViewRole): TabItem[] {
+function tabsFor(id: string, role: ViewRole, requestCount: number): TabItem[] {
   if (role === 'agenda') {
     return [
       { label: 'Dashboard', to: `/workspace/${id}/agenda`, end: true },
@@ -49,7 +49,7 @@ function tabsFor(id: string, role: ViewRole): TabItem[] {
       {
         label: 'Requests',
         to: `/workspace/${id}/agenda/requests`,
-        badge: 5,
+        count: requestCount,
       },
     ]
   }
@@ -74,6 +74,7 @@ type WorkspaceLayoutProps = {
 export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
   const { id } = useParams()
   const { workspaces, workspace, setWorkspace } = useWorkspace()
+  const [requestCount] = useState(0)
 
   const found = workspaces.find((w) => w.id === id)
 
@@ -108,7 +109,7 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
 
       <div className="border-b border-border px-8">
         <nav className="flex gap-1">
-          {tabsFor(id, role).map((tab) => (
+          {tabsFor(id, role, requestCount).map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}
@@ -123,9 +124,9 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
               }
             >
               {tab.label}
-              {tab.badge != null && (
+              {tab.count != null && tab.count > 0 && (
                 <span className="rounded-full bg-status-pending px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
-                  {tab.badge}
+                  {tab.count}
                 </span>
               )}
             </NavLink>

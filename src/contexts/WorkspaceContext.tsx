@@ -13,7 +13,6 @@ export type Workspace = {
   fechaInicio: string
   fechaFin: string
   coverUrl?: string
-  sesiones?: number
   escenarios?: string[]
   formatos?: string[]
   tracks?: string[]
@@ -28,14 +27,12 @@ const MOCK_WORKSPACES: Workspace[] = [
     nombre: 'GovTech Summit | 2026',
     fechaInicio: '2026-08-13',
     fechaFin: '2026-08-14',
-    sesiones: 48,
   },
   {
     id: 'ai-summit-2027',
     nombre: 'AI Summit 2027',
     fechaInicio: '2027-05-07',
     fechaFin: '2027-05-08',
-    sesiones: 24,
   },
 ]
 
@@ -122,7 +119,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const created: Workspace = {
         ...input,
         id,
-        sesiones: input.sesiones ?? 0,
       }
       setWorkspaces((prev) => {
         const next = [...prev, created]

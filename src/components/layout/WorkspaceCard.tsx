@@ -1,4 +1,3 @@
-import { CalendarDays } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useRole } from '@/contexts/RoleContext'
 import { useWorkspace, type Workspace } from '@/contexts/WorkspaceContext'
@@ -58,10 +57,6 @@ export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
         <p className="font-semibold">{workspace.nombre}</p>
         <p className="text-sm font-light text-muted-foreground">
           {formatDateRange(workspace.fechaInicio, workspace.fechaFin)}
-        </p>
-        <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <CalendarDays className="size-3.5" />
-          {workspace.sesiones ?? 0} sesiones
         </p>
       </div>
     </button>
