@@ -6,6 +6,7 @@ import { RoleProvider } from '@/contexts/RoleContext'
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext'
 import { RequireRole } from '@/components/layout/RequireRole'
 import { WorkspaceLayout } from '@/components/layout/WorkspaceLayout'
+import { SettingsLayout } from '@/components/layout/SettingsLayout'
 import { Toaster } from '@/components/ui/sonner'
 import { RoleSelect } from '@/pages/RoleSelect'
 import { WorkspaceHome } from '@/pages/WorkspaceHome'
@@ -38,6 +39,12 @@ createRoot(document.getElementById('root')!).render(
 
             <Route element={<RequireRole allow="agenda" />}>
               <Route
+                path="/workspace/:id/agenda/settings"
+                element={<SettingsLayout />}
+              >
+                <Route index element={<SettingsTab />} />
+              </Route>
+              <Route
                 path="/workspace/:id/agenda"
                 element={<WorkspaceLayout role="agenda" />}
               >
@@ -45,7 +52,6 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="sesiones" element={<SesionesTab />} />
                 <Route path="speakers" element={<SpeakersTab />} />
                 <Route path="requests" element={<RequestsTab />} />
-                <Route path="settings" element={<SettingsTab />} />
               </Route>
             </Route>
 
