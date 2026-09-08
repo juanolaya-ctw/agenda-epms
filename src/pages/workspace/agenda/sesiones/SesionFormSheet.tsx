@@ -1,0 +1,333 @@
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import {
+  actualizarSesion,
+  crearSesion,
+  type OpcionCatalogo,
+  type Sesion,
+  type SesionFormValues,
+} from '@/hooks/useSesionesData'
+
+const ESTADOS = ['BORRADOR', 'CONFIRMADA', 'CANCELADA'] as const
+const SIN_TRACK = '__sin_track__'
+
+type SesionFormSheetProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  mode: 'create' | 'edit'
+  sesion: Sesion | null
+  escenarios: OpcionCatalogo[]
+  tracks: OpcionCatalogo[]
+  formatos: OpcionCatalogo[]
+  eventoRango: { inicio: string; fin: string }
+  onSaved: () => void
+}
+
+type FormState = {
+  titulo: string
+  descripcion: string
+  formato: string
+  track: string
+  escenarioId: string
+  dia: string
+  horaInicio: string
+  horaFin: string
+  capacidadSpeakers: string
+  estado: string
+}
+
+function initialState(
+  sesion: Sesion | null,
+  rangoInicio: string,
+): FormState {
+  return {
+    titulo: sesion?.titulo ?? '',
+    descripcion: sesion?.descripcion ?? '',
+    formato: sesion?.formato ?? '',
+    track: sesion?.track ?? SIN_TRACK,
+    escenarioId: sesion?.escenarioId ?? '',
+    dia: sesion?.dia || rangoInicio,
+    horaInicio: sesion?.horaInicio ?? '',
+    horaFin: sesion?.horaFin ?? '',
+    capacidadSpeakers: String(sesion?.capacidadSpeakers ?? 1),
+    estado: sesion?.estado ?? 'BORRADOR',
+  }
+}
+
+function validate(form: FormState): string | null {
+  if (!form.titulo.trim()) return 'El título es obligatorio.'
+  if (!form.formato) return 'Selecciona un formato.'
+  if (!form.escenarioId) return 'Selecciona un escenario.'
+  if (!form.dia) return 'Selecciona un día.'
+  if (!form.horaInicio || !form.horaFin) return 'Indica hora de inicio y fin.'
+  if (form.horaFin <= form.horaInicio)
+    return 'La hora de fin debe ser posterior a la de inicio.'
+  const capacidad = Number(form.capacidadSpeakers)
+  if (!Number.isInteger(capacidad) || capacidad < 1 || capacidad > 4)
+    return 'La capacidad de speakers debe estar entre 1 y 4.'
+  return null
+}
+
+export function SesionFormSheet({
+  open,
+  onOpenChange,
+  mode,
+  sesion,
+  escenarios,
+  tracks,
+  formatos,
+  eventoRango,
+  onSaved,
+}: SesionFormSheetProps) {
+  const [form, setForm] = useState<FormState>(() =>
+    initialState(sesion, eventoRango.inicio),
+  )
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setForm(initialState(sesion, eventoRango.inicio))
+      setSaving(false)
+    }
+  }, [open, sesion, eventoRango.inicio])
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }))
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const problem = validate(form)
+    if (problem) {
+      toast.error(problem)
+      return
+    }
+
+    const values: SesionFormValues = {
+      titulo: form.titulo.trim(),
+      descripcion: form.descripcion,
+      formato: form.formato,
+      track: form.track === SIN_TRACK ? null : form.track,
+      escenarioId: form.escenarioId,
+      dia: form.dia,
+      horaInicio: form.horaInicio,
+      horaFin: form.horaFin,
+      capacidadSpeakers: Number(form.capacidadSpeakers),
+      estado: form.estado,
+    }
+
+    setSaving(true)
+    const { error } =
+      mode === 'edit' && sesion
+        ? await actualizarSesion(sesion.id, sesion.slotId, values)
+        : await crearSesion(values)
+    setSaving(false)
+
+    if (error) {
+      toast.error(`No se pudo guardar: ${error}`)
+      return
+    }
+
+    toast.success(
+      mode === 'edit' ? 'Sesión actualizada' : 'Sesión creada',
+    )
+    onOpenChange(false)
+    onSaved()
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>
+            {mode === 'edit' ? 'Editar sesión' : 'Nueva sesión'}
+          </SheetTitle>
+          <SheetDescription>
+            Los cambios impactan la programación real del evento.
+          </SheetDescription>
+        </SheetHeader>
+
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-4 px-4 pb-4"
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sesion-titulo">Título *</Label>
+            <Input
+              id="sesion-titulo"
+              value={form.titulo}
+              onChange={(e) => set('titulo', e.target.value)}
+              placeholder="Nombre de la sesión"
+              autoFocus
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sesion-descripcion">Descripción</Label>
+            <Textarea
+              id="sesion-descripcion"
+              value={form.descripcion}
+              onChange={(e) => set('descripcion', e.target.value)}
+              placeholder="Describe de qué trata esta sesión..."
+              rows={3}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Formato *</Label>
+            <Select
+              value={form.formato}
+              onValueChange={(value) => set('formato', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un formato" />
+              </SelectTrigger>
+              <SelectContent>
+                {formatos.map((formato) => (
+                  <SelectItem key={formato.id} value={formato.nombre}>
+                    {formato.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Track</Label>
+            <Select
+              value={form.track}
+              onValueChange={(value) => set('track', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un track" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SIN_TRACK}>Sin track</SelectItem>
+                {tracks.map((track) => (
+                  <SelectItem key={track.id} value={track.nombre}>
+                    {track.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Escenario *</Label>
+            <Select
+              value={form.escenarioId}
+              onValueChange={(value) => set('escenarioId', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un escenario" />
+              </SelectTrigger>
+              <SelectContent>
+                {escenarios.map((escenario) => (
+                  <SelectItem key={escenario.id} value={escenario.id}>
+                    {escenario.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sesion-dia">Día *</Label>
+            <Input
+              id="sesion-dia"
+              type="date"
+              value={form.dia}
+              min={eventoRango.inicio || undefined}
+              max={eventoRango.fin || undefined}
+              onChange={(e) => set('dia', e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="sesion-hora-inicio">Hora inicio *</Label>
+              <Input
+                id="sesion-hora-inicio"
+                type="time"
+                value={form.horaInicio}
+                onChange={(e) => set('horaInicio', e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="sesion-hora-fin">Hora fin *</Label>
+              <Input
+                id="sesion-hora-fin"
+                type="time"
+                value={form.horaFin}
+                onChange={(e) => set('horaFin', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="sesion-capacidad">Capacidad de speakers</Label>
+              <Input
+                id="sesion-capacidad"
+                type="number"
+                min={1}
+                max={4}
+                value={form.capacidadSpeakers}
+                onChange={(e) => set('capacidadSpeakers', e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Estado</Label>
+              <Select
+                value={form.estado}
+                onValueChange={(value) => set('estado', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ESTADOS.map((estado) => (
+                    <SelectItem key={estado} value={estado}>
+                      {estado}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <SheetFooter className="px-0">
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
+  )
+}

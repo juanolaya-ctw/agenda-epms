@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { SesionesTablaView } from './sesiones/SesionesTablaView'
 
 const SUBVISTAS = [
   { id: 'tabla', label: 'Tabla' },
@@ -11,6 +14,8 @@ type SubVista = (typeof SUBVISTAS)[number]['id']
 
 export function SesionesTab() {
   const [subVista, setSubVista] = useState<SubVista>('tabla')
+  const { id } = useParams()
+  const { workspace } = useWorkspace()
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,9 +37,18 @@ export function SesionesTab() {
         ))}
       </div>
 
-      {subVista === 'tabla' && (
-        <div>Vista tabla de sesiones — próximamente</div>
-      )}
+      {subVista === 'tabla' &&
+        (id ? (
+          <SesionesTablaView
+            eventoId={id}
+            eventoRango={{
+              inicio: workspace?.fechaInicio ?? '',
+              fin: workspace?.fechaFin ?? '',
+            }}
+          />
+        ) : (
+          <div>Vista tabla de sesiones — próximamente</div>
+        ))}
       {subVista === 'kanban' && (
         <div>Vista Kanban de sesiones — próximamente</div>
       )}

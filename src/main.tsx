@@ -6,6 +6,7 @@ import { RoleProvider } from '@/contexts/RoleContext'
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext'
 import { RequireRole } from '@/components/layout/RequireRole'
 import { WorkspaceLayout } from '@/components/layout/WorkspaceLayout'
+import { Toaster } from '@/components/ui/sonner'
 import { RoleSelect } from '@/pages/RoleSelect'
 import { WorkspaceHome } from '@/pages/WorkspaceHome'
 import { CrmGlobal } from '@/pages/CrmGlobal'
@@ -71,6 +72,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+        <Toaster />
       </WorkspaceProvider>
     </RoleProvider>
   </StrictMode>,
