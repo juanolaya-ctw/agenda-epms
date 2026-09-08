@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { NavLink, Navigate, Outlet, useLocation, useParams } from 'react-router-dom'
+import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { WorkspaceCoverBanner } from '@/components/layout/WorkspaceCoverBanner'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
@@ -73,7 +73,6 @@ type WorkspaceLayoutProps = {
 
 export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
   const { id } = useParams()
-  const { pathname } = useLocation()
   const { workspaces, workspace, setWorkspace } = useWorkspace()
   const dashboard = useDashboardData(role === 'agenda' ? id : null)
   const requestCount = dashboard.requestsPendientes
@@ -87,16 +86,12 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
   if (!id || !found) return <Navigate to="/home" replace />
 
   const view = VIEW[role]
-  const isAgendaDashboard =
-    role === 'agenda' &&
-    (pathname === `/workspace/${id}/agenda` ||
-      pathname === `/workspace/${id}/agenda/`)
 
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />
 
-      {isAgendaDashboard && <WorkspaceCoverBanner eventoId={id} />}
+      {role === 'agenda' && <WorkspaceCoverBanner eventoId={id} />}
 
       <div
         className="border-b border-border px-8 py-6"
