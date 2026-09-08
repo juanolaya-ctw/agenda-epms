@@ -109,6 +109,35 @@ serve(async (req: Request) => {
     Deno.env.get("SB_SERVICE_KEY")!
   );
 
+  // ── Re-alojar la foto: la URL firmada de Tally Storage expira ─────────────
+  if (speaker.foto_url && speaker.foto_url.includes('storage.tally.so')) {
+    try {
+      const imgRes = await fetch(speaker.foto_url);
+      if (imgRes.ok) {
+        const blob = await imgRes.blob();
+        const ext = blob.type.split('/')[1] || 'jpg';
+        const filename = `speakers/${speaker.email}-${Date.now()}.${ext}`;
+        const { data: uploadData, error: uploadError } = await supabase
+          .storage
+          .from('speaker-fotos')
+          .upload(filename, blob, {
+            contentType: blob.type,
+            upsert: true
+          });
+        if (!uploadError && uploadData) {
+          const { data: urlData } = supabase
+            .storage
+            .from('speaker-fotos')
+            .getPublicUrl(filename);
+          speaker.foto_url = urlData.publicUrl;
+        }
+      }
+    } catch (e) {
+      console.error('Error re-alojando foto:', e);
+      // Si falla, guarda la URL original (fallback)
+    }
+  }
+
   // ── Regla de no-duplicado: verificar si el email ya existe ────────────────
   const { data: existing, error: checkError } = await supabase
     .schema("epms")
