@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { LOGOS } from '@/assets/logos'
 import { useAuth } from '@/contexts/AuthContext'
+
+const ILUSTRACION_URL =
+  'https://www.figma.com/api/mcp/asset/752bbeb5-7caf-44a3-a7f6-8bdd3123c11f.svg'
 
 export function LoginPage() {
   const { usuario, loading, signIn } = useAuth()
@@ -33,60 +33,67 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm">
+    <div className="flex min-h-screen">
+      {/* Zona izquierda — 40% */}
+      <div className="w-2/5 max-md:w-full shrink-0 bg-[#e9ebdf] pl-[166px] pt-[111px] pr-8 pb-16">
         <img
           src={LOGOS.black}
           alt="Colombiatech"
-          className="mb-8 h-9 w-auto"
+          className="h-[41px] w-auto"
         />
-        <h1 className="text-2xl font-semibold leading-tight">
-          Event Programming Management System
+
+        <h1 className="mt-[80px] font-semibold text-[58px] leading-[1.05] text-[#040402]">
+          Workspace para la
+          <br />
+          gestión de eventos.
         </h1>
-        <p className="mt-1 mb-6 text-sm text-muted-foreground">
-          Ingresa con tu cuenta de Colombia Tech Week
-        </p>
 
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="login-email">Correo</Label>
-            <Input
-              id="login-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="login-password">Contraseña</Label>
-            <Input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
+        <form
+          onSubmit={onSubmit}
+          className="mt-[48px] flex w-[533px] max-w-full flex-col gap-4"
+        >
+          <input
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="name@company.com"
+            className="h-[74px] w-full rounded-[24px] bg-white px-4 text-[24px] font-semibold text-[#868686] outline-none placeholder:text-[#868686]"
+          />
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Contraseña"
+            className="h-[74px] w-full rounded-[24px] bg-white px-4 text-[24px] font-semibold text-[#868686] outline-none placeholder:text-[#868686]"
+          />
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <Button
+          <button
             type="submit"
             disabled={submitting}
-            className="w-full"
+            className="flex h-[74px] w-full items-center justify-center gap-2 rounded-[24px] bg-[#040402] text-[24px] font-semibold text-white disabled:opacity-60"
           >
             {submitting ? (
-              <>
-                <Loader2 className="animate-spin" /> Ingresando…
-              </>
+              <Loader2 className="size-6 animate-spin text-white" />
             ) : (
-              'Ingresar'
+              'Sign In'
             )}
-          </Button>
+          </button>
         </form>
+      </div>
+
+      {/* Zona derecha — 60% */}
+      <div className="relative w-3/5 overflow-hidden max-md:hidden">
+        <img
+          src={ILUSTRACION_URL}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       </div>
     </div>
   )
