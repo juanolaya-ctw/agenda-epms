@@ -309,28 +309,35 @@ export function SpeakerPerfilDialog({
                       <Label className="text-xs">{prop.nombre}</Label>
 
                       {prop.tipo === 'checklist' && (
-                        <div className="flex flex-col gap-1">
-                          {asChecklist(valores[prop.id]).map((item, index) => (
-                            <label
-                              key={index}
-                              className="flex items-center gap-2 text-xs"
-                            >
-                              <Checkbox
-                                checked={item.checked}
-                                onCheckedChange={() => toggleItem(prop, index)}
-                              />
-                              <span
-                                className={
-                                  item.checked
-                                    ? 'text-muted-foreground line-through'
-                                    : ''
-                                }
+                        <div className="flex flex-col gap-2">
+                          {asChecklist(valores[prop.id]).map((item, index) => {
+                            const cbId = `chk-${prop.id}-${index}`
+                            return (
+                              <div
+                                key={index}
+                                className="flex items-center gap-2"
                               >
-                                {item.label}
-                              </span>
-                            </label>
-                          ))}
-                          <div className="flex gap-1">
+                                <Checkbox
+                                  id={cbId}
+                                  checked={item.checked}
+                                  onCheckedChange={() =>
+                                    toggleItem(prop, index)
+                                  }
+                                />
+                                <label
+                                  htmlFor={cbId}
+                                  className={`cursor-pointer text-xs ${
+                                    item.checked
+                                      ? 'text-muted-foreground line-through'
+                                      : ''
+                                  }`}
+                                >
+                                  {item.label}
+                                </label>
+                              </div>
+                            )
+                          })}
+                          <div className="flex items-center gap-2">
                             <Input
                               value={nuevoItem[prop.id] ?? ''}
                               onChange={(e) =>
@@ -345,8 +352,8 @@ export function SpeakerPerfilDialog({
                                   agregarItem(prop)
                                 }
                               }}
-                              placeholder="Nuevo ítem…"
-                              className="h-7 text-xs"
+                              placeholder="Nueva tarea…"
+                              className="h-8 flex-1 text-xs"
                             />
                             <Button
                               type="button"
