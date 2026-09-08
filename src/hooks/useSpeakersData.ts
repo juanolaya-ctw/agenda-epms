@@ -18,6 +18,7 @@ export type Speaker = {
   bio: string | null
   fuente: string | null
   sesionesEnEvento: number
+  eventosParticipados: string[]
 }
 
 export type SpeakerEditable = {
@@ -70,6 +71,31 @@ export type ChecklistItem = { label: string; checked: boolean }
 
 function pick<T>(value: T | null | undefined): T | null {
   return value ?? null
+}
+
+function mapSpeakerRow(
+  r: Record<string, unknown>,
+  extras: { sesionesEnEvento: number; eventosParticipados: string[] },
+): Speaker {
+  return {
+    id: r.id as string,
+    nombre: (r.nombre as string | null) ?? '',
+    cargo: pick(r.cargo as string | null),
+    empresa: pick(r.empresa as string | null),
+    pais: pick(r.pais as string | null),
+    ciudad: pick(r.ciudad as string | null),
+    email: pick(r.email as string | null),
+    telefono: pick(r.telefono as string | null),
+    linkedin_url: pick(r.linkedin_url as string | null),
+    tipo_documento: pick(r.tipo_documento as string | null),
+    numero_documento: pick(r.numero_documento as string | null),
+    email_secundario: pick(r.email_secundario as string | null),
+    foto_url: pick(r.foto_url as string | null),
+    bio: pick(r.bio as string | null),
+    fuente: pick(r.fuente as string | null),
+    sesionesEnEvento: extras.sesionesEnEvento,
+    eventosParticipados: extras.eventosParticipados,
+  }
 }
 
 async function eventoSesionIds(
@@ -127,24 +153,12 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     }
   }
 
-  const speakers: Speaker[] = rows.map((r) => ({
-    id: r.id as string,
-    nombre: (r.nombre as string | null) ?? '',
-    cargo: pick(r.cargo as string | null),
-    empresa: pick(r.empresa as string | null),
-    pais: pick(r.pais as string | null),
-    ciudad: pick(r.ciudad as string | null),
-    email: pick(r.email as string | null),
-    telefono: pick(r.telefono as string | null),
-    linkedin_url: pick(r.linkedin_url as string | null),
-    tipo_documento: pick(r.tipo_documento as string | null),
-    numero_documento: pick(r.numero_documento as string | null),
-    email_secundario: pick(r.email_secundario as string | null),
-    foto_url: pick(r.foto_url as string | null),
-    bio: pick(r.bio as string | null),
-    fuente: pick(r.fuente as string | null),
-    sesionesEnEvento: countBySpeaker.get(r.id as string) ?? 0,
-  }))
+  const speakers: Speaker[] = rows.map((r) =>
+    mapSpeakerRow(r as Record<string, unknown>, {
+      sesionesEnEvento: countBySpeaker.get(r.id as string) ?? 0,
+      eventosParticipados: [],
+    }),
+  )
 
   // Propiedades custom del evento (columnas globales) + valores de todos los speakers
   const props = await propiedadesSpeaker(eventoId)
@@ -173,6 +187,128 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     valoresPorSpeaker,
     error: graph.error ?? props.error,
   }
+}
+
+async function loadSpeakersGlobal(): Promise<LoadResult> {
+  const empty = { propiedades: [] as PropiedadCustom[], valoresPorSpeaker: {} }
+  const spRes = await supabase.from('speakers').select('*').order('nombre')
+  if (spRes.error) return { speakers: [], ...empty, error: spRes.error.message }
+  const rows = spRes.data ?? []
+
+  const eventsBySpeaker = new Map<string, Set<string>>()
+  const sessionsBySpeaker = new Map<string, Set<string>>()
+
+  const ss = await supabase
+    .from('sesion_speakers')
+    .select('speaker_id, sesion_id')
+  if (ss.error) {
+    return {
+      speakers: rows.map((r) =>
+        mapSpeakerRow(r as Record<string, unknown>, {
+          sesionesEnEvento: 0,
+          eventosParticipados: [],
+        }),
+      ),
+      ...empty,
+      error: ss.error.message,
+    }
+  }
+
+  const sesionIds = [
+    ...new Set((ss.data ?? []).map((r) => r.sesion_id as string)),
+  ]
+  const eventoNombreBySesion = new Map<string, string>()
+
+  if (sesionIds.length > 0) {
+    const ses = await supabase
+      .from('sesiones')
+      .select('id, slot_id')
+      .in('id', sesionIds)
+    if (ses.error) return { speakers: [], ...empty, error: ses.error.message }
+
+    const slotIds = [
+      ...new Set(
+        (ses.data ?? []).map((r) => r.slot_id as string).filter(Boolean),
+      ),
+    ]
+    const slotById = new Map<string, { escenario_id: string }>()
+    if (slotIds.length > 0) {
+      const slots = await supabase
+        .from('slots')
+        .select('id, escenario_id')
+        .in('id', slotIds)
+      if (slots.error)
+        return { speakers: [], ...empty, error: slots.error.message }
+      for (const s of slots.data ?? []) {
+        slotById.set(s.id as string, { escenario_id: s.escenario_id as string })
+      }
+    }
+
+    const escIds = [
+      ...new Set([...slotById.values()].map((s) => s.escenario_id)),
+    ]
+    const eventoByEsc = new Map<string, string>()
+    if (escIds.length > 0) {
+      const esc = await supabase
+        .from('escenarios')
+        .select('id, evento_id')
+        .in('id', escIds)
+      if (esc.error)
+        return { speakers: [], ...empty, error: esc.error.message }
+      const eventoIds = [
+        ...new Set(
+          (esc.data ?? []).map((e) => e.evento_id as string).filter(Boolean),
+        ),
+      ]
+      const nombreByEvento = new Map<string, string>()
+      if (eventoIds.length > 0) {
+        const ev = await supabase
+          .from('eventos')
+          .select('id, nombre')
+          .in('id', eventoIds)
+        if (ev.error)
+          return { speakers: [], ...empty, error: ev.error.message }
+        for (const e of ev.data ?? []) {
+          nombreByEvento.set(e.id as string, (e.nombre as string) ?? '')
+        }
+      }
+      for (const e of esc.data ?? []) {
+        const nombre = nombreByEvento.get(e.evento_id as string)
+        if (nombre) eventoByEsc.set(e.id as string, nombre)
+      }
+    }
+
+    for (const s of ses.data ?? []) {
+      const slot = slotById.get(s.slot_id as string)
+      const nombre = slot ? eventoByEsc.get(slot.escenario_id) : undefined
+      if (nombre) eventoNombreBySesion.set(s.id as string, nombre)
+    }
+  }
+
+  for (const r of ss.data ?? []) {
+    const speakerId = r.speaker_id as string
+    const sesionId = r.sesion_id as string
+    if (!sessionsBySpeaker.has(speakerId)) {
+      sessionsBySpeaker.set(speakerId, new Set())
+    }
+    sessionsBySpeaker.get(speakerId)!.add(sesionId)
+    const nombre = eventoNombreBySesion.get(sesionId)
+    if (!nombre) continue
+    if (!eventsBySpeaker.has(speakerId)) {
+      eventsBySpeaker.set(speakerId, new Set())
+    }
+    eventsBySpeaker.get(speakerId)!.add(nombre)
+  }
+
+  const speakers: Speaker[] = rows.map((r) => {
+    const id = r.id as string
+    return mapSpeakerRow(r as Record<string, unknown>, {
+      sesionesEnEvento: sessionsBySpeaker.get(id)?.size ?? 0,
+      eventosParticipados: [...(eventsBySpeaker.get(id) ?? [])].sort(),
+    })
+  })
+
+  return { speakers, ...empty, error: null }
 }
 
 export async function actualizarSpeaker(
@@ -383,29 +519,34 @@ const EMPTY_STATE: Omit<State, 'loading'> = {
 
 export function useSpeakersData(
   eventoId: string | null | undefined,
+  options?: { global?: boolean },
 ): SpeakersData {
+  const global = options?.global === true
   const [tick, setTick] = useState(0)
   const [state, setState] = useState<State>({
     ...EMPTY_STATE,
-    loading: Boolean(eventoId),
+    loading: global || Boolean(eventoId),
   })
 
   const refetch = useCallback(() => setTick((v) => v + 1), [])
 
   useEffect(() => {
-    if (!eventoId) {
+    if (!global && !eventoId) {
       setState({ ...EMPTY_STATE, loading: false })
       return
     }
     let cancelled = false
     setState((prev) => ({ ...prev, loading: true, error: null }))
-    loadSpeakers(eventoId).then((next) => {
+    const loader = global
+      ? loadSpeakersGlobal()
+      : loadSpeakers(eventoId as string)
+    loader.then((next) => {
       if (!cancelled) setState({ ...next, loading: false })
     })
     return () => {
       cancelled = true
     }
-  }, [eventoId, tick])
+  }, [eventoId, global, tick])
 
   const actualizar = useCallback(
     async (id: string, datos: Partial<SpeakerEditable>) => {

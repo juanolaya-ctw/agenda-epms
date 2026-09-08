@@ -96,73 +96,62 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 flex h-14 items-center border-b border-border bg-white px-4">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-semibold text-card">
-          {area.initials}
-        </div>
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-semibold">{area.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {workspace?.nombre ?? 'Sin evento seleccionado'}
-          </p>
-        </div>
-        <div className="flex flex-col">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Workspace
-          </p>
-          <Dropdown
-            align="start"
-            trigger={
-              <button
-                type="button"
-                className="inline-flex max-w-[240px] items-center gap-1 text-sm font-semibold"
-              >
-                <span className="truncate">
-                  {workspace?.nombre ?? 'Elegir workspace'}
-                </span>
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            }
+      <Dropdown
+        align="start"
+        trigger={
+          <button
+            type="button"
+            className="flex min-w-0 max-w-[320px] items-center gap-3 text-left"
           >
-            {workspaces.map((ws) => (
-              <button
-                key={ws.id}
-                type="button"
-                className={cn(
-                  'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
-                  ws.id === workspace?.id && 'font-semibold',
-                )}
-                onClick={() => selectWorkspace(ws.id)}
-              >
-                {ws.nombre}
-              </button>
-            ))}
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-semibold text-white">
+              {area.initials}
+            </div>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate font-semibold">{area.name}</p>
+              <p className="truncate text-sm text-muted-foreground">
+                {workspace?.nombre ?? 'Sin evento seleccionado'}
+              </p>
+            </div>
+          </button>
+        }
+      >
+        {workspaces.map((ws) => (
+          <button
+            key={ws.id}
+            type="button"
+            className={cn(
+              'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
+              ws.id === workspace?.id && 'font-semibold',
+            )}
+            onClick={() => selectWorkspace(ws.id)}
+          >
+            {ws.nombre}
+          </button>
+        ))}
+        <div className="my-1 border-t border-border" />
+        <button
+          type="button"
+          className="block w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
+          onClick={() => navigate('/home')}
+        >
+          Ver todos los eventos
+        </button>
+        {workspace && (
+          <>
             <div className="my-1 border-t border-border" />
             <button
               type="button"
-              className="block w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-              onClick={() => navigate('/home')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+              onClick={() =>
+                navigate(`/workspace/${workspace.id}/agenda/settings`)
+              }
             >
-              Ver todos los eventos
+              <Settings className="size-4 text-muted-foreground" />
+              Configurar workspace
             </button>
-            {workspace && (
-              <>
-                <div className="my-1 border-t border-border" />
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
-                  onClick={() =>
-                    navigate(`/workspace/${workspace.id}/agenda/settings`)
-                  }
-                >
-                  <Settings className="size-4 text-muted-foreground" />
-                  Configurar workspace
-                </button>
-              </>
-            )}
-          </Dropdown>
-        </div>
-      </div>
+          </>
+        )}
+      </Dropdown>
 
       <div className="flex-1" />
 
