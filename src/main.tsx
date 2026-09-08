@@ -15,6 +15,7 @@ import { DashboardTab } from '@/pages/workspace/agenda/DashboardTab'
 import { SesionesTab } from '@/pages/workspace/agenda/SesionesTab'
 import { SpeakersTab } from '@/pages/workspace/agenda/SpeakersTab'
 import { RequestsTab } from '@/pages/workspace/agenda/RequestsTab'
+import { SettingsTab } from '@/pages/workspace/agenda/SettingsTab'
 import { AgendaTab } from '@/pages/workspace/sales/AgendaTab'
 import { CalendarioTab as SalesCalendarioTab } from '@/pages/workspace/sales/CalendarioTab'
 import { SolicitudesTab as SalesSolicitudesTab } from '@/pages/workspace/sales/SolicitudesTab'
@@ -44,6 +45,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="sesiones" element={<SesionesTab />} />
                 <Route path="speakers" element={<SpeakersTab />} />
                 <Route path="requests" element={<RequestsTab />} />
+                <Route path="settings" element={<SettingsTab />} />
               </Route>
             </Route>
 

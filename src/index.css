@@ -58,8 +58,8 @@ body {
   /* No asignar a tokens funcionales — uso puntual solo */
   --color-accent-2:             oklch(0.697 0.449 326.843);  /* #EE82EE */
 
-  /* ── Surface / Card — crema del prototipo validado ── */
-  --color-card:                 oklch(0.950 0.030 86.133);   /* #F5F0E8 */
+  /* ── Surface / Card — blanco ── */
+  --color-card:                 oklch(1.000 0.000 0);
   --color-card-foreground:      oklch(0.107 0.010 109.733);
 
   /* ── Muted — gris claro para texto secundario y fondos sutiles ── */
@@ -78,7 +78,7 @@ body {
   --color-ring:                 oklch(0.694 0.283 254.725);  /* azul al hacer focus */
 
   /* ── Popover (igual que card) ── */
-  --color-popover:              oklch(0.950 0.030 86.133);
+  --color-popover:              oklch(1.000 0.000 0);
   --color-popover-foreground:   oklch(0.107 0.010 109.733);
 
   /* ── Destructive (mantener del preset) ── */
@@ -114,10 +114,10 @@ body {
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1.000 0.000 0);              /* blanco puro */
-  --popover-foreground: oklch(0.107 0.010 109.733); /* negro */
+  --card: oklch(1.000 0.000 0);
+  --card-foreground: oklch(0.107 0.010 109.733);
+  --popover: oklch(1.000 0.000 0);
+  --popover-foreground: oklch(0.107 0.010 109.733);
   /* Fix hover de botones — necesario porque @theme inline no sobreescribe
      :root y button.tsx lee var(--secondary) / var(--primary) desde :root */
   --primary: oklch(0.107 0.010 109.733);        /* negro #1D1D1B */

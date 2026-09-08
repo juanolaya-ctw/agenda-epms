@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Settings } from 'lucide-react'
 import { useRole, type Role } from '@/contexts/RoleContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { workspaceHomePath } from '@/lib/workspaceRoutes'
@@ -145,6 +145,21 @@ export function Navbar() {
             >
               Ver todos los eventos
             </button>
+            {workspace && (
+              <>
+                <div className="my-1 border-t border-border" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                  onClick={() =>
+                    navigate(`/workspace/${workspace.id}/agenda/settings`)
+                  }
+                >
+                  <Settings className="size-4 text-muted-foreground" />
+                  Configurar workspace
+                </button>
+              </>
+            )}
           </Dropdown>
         </div>
       </div>

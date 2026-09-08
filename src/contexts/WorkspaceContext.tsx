@@ -44,6 +44,8 @@ type WorkspaceContextValue = {
   workspace: Workspace | null
   setWorkspace: (workspace: Workspace | null) => void
   addWorkspace: (input: Omit<Workspace, 'id'> & { id?: string }) => Workspace
+  updateWorkspace: (id: string, patch: Partial<Workspace>) => void
+  removeWorkspace: (id: string) => void
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
@@ -148,14 +150,55 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [persistActive, persistList, workspaces],
   )
 
+  const updateWorkspace = useCallback(
+    (id: string, patch: Partial<Workspace>) => {
+      setWorkspaces((prev) => {
+        const next = prev.map((w) => (w.id === id ? { ...w, ...patch } : w))
+        persistList(next)
+        return next
+      })
+    },
+    [persistList],
+  )
+
+  const removeWorkspace = useCallback(
+    (id: string) => {
+      setWorkspaces((prev) => {
+        const next = prev.filter((w) => w.id !== id)
+        persistList(next)
+        return next
+      })
+      setActiveId((current) => {
+        if (current !== id) return current
+        persistActive(null)
+        return null
+      })
+    },
+    [persistActive, persistList],
+  )
+
   const workspace = useMemo(
     () => workspaces.find((w) => w.id === activeId) ?? null,
     [workspaces, activeId],
   )
 
   const value = useMemo(
-    () => ({ workspaces, workspace, setWorkspace, addWorkspace }),
-    [workspaces, workspace, setWorkspace, addWorkspace],
+    () => ({
+      workspaces,
+      workspace,
+      setWorkspace,
+      addWorkspace,
+      updateWorkspace,
+      removeWorkspace,
+    }),
+    [
+      workspaces,
+      workspace,
+      setWorkspace,
+      addWorkspace,
+      updateWorkspace,
+      removeWorkspace,
+    ],
   )
 
   return (

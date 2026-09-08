@@ -91,8 +91,9 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
       <Navbar />
 
       <div
-        className="border-b border-border bg-card px-8 py-6"
+        className="border-b border-border px-8 py-6"
         style={{
+          backgroundColor: '#F5F0E8',
           backgroundImage:
             'radial-gradient(circle, #d4c9b0 1px, transparent 1px)',
           backgroundSize: '24px 24px',

@@ -264,8 +264,8 @@ export function SpeakerPerfilDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[880px] overflow-y-auto bg-white p-0">
-        <div className="p-6">
+      <DialogContent className="w-[832px] max-h-[85vh] max-w-[calc(100vw-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-white p-0 sm:max-w-[calc(100vw-2rem)]">
+        <div className="shrink-0 px-6 pt-6">
           <DialogHeader>
             <DialogTitle>
               {mode === 'edit' ? 'Perfil del speaker' : 'Nuevo speaker'}
@@ -274,10 +274,11 @@ export function SpeakerPerfilDialog({
               Datos del pool global de speakers y su seguimiento en este evento.
             </DialogDescription>
           </DialogHeader>
+        </div>
 
-          <div className="mt-4 grid gap-6 md:grid-cols-2">
+        <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px] overflow-hidden">
           {/* ── Columna izquierda: datos ─────────────────────────── */}
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 overflow-y-auto p-6">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -313,23 +314,25 @@ export function SpeakerPerfilDialog({
             </div>
 
             {CAMPOS.map((campo) => (
-              <div key={campo.key} className="flex flex-col gap-1.5">
+              <div key={campo.key} className="flex w-full flex-col gap-1.5">
                 <Label htmlFor={`sp-${campo.key}`}>
                   {campo.label}
                   {campo.required ? ' *' : ''}
                 </Label>
                 <Input
                   id={`sp-${campo.key}`}
+                  className="w-full"
                   value={form[campo.key]}
                   onChange={(e) => set(campo.key, e.target.value)}
                 />
               </div>
             ))}
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex w-full flex-col gap-1.5">
               <Label htmlFor="sp-bio">Bio</Label>
               <Textarea
                 id="sp-bio"
+                className="w-full"
                 rows={4}
                 value={form.bio}
                 onChange={(e) => set('bio', e.target.value)}
@@ -342,7 +345,7 @@ export function SpeakerPerfilDialog({
           </div>
 
           {/* ── Columna derecha: participación + seguimiento ──────── */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 overflow-y-auto p-6">
             {mode === 'create' || !speakerId ? (
               <p className="text-sm text-muted-foreground">
                 Guarda el speaker para ver su participación y seguimiento.
@@ -503,7 +506,6 @@ export function SpeakerPerfilDialog({
                 </div>
               </>
             )}
-          </div>
           </div>
         </div>
       </DialogContent>
