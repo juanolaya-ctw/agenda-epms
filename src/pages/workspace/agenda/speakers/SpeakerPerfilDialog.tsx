@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { Camera } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -89,6 +91,9 @@ export function SpeakerPerfilDialog({
 }: SpeakerPerfilDialogProps) {
   const [form, setForm] = useState<FormState>(() => initialForm(speaker))
   const [saving, setSaving] = useState(false)
+  const [fotoUrl, setFotoUrl] = useState<string | null>(speaker?.foto_url ?? null)
+  const [subiendoFoto, setSubiendoFoto] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [participaciones, setParticipaciones] = useState<ParticipacionSesion[]>(
     [],
@@ -105,6 +110,8 @@ export function SpeakerPerfilDialog({
     if (open) {
       setForm(initialForm(speaker))
       setSaving(false)
+      setFotoUrl(speaker?.foto_url ?? null)
+      setSubiendoFoto(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, speakerId])
@@ -136,6 +143,63 @@ export function SpeakerPerfilDialog({
 
   const set = (key: keyof SpeakerEditable, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }))
+
+  function readAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as ArrayBuffer)
+      reader.onerror = () =>
+        reject(reader.error ?? new Error('No se pudo leer el archivo'))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
+  async function handleFotoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !speaker) return
+
+    const ext =
+      file.name.split('.').pop()?.toLowerCase() ||
+      file.type.split('/')[1] ||
+      'jpg'
+    const email = speaker.email || form.email || speaker.id
+    const filename = `speakers/${email}-${Date.now()}.${ext}`
+
+    setSubiendoFoto(true)
+    try {
+      const arrayBuffer = await readAsArrayBuffer(file)
+      const { error: uploadError } = await supabase.storage
+        .from('speaker-fotos')
+        .upload(filename, arrayBuffer, {
+          contentType: file.type,
+          upsert: true,
+        })
+      if (uploadError) throw new Error(uploadError.message)
+
+      const { data } = supabase.storage
+        .from('speaker-fotos')
+        .getPublicUrl(filename)
+
+      const { error: updateError } = await supabase
+        .from('speakers')
+        .update({ foto_url: data.publicUrl })
+        .eq('id', speaker.id)
+      if (updateError) throw new Error(updateError.message)
+
+      setFotoUrl(data.publicUrl)
+      toast.success('Foto actualizada')
+      onSaved()
+    } catch (err) {
+      toast.error(
+        `No se pudo subir la foto: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    } finally {
+      setSubiendoFoto(false)
+    }
+  }
 
   async function handleGuardar() {
     if (!form.nombre.trim() || !form.email.trim()) {
@@ -215,14 +279,34 @@ export function SpeakerPerfilDialog({
           {/* ── Columna izquierda: datos ─────────────────────────── */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <Avatar size="lg">
-                {speaker?.foto_url && (
-                  <AvatarImage src={speaker.foto_url} alt={form.nombre} />
+              <button
+                type="button"
+                disabled={!speaker || subiendoFoto}
+                onClick={() => fileInputRef.current?.click()}
+                className="group relative shrink-0 cursor-pointer rounded-full disabled:cursor-default"
+                title={speaker ? 'Cambiar foto' : undefined}
+              >
+                <Avatar size="lg">
+                  {fotoUrl && (
+                    <AvatarImage src={fotoUrl} alt={form.nombre} />
+                  )}
+                  <AvatarFallback>
+                    {iniciales(form.nombre || 'NN')}
+                  </AvatarFallback>
+                </Avatar>
+                {speaker && (
+                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    <Camera className="size-4" />
+                  </span>
                 )}
-                <AvatarFallback>
-                  {iniciales(form.nombre || 'NN')}
-                </AvatarFallback>
-              </Avatar>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFotoChange}
+              />
               <p className="text-sm font-medium">
                 {form.nombre || 'Sin nombre'}
               </p>
