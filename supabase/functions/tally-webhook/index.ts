@@ -3,8 +3,8 @@
 // Deploy: supabase functions deploy tally-webhook --no-verify-jwt
 //
 // Variables de entorno requeridas (Supabase Dashboard → Edge Functions → Secrets):
-//   SUPABASE_URL        → https://ydqbjyhcntszvrytdkml.supabase.co
-//   SUPABASE_SERVICE_KEY → service_role key (nunca la anon key)
+//   SB_URL        → https://ydqbjyhcntszvrytdkml.supabase.co
+//   SB_SERVICE_KEY → service_role key (nunca la anon key)
 //
 // En Tally: Settings → Webhooks → URL = https://ydqbjyhcntszvrytdkml.supabase.co/functions/v1/tally-webhook
 
@@ -15,22 +15,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Los labels son el texto exacto de la pregunta en el formulario de Tally.
 // Si renombras una pregunta en Tally, actualiza el mapeo aquí.
 const FIELD_MAP: Record<string, string> = {
-  // Formulario GovTech Summit (pbNMvy) — 12 campos confirmados
-  "Nombres y Apellidos/ Full Name":                                    "nombre",
-  "Nombres y Apellidos / Full Name":                                   "nombre",   // variante con espacio
-  "Pais / Country":                                                    "pais",
-  "País / Country":                                                    "pais",     // variante con tilde
-  "Email":                                                             "email",
-  "Ciudad/City":                                                       "ciudad",
-  "Ciudad / City":                                                     "ciudad",
-  "Número telefónico personal / Personal Phone Number":                "telefono",
-  "LinkedIn":                                                          "linkedin_url",
-  "Tipo de Documento de Identidad / ID type":                          "tipo_documento",
-  "Número de Identificación / ID Number":                              "numero_documento",
-  "Empresa / Organización - Company / Organization":                   "empresa",
-  "Cargo / Rol Actual - Job Title / Current Role":                     "cargo",
-  "Correo Electrónico Secundario o de Asistente (Opcional) / Secondary or Assistant Email Address (Optional)": "email_secundario",
-  "Material Gráfico (OBLIGATORIO) / Media Assets (REQUIRED)":          "foto_url",
+  // Nombre: primer campo, label vacío — se maneja por posición
+  "Pais / Country":                                                          "pais",
+  "Ciudad / City":                                                           "ciudad",
+  "LinkedIn":                                                                "linkedin_url",
+  "Tipo de Documento de Identidad / ID type":                          "tipo_documento",
+  "Número de Identificación / ID Number":                              "numero_documento",
+  "Empresa / Organización - Company / Organization":                   "empresa",
+  "Cargo / Rol Actual - Job Title / Current Role":                     "cargo",
+  "Correo Electrónico Secundario o de Asistente (Opcional) / Secondary or Assistant Email Address (Optional)": "email_secundario",
+  "Material Gráfico (OBLIGATORIO) / Media Assets (REQUIRED)":          "foto_url",
 };
 
 // ─── Extrae el valor de un campo Tally por su label ─────────────────────────
@@ -77,6 +71,21 @@ serve(async (req: Request) => {
 
   // ── Construir objeto speaker desde el payload ──────────────────────────────
   const speaker: Record<string, string | null> = {};
+
+  // Nombre: primer INPUT_TEXT con label vacío o primer campo
+  const nombreField = fields.find((f: any) =>
+    f.type === 'INPUT_TEXT' && (f.label === '' || f.label === null)
+  );
+  if (nombreField?.value) speaker.nombre = nombreField.value.trim();
+
+  // Email: campo tipo INPUT_EMAIL (label tiene \n)
+  const emailField = fields.find((f: any) => f.type === 'INPUT_EMAIL');
+  if (emailField?.value) speaker.email = emailField.value.toLowerCase().trim();
+
+  // Teléfono: campo tipo INPUT_PHONE_NUMBER
+  const telefonoField = fields.find((f: any) => f.type === 'INPUT_PHONE_NUMBER');
+  if (telefonoField?.value) speaker.telefono = telefonoField.value;
+
   for (const [tallyLabel, supabaseField] of Object.entries(FIELD_MAP)) {
     speaker[supabaseField] = extractField(fields, tallyLabel);
   }
@@ -96,8 +105,8 @@ serve(async (req: Request) => {
 
   // ── Cliente Supabase con service_role (bypassa RLS) ───────────────────────
   const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_KEY")!
+    Deno.env.get("SB_URL")!,
+    Deno.env.get("SB_SERVICE_KEY")!
   );
 
   // ── Regla de no-duplicado: verificar si el email ya existe ────────────────
