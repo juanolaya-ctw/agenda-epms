@@ -37,6 +37,8 @@ export type SpeakerEditable = {
 
 export type SpeakersData = {
   speakers: Speaker[]
+  propiedades: PropiedadCustom[]
+  valoresPorSpeaker: Record<string, Record<string, unknown>>
   loading: boolean
   error: string | null
   refetch: () => void
@@ -94,11 +96,17 @@ async function eventoSesionIds(
   return { ids: (ses.data ?? []).map((r) => r.id as string), error: null }
 }
 
-async function loadSpeakers(
-  eventoId: string,
-): Promise<{ speakers: Speaker[]; error: string | null }> {
+type LoadResult = {
+  speakers: Speaker[]
+  propiedades: PropiedadCustom[]
+  valoresPorSpeaker: Record<string, Record<string, unknown>>
+  error: string | null
+}
+
+async function loadSpeakers(eventoId: string): Promise<LoadResult> {
+  const empty = { propiedades: [] as PropiedadCustom[], valoresPorSpeaker: {} }
   const spRes = await supabase.from('speakers').select('*').order('nombre')
-  if (spRes.error) return { speakers: [], error: spRes.error.message }
+  if (spRes.error) return { speakers: [], ...empty, error: spRes.error.message }
   const rows = spRes.data ?? []
 
   const graph = await eventoSesionIds(eventoId)
@@ -138,7 +146,33 @@ async function loadSpeakers(
     sesionesEnEvento: countBySpeaker.get(r.id as string) ?? 0,
   }))
 
-  return { speakers, error: graph.error }
+  // Propiedades custom del evento (columnas globales) + valores de todos los speakers
+  const props = await propiedadesSpeaker(eventoId)
+  const valoresPorSpeaker: Record<string, Record<string, unknown>> = {}
+  if (!props.error && props.data.length > 0) {
+    const vpRes = await supabase
+      .from('valores_propiedades')
+      .select('speaker_id, propiedad_id, valor')
+      .in(
+        'propiedad_id',
+        props.data.map((p) => p.id),
+      )
+    if (!vpRes.error) {
+      for (const r of vpRes.data ?? []) {
+        const sid = r.speaker_id as string | null
+        if (!sid) continue
+        if (!valoresPorSpeaker[sid]) valoresPorSpeaker[sid] = {}
+        valoresPorSpeaker[sid][r.propiedad_id as string] = r.valor
+      }
+    }
+  }
+
+  return {
+    speakers,
+    propiedades: props.data,
+    valoresPorSpeaker,
+    error: graph.error ?? props.error,
+  }
 }
 
 export async function actualizarSpeaker(
@@ -311,21 +345,56 @@ export async function crearPropiedad(
   if (error) throw new Error(error.message)
 }
 
+export async function renombrarPropiedad(
+  id: string,
+  nombre: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('propiedades_custom')
+    .update({ nombre })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function eliminarPropiedad(id: string): Promise<void> {
+  // Los valores dependen de la propiedad (FK); se borran primero.
+  await supabase.from('valores_propiedades').delete().eq('propiedad_id', id)
+  const { error } = await supabase
+    .from('propiedades_custom')
+    .delete()
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+type State = {
+  speakers: Speaker[]
+  propiedades: PropiedadCustom[]
+  valoresPorSpeaker: Record<string, Record<string, unknown>>
+  loading: boolean
+  error: string | null
+}
+
+const EMPTY_STATE: Omit<State, 'loading'> = {
+  speakers: [],
+  propiedades: [],
+  valoresPorSpeaker: {},
+  error: null,
+}
+
 export function useSpeakersData(
   eventoId: string | null | undefined,
 ): SpeakersData {
   const [tick, setTick] = useState(0)
-  const [state, setState] = useState<{
-    speakers: Speaker[]
-    loading: boolean
-    error: string | null
-  }>({ speakers: [], loading: Boolean(eventoId), error: null })
+  const [state, setState] = useState<State>({
+    ...EMPTY_STATE,
+    loading: Boolean(eventoId),
+  })
 
   const refetch = useCallback(() => setTick((v) => v + 1), [])
 
   useEffect(() => {
     if (!eventoId) {
-      setState({ speakers: [], loading: false, error: null })
+      setState({ ...EMPTY_STATE, loading: false })
       return
     }
     let cancelled = false

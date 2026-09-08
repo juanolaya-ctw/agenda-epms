@@ -13,18 +13,27 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useSpeakersData, type Speaker } from '@/hooks/useSpeakersData'
+import {
+  useSpeakersData,
+  type PropiedadCustom,
+  type Speaker,
+} from '@/hooks/useSpeakersData'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
-import { FuenteBadge, iniciales } from './speakerUtils'
+import { PropiedadEditarDialog } from './PropiedadEditarDialog'
+import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
 
 type SpeakersTableProps = { eventoId: string }
 
+const COLS_FIJAS = 9
+
 export function SpeakersTable({ eventoId }: SpeakersTableProps) {
-  const { speakers, loading, error, refetch } = useSpeakersData(eventoId)
+  const { speakers, propiedades, valoresPorSpeaker, loading, error, refetch } =
+    useSpeakersData(eventoId)
   const [busqueda, setBusqueda] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
+  const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
 
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase()
@@ -35,6 +44,8 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         .some((campo) => campo!.toLowerCase().includes(term)),
     )
   }, [speakers, busqueda])
+
+  const totalCols = COLS_FIJAS + propiedades.length
 
   function abrirCrear() {
     setModo('create')
@@ -85,6 +96,21 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                 <TableHead>Email</TableHead>
                 <TableHead>Sesiones</TableHead>
                 <TableHead>Fuente</TableHead>
+                {propiedades.map((prop) => (
+                  <TableHead key={prop.id} className="whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1">
+                      {prop.nombre}
+                      <button
+                        type="button"
+                        aria-label={`Editar propiedad ${prop.nombre}`}
+                        onClick={() => setPropEditando(prop)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                    </span>
+                  </TableHead>
+                ))}
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -92,7 +118,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
               {loading &&
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((__, c) => (
+                    {Array.from({ length: totalCols }).map((__, c) => (
                       <TableCell key={c}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
@@ -103,7 +129,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
               {!loading && filtrados.length === 0 && speakers.length > 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={9}
+                    colSpan={totalCols}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     Ningún speaker coincide con la búsqueda.
@@ -156,6 +182,17 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                     <TableCell>
                       <FuenteBadge fuente={sp.fuente} />
                     </TableCell>
+                    {propiedades.map((prop) => (
+                      <TableCell
+                        key={prop.id}
+                        className="max-w-[160px] truncate text-xs text-muted-foreground"
+                      >
+                        {resumenValor(
+                          prop,
+                          valoresPorSpeaker[sp.id]?.[prop.id],
+                        )}
+                      </TableCell>
+                    ))}
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
@@ -179,6 +216,12 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         mode={modo}
         speaker={activo}
         eventoId={eventoId}
+        onSaved={refetch}
+      />
+
+      <PropiedadEditarDialog
+        propiedad={propEditando}
+        onOpenChange={(open) => !open && setPropEditando(null)}
         onSaved={refetch}
       />
     </div>

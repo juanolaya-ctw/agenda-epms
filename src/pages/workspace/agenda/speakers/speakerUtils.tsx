@@ -1,4 +1,24 @@
 import { Badge } from '@/components/ui/badge'
+import type { ChecklistItem, PropiedadCustom } from '@/hooks/useSpeakersData'
+
+export function asChecklist(value: unknown): ChecklistItem[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (item): item is ChecklistItem =>
+      typeof item === 'object' && item !== null && 'label' in item,
+  )
+}
+
+/** Resumen corto del valor de una propiedad para mostrar en la tabla. */
+export function resumenValor(prop: PropiedadCustom, valor: unknown): string {
+  if (prop.tipo === 'checklist') {
+    const items = asChecklist(valor)
+    if (items.length === 0) return '0/0'
+    return `${items.filter((i) => i.checked).length}/${items.length} completado`
+  }
+  if (valor == null || valor === '') return '—'
+  return String(valor)
+}
 
 export function iniciales(nombre: string): string {
   const partes = nombre.trim().split(/\s+/).filter(Boolean)

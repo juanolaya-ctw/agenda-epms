@@ -28,14 +28,13 @@ import {
   propiedadesSpeaker,
   sesionesDeSpeaker,
   valoresSpeaker,
-  type ChecklistItem,
   type ParticipacionSesion,
   type PropiedadCustom,
   type Speaker,
   type SpeakerEditable,
 } from '@/hooks/useSpeakersData'
 import { formatDiaLargo } from '../sesiones/format'
-import { iniciales } from './speakerUtils'
+import { asChecklist, iniciales } from './speakerUtils'
 
 const CAMPOS: { key: keyof SpeakerEditable; label: string; required?: boolean }[] = [
   { key: 'nombre', label: 'Nombre', required: true },
@@ -70,14 +69,6 @@ function initialForm(speaker: Speaker | null): FormState {
     email_secundario: speaker?.email_secundario ?? '',
     bio: speaker?.bio ?? '',
   }
-}
-
-function asChecklist(value: unknown): ChecklistItem[] {
-  if (!Array.isArray(value)) return []
-  return value.filter(
-    (item): item is ChecklistItem =>
-      typeof item === 'object' && item !== null && 'label' in item,
-  )
 }
 
 type SpeakerPerfilDialogProps = {
@@ -218,6 +209,9 @@ export function SpeakerPerfilDialog({
       setNuevaPropNombre('')
       setNuevaPropTipo('checklist')
       await recargarSeguimiento()
+      // La propiedad es global del evento: refresca la tabla para que
+      // aparezca como columna para todos los speakers.
+      onSaved()
     } catch (err) {
       toast.error(
         `No se pudo crear: ${err instanceof Error ? err.message : String(err)}`,
@@ -229,7 +223,7 @@ export function SpeakerPerfilDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto bg-background">
+      <DialogContent className="max-w-[832px] max-h-[880px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {mode === 'edit' ? 'Perfil del speaker' : 'Nuevo speaker'}

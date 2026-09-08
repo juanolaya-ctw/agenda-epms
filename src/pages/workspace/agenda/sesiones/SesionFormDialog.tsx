@@ -154,7 +154,7 @@ export function SesionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto bg-background">
+      <DialogContent className="max-w-[832px] max-h-[880px] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {mode === 'edit' ? 'Editar sesión' : 'Nueva sesión'}
