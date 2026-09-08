@@ -20,6 +20,7 @@ import {
 } from '@/hooks/useSpeakersData'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
+import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
 
 type SpeakersTableProps = { eventoId: string }
@@ -68,9 +69,12 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
           placeholder="Buscar por nombre, cargo, empresa o email…"
           className="h-8 w-72"
         />
-        <Button onClick={abrirCrear}>
-          <UserPlus /> Agregar speaker
-        </Button>
+        <div className="flex items-center gap-2">
+          <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
+          <Button onClick={abrirCrear}>
+            <UserPlus /> Agregar speaker
+          </Button>
+        </div>
       </div>
 
       {error && (

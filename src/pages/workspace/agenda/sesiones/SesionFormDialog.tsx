@@ -154,17 +154,18 @@ export function SesionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[832px] max-h-[880px] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {mode === 'edit' ? 'Editar sesión' : 'Nueva sesión'}
-          </DialogTitle>
-          <DialogDescription>
-            Los cambios impactan la programación real del evento.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[880px] overflow-y-auto bg-white p-0">
+        <div className="p-6">
+          <DialogHeader>
+            <DialogTitle>
+              {mode === 'edit' ? 'Editar sesión' : 'Nueva sesión'}
+            </DialogTitle>
+            <DialogDescription>
+              Los cambios impactan la programación real del evento.
+            </DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sesion-titulo">Título *</Label>
             <Input
@@ -330,7 +331,8 @@ export function SesionFormDialog({
               {saving ? 'Guardando…' : 'Guardar'}
             </Button>
           </div>
-        </form>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
   )

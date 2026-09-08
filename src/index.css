@@ -116,8 +116,8 @@ body {
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --popover: oklch(1.000 0.000 0);              /* blanco puro */
+  --popover-foreground: oklch(0.107 0.010 109.733); /* negro */
   /* Fix hover de botones — necesario porque @theme inline no sobreescribe
      :root y button.tsx lee var(--secondary) / var(--primary) desde :root */
   --primary: oklch(0.107 0.010 109.733);        /* negro #1D1D1B */

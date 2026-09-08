@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/dialog'
 import {
   actualizarSpeaker,
-  crearPropiedad,
   crearSpeaker,
   guardarValorPropiedad,
   propiedadesSpeaker,
@@ -34,6 +33,7 @@ import {
   type SpeakerEditable,
 } from '@/hooks/useSpeakersData'
 import { formatDiaLargo } from '../sesiones/format'
+import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { asChecklist, iniciales } from './speakerUtils'
 
 const CAMPOS: { key: keyof SpeakerEditable; label: string; required?: boolean }[] = [
@@ -50,7 +50,6 @@ const CAMPOS: { key: keyof SpeakerEditable; label: string; required?: boolean }[
   { key: 'email_secundario', label: 'Email secundario' },
 ]
 
-const TIPOS_PROP = ['checklist', 'texto', 'select', 'fecha'] as const
 
 type FormState = Record<keyof SpeakerEditable, string>
 
@@ -98,10 +97,6 @@ export function SpeakerPerfilDialog({
   const [valores, setValores] = useState<Record<string, unknown>>({})
   const [cargandoDerecha, setCargandoDerecha] = useState(false)
 
-  const [nuevaPropOpen, setNuevaPropOpen] = useState(false)
-  const [nuevaPropNombre, setNuevaPropNombre] = useState('')
-  const [nuevaPropTipo, setNuevaPropTipo] = useState<string>('checklist')
-  const [creandoProp, setCreandoProp] = useState(false)
   const [nuevoItem, setNuevoItem] = useState<Record<string, string>>({})
 
   const speakerId = speaker?.id ?? null
@@ -196,44 +191,27 @@ export function SpeakerPerfilDialog({
     void persistirValor(prop.id, next)
   }
 
-  async function handleCrearPropiedad() {
-    if (!nuevaPropNombre.trim()) {
-      toast.error('Escribe un nombre para la propiedad.')
-      return
-    }
-    setCreandoProp(true)
-    try {
-      await crearPropiedad(eventoId, nuevaPropNombre.trim(), nuevaPropTipo)
-      toast.success('Propiedad creada')
-      setNuevaPropOpen(false)
-      setNuevaPropNombre('')
-      setNuevaPropTipo('checklist')
-      await recargarSeguimiento()
-      // La propiedad es global del evento: refresca la tabla para que
-      // aparezca como columna para todos los speakers.
-      onSaved()
-    } catch (err) {
-      toast.error(
-        `No se pudo crear: ${err instanceof Error ? err.message : String(err)}`,
-      )
-    } finally {
-      setCreandoProp(false)
-    }
+  async function handlePropiedadCreada() {
+    await recargarSeguimiento()
+    // La propiedad es global del evento: refresca la tabla para que
+    // aparezca como columna para todos los speakers.
+    onSaved()
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[832px] max-h-[880px] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {mode === 'edit' ? 'Perfil del speaker' : 'Nuevo speaker'}
-          </DialogTitle>
-          <DialogDescription>
-            Datos del pool global de speakers y su seguimiento en este evento.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[880px] overflow-y-auto bg-white p-0">
+        <div className="p-6">
+          <DialogHeader>
+            <DialogTitle>
+              {mode === 'edit' ? 'Perfil del speaker' : 'Nuevo speaker'}
+            </DialogTitle>
+            <DialogDescription>
+              Datos del pool global de speakers y su seguimiento en este evento.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-2">
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
           {/* ── Columna izquierda: datos ─────────────────────────── */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
@@ -425,67 +403,19 @@ export function SpeakerPerfilDialog({
                     </div>
                   ))}
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNuevaPropOpen(true)}
-                  >
-                    + Nueva propiedad
-                  </Button>
+                  <div>
+                    <NuevaPropiedadDialog
+                      eventoId={eventoId}
+                      onCreada={handlePropiedadCreada}
+                    />
+                  </div>
                 </div>
               </>
             )}
           </div>
+          </div>
         </div>
       </DialogContent>
-
-      <Dialog open={nuevaPropOpen} onOpenChange={setNuevaPropOpen}>
-        <DialogContent className="max-w-sm bg-background">
-          <DialogHeader>
-            <DialogTitle>Nueva propiedad de seguimiento</DialogTitle>
-            <DialogDescription>
-              Aplica a los speakers de este evento.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prop-nombre">Nombre</Label>
-            <Input
-              id="prop-nombre"
-              value={nuevaPropNombre}
-              onChange={(e) => setNuevaPropNombre(e.target.value)}
-              placeholder="Ej. Checklist de piezas"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Tipo</Label>
-            <Select value={nuevaPropTipo} onValueChange={setNuevaPropTipo}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIPOS_PROP.map((tipo) => (
-                  <SelectItem key={tipo} value={tipo}>
-                    {tipo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setNuevaPropOpen(false)}
-              disabled={creandoProp}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleCrearPropiedad} disabled={creandoProp}>
-              {creandoProp ? 'Creando…' : 'Crear'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </Dialog>
   )
 }
