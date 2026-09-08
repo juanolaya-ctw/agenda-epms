@@ -339,18 +339,24 @@ export async function speakersDeSesion(
 
 export async function buscarSpeakers(
   termino: string,
+  limit = 8,
 ): Promise<{ data: SpeakerLite[]; error: string | null }> {
   const term = termino.trim()
-  if (term.length < 2) return { data: [], error: null }
 
-  const pattern = `%${term}%`
-  const res = await supabase
+  let query = supabase
     .from('speakers')
     .select('id, nombre, cargo, empresa, foto_url')
-    .or(`nombre.ilike.${pattern},empresa.ilike.${pattern}`)
     .order('nombre')
-    .limit(8)
+    .limit(limit)
 
+  if (term.length > 0) {
+    const pattern = `%${term}%`
+    query = query.or(
+      `nombre.ilike.${pattern},empresa.ilike.${pattern},cargo.ilike.${pattern}`,
+    )
+  }
+
+  const res = await query
   if (res.error) return { data: [], error: res.error.message }
   return {
     data: (res.data ?? []).map((row) => toSpeakerLite(row as SpeakerRow)),

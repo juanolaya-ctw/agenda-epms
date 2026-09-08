@@ -91,27 +91,27 @@ export function SpeakersAsignados({
   }, [sesionId])
 
   useEffect(() => {
-    if (debounce.current) clearTimeout(debounce.current)
-    const term = termino.trim()
-    if (term.length < 2) {
+    if (!foco) {
       setResultados([])
       setBuscando(false)
       return
     }
+    if (debounce.current) clearTimeout(debounce.current)
+    const term = termino.trim()
     setBuscando(true)
     debounce.current = setTimeout(async () => {
-      const { data, error } = await buscarSpeakers(term)
+      const { data, error } = await buscarSpeakers(term, term ? 8 : 5)
       setBuscando(false)
       if (error) {
         toast.error(`Error al buscar speakers: ${error}`)
         return
       }
       setResultados(data)
-    }, 300)
+    }, term ? 250 : 0)
     return () => {
       if (debounce.current) clearTimeout(debounce.current)
     }
-  }, [termino])
+  }, [termino, foco])
 
   const idsAsignados = useMemo(
     () => new Set(asignados.map((row) => row.id)),
@@ -247,7 +247,7 @@ export function SpeakersAsignados({
                 Capacidad completa.
               </p>
             )}
-            {foco && termino.trim().length >= 2 && (
+            {foco && (
               <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md">
                 {buscando && (
                   <p className="px-3 py-2 text-xs text-muted-foreground">
@@ -256,7 +256,7 @@ export function SpeakersAsignados({
                 )}
                 {!buscando && disponibles.length === 0 && (
                   <p className="px-3 py-2 text-xs text-muted-foreground">
-                    Sin coincidencias.
+                    {termino.trim() ? 'Sin coincidencias.' : 'No hay speakers.'}
                   </p>
                 )}
                 {disponibles.map((speaker) => (
