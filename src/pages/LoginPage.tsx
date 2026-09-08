@@ -33,7 +33,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[#e9ebdf]">
       {/* Zona izquierda — 40% */}
       <div className="w-2/5 max-md:w-full shrink-0 bg-[#e9ebdf] pl-[166px] pt-[111px] pr-8 pb-16">
         <img
@@ -42,7 +42,7 @@ export function LoginPage() {
           className="h-[41px] w-auto"
         />
 
-        <h1 className="mt-[80px] font-semibold text-[58px] leading-[1.05] text-[#040402]">
+        <h1 className="mt-[80px] font-semibold text-[clamp(32px,3.5vw,48px)] leading-[1.05] text-[#040402]">
           Workspace para la
           <br />
           gestión de eventos.
@@ -87,12 +87,12 @@ export function LoginPage() {
         </form>
       </div>
 
-      {/* Zona derecha — 60% */}
-      <div className="relative w-3/5 overflow-hidden max-md:hidden">
+      {/* Zona derecha — 60% (sin fondo propio, hereda el verde oliva) */}
+      <div className="w-3/5 overflow-hidden max-md:hidden">
         <img
           src={ILUSTRACION_URL}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          className="h-full w-full object-cover object-left"
         />
       </div>
     </div>
