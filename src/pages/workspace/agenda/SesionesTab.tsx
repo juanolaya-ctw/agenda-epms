@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { SesionesTablaView } from './sesiones/SesionesTablaView'
+import { SesionesKanbanView } from './sesiones/SesionesKanbanView'
+import { SesionesCalendarioView } from './sesiones/SesionesCalendarioView'
 
 const SUBVISTAS = [
   { id: 'tabla', label: 'Tabla' },
@@ -16,6 +18,11 @@ export function SesionesTab() {
   const [subVista, setSubVista] = useState<SubVista>('tabla')
   const { id } = useParams()
   const { workspace } = useWorkspace()
+
+  const eventoRango = {
+    inicio: workspace?.fechaInicio ?? '',
+    fin: workspace?.fechaFin ?? '',
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -37,23 +44,18 @@ export function SesionesTab() {
         ))}
       </div>
 
-      {subVista === 'tabla' &&
-        (id ? (
-          <SesionesTablaView
-            eventoId={id}
-            eventoRango={{
-              inicio: workspace?.fechaInicio ?? '',
-              fin: workspace?.fechaFin ?? '',
-            }}
-          />
-        ) : (
-          <div>Vista tabla de sesiones — próximamente</div>
-        ))}
-      {subVista === 'kanban' && (
-        <div>Vista Kanban de sesiones — próximamente</div>
-      )}
-      {subVista === 'calendario' && (
-        <div>Vista Calendario — próximamente</div>
+      {!id ? (
+        <div>Selecciona un evento para ver las sesiones.</div>
+      ) : (
+        <>
+          {subVista === 'tabla' && (
+            <SesionesTablaView eventoId={id} eventoRango={eventoRango} />
+          )}
+          {subVista === 'kanban' && <SesionesKanbanView eventoId={id} />}
+          {subVista === 'calendario' && (
+            <SesionesCalendarioView eventoId={id} eventoRango={eventoRango} />
+          )}
+        </>
       )}
     </div>
   )

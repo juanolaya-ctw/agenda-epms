@@ -261,6 +261,180 @@ export async function eliminarSesion(
   return { error: res.error?.message ?? null }
 }
 
+export async function actualizarEstadoSesion(
+  sesionId: string,
+  estado: string,
+): Promise<{ error: string | null }> {
+  const res = await supabase
+    .from('sesiones')
+    .update({ estado })
+    .eq('id', sesionId)
+  return { error: res.error?.message ?? null }
+}
+
+export type SpeakerLite = {
+  id: string
+  nombre: string
+  cargo: string | null
+  empresa: string | null
+  fotoUrl: string | null
+}
+
+export type SesionSpeaker = SpeakerLite & {
+  sesionSpeakerId: string
+  rol: string
+}
+
+export const ROLES_SPEAKER = [
+  'moderador',
+  'panelista',
+  'host',
+  'keynote',
+] as const
+
+type SpeakerRow = {
+  id: string
+  nombre: string | null
+  cargo: string | null
+  empresa: string | null
+  foto_url: string | null
+}
+
+function toSpeakerLite(row: SpeakerRow): SpeakerLite {
+  return {
+    id: row.id,
+    nombre: row.nombre ?? '',
+    cargo: row.cargo ?? null,
+    empresa: row.empresa ?? null,
+    fotoUrl: row.foto_url ?? null,
+  }
+}
+
+export async function speakersDeSesion(
+  sesionId: string,
+): Promise<{ data: SesionSpeaker[]; error: string | null }> {
+  const res = await supabase
+    .from('sesion_speakers')
+    .select('id, rol, speaker:speakers(id, nombre, cargo, empresa, foto_url)')
+    .eq('sesion_id', sesionId)
+    .order('created_at')
+
+  if (res.error) return { data: [], error: res.error.message }
+
+  const data: SesionSpeaker[] = (res.data ?? [])
+    .map((row) => {
+      const rel = (row as { speaker: unknown }).speaker
+      const speaker = (Array.isArray(rel) ? rel[0] : rel) as SpeakerRow | null
+      if (!speaker) return null
+      return {
+        ...toSpeakerLite(speaker),
+        sesionSpeakerId: row.id as string,
+        rol: (row.rol as string | null) ?? 'panelista',
+      }
+    })
+    .filter((row): row is SesionSpeaker => row !== null)
+
+  return { data, error: null }
+}
+
+export async function buscarSpeakers(
+  termino: string,
+): Promise<{ data: SpeakerLite[]; error: string | null }> {
+  const term = termino.trim()
+  if (term.length < 2) return { data: [], error: null }
+
+  const pattern = `%${term}%`
+  const res = await supabase
+    .from('speakers')
+    .select('id, nombre, cargo, empresa, foto_url')
+    .or(`nombre.ilike.${pattern},empresa.ilike.${pattern}`)
+    .order('nombre')
+    .limit(8)
+
+  if (res.error) return { data: [], error: res.error.message }
+  return {
+    data: (res.data ?? []).map((row) => toSpeakerLite(row as SpeakerRow)),
+    error: null,
+  }
+}
+
+export async function asignarSpeaker(
+  sesionId: string,
+  speakerId: string,
+  rol = 'panelista',
+): Promise<{ error: string | null }> {
+  const res = await supabase
+    .from('sesion_speakers')
+    .insert({ sesion_id: sesionId, speaker_id: speakerId, rol })
+  return { error: res.error?.message ?? null }
+}
+
+export async function cambiarRolSpeaker(
+  sesionSpeakerId: string,
+  rol: string,
+): Promise<{ error: string | null }> {
+  const res = await supabase
+    .from('sesion_speakers')
+    .update({ rol })
+    .eq('id', sesionSpeakerId)
+  return { error: res.error?.message ?? null }
+}
+
+export async function desasignarSpeaker(
+  sesionSpeakerId: string,
+): Promise<{ error: string | null }> {
+  const res = await supabase
+    .from('sesion_speakers')
+    .delete()
+    .eq('id', sesionSpeakerId)
+  return { error: res.error?.message ?? null }
+}
+
+function shiftTime(value: string | null, minutos: number): string {
+  const [h = '0', m = '0', s = '0'] = (value ?? '00:00:00').split(':')
+  const total = Number(h) * 60 + Number(m) + minutos
+  const wrapped = ((total % 1440) + 1440) % 1440
+  const hh = String(Math.floor(wrapped / 60)).padStart(2, '0')
+  const mm = String(wrapped % 60).padStart(2, '0')
+  const ss = String(Number(s)).padStart(2, '0')
+  return `${hh}:${mm}:${ss}`
+}
+
+export async function desplazarAgenda(
+  eventoId: string,
+  minutos: number,
+): Promise<{ error: string | null }> {
+  const escenariosRes = await supabase
+    .from('escenarios')
+    .select('id')
+    .eq('evento_id', eventoId)
+
+  if (escenariosRes.error) return { error: escenariosRes.error.message }
+  const escenarioIds = (escenariosRes.data ?? []).map((row) => row.id as string)
+  if (escenarioIds.length === 0) return { error: null }
+
+  const slotsRes = await supabase
+    .from('slots')
+    .select('id, hora_inicio, hora_fin')
+    .in('escenario_id', escenarioIds)
+
+  if (slotsRes.error) return { error: slotsRes.error.message }
+
+  const updates = (slotsRes.data ?? []).map((slot) =>
+    supabase
+      .from('slots')
+      .update({
+        hora_inicio: shiftTime(slot.hora_inicio as string | null, minutos),
+        hora_fin: shiftTime(slot.hora_fin as string | null, minutos),
+      })
+      .eq('id', slot.id as string),
+  )
+
+  const results = await Promise.all(updates)
+  const failed = results.find((res) => res.error)
+  return { error: failed?.error?.message ?? null }
+}
+
 export function useSesionesData(
   eventoId: string | null | undefined,
 ): SesionesData {

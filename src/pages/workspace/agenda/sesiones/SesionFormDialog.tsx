@@ -12,13 +12,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   actualizarSesion,
   crearSesion,
@@ -26,11 +25,12 @@ import {
   type Sesion,
   type SesionFormValues,
 } from '@/hooks/useSesionesData'
+import { SpeakersAsignados } from './SpeakersAsignados'
 
 const ESTADOS = ['BORRADOR', 'CONFIRMADA', 'CANCELADA'] as const
 const SIN_TRACK = '__sin_track__'
 
-type SesionFormSheetProps = {
+type SesionFormDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   mode: 'create' | 'edit'
@@ -55,10 +55,7 @@ type FormState = {
   estado: string
 }
 
-function initialState(
-  sesion: Sesion | null,
-  rangoInicio: string,
-): FormState {
+function initialState(sesion: Sesion | null, rangoInicio: string): FormState {
   return {
     titulo: sesion?.titulo ?? '',
     descripcion: sesion?.descripcion ?? '',
@@ -87,7 +84,7 @@ function validate(form: FormState): string | null {
   return null
 }
 
-export function SesionFormSheet({
+export function SesionFormDialog({
   open,
   onOpenChange,
   mode,
@@ -97,7 +94,7 @@ export function SesionFormSheet({
   formatos,
   eventoRango,
   onSaved,
-}: SesionFormSheetProps) {
+}: SesionFormDialogProps) {
   const [form, setForm] = useState<FormState>(() =>
     initialState(sesion, eventoRango.inicio),
   )
@@ -108,10 +105,14 @@ export function SesionFormSheet({
       setForm(initialState(sesion, eventoRango.inicio))
       setSaving(false)
     }
-  }, [open, sesion, eventoRango.inicio])
+    // Reinicia solo al abrir o al cambiar de sesión, no en cada refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sesion?.id, eventoRango.inicio])
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
+
+  const capacidadNum = Math.max(1, Number(form.capacidadSpeakers) || 1)
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -146,29 +147,24 @@ export function SesionFormSheet({
       return
     }
 
-    toast.success(
-      mode === 'edit' ? 'Sesión actualizada' : 'Sesión creada',
-    )
+    toast.success(mode === 'edit' ? 'Sesión actualizada' : 'Sesión creada')
     onOpenChange(false)
     onSaved()
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto bg-background">
+        <DialogHeader>
+          <DialogTitle>
             {mode === 'edit' ? 'Editar sesión' : 'Nueva sesión'}
-          </SheetTitle>
-          <SheetDescription>
+          </DialogTitle>
+          <DialogDescription>
             Los cambios impactan la programación real del evento.
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-4 px-4 pb-4"
-        >
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sesion-titulo">Título *</Label>
             <Input
@@ -191,43 +187,45 @@ export function SesionFormSheet({
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Formato *</Label>
-            <Select
-              value={form.formato}
-              onValueChange={(value) => set('formato', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un formato" />
-              </SelectTrigger>
-              <SelectContent>
-                {formatos.map((formato) => (
-                  <SelectItem key={formato.id} value={formato.nombre}>
-                    {formato.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label>Formato *</Label>
+              <Select
+                value={form.formato}
+                onValueChange={(value) => set('formato', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un formato" />
+                </SelectTrigger>
+                <SelectContent>
+                  {formatos.map((formato) => (
+                    <SelectItem key={formato.id} value={formato.nombre}>
+                      {formato.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Track</Label>
-            <Select
-              value={form.track}
-              onValueChange={(value) => set('track', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un track" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={SIN_TRACK}>Sin track</SelectItem>
-                {tracks.map((track) => (
-                  <SelectItem key={track.id} value={track.nombre}>
-                    {track.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-1.5">
+              <Label>Track</Label>
+              <Select
+                value={form.track}
+                onValueChange={(value) => set('track', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un track" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SIN_TRACK}>Sin track</SelectItem>
+                  {tracks.map((track) => (
+                    <SelectItem key={track.id} value={track.nombre}>
+                      {track.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -314,10 +312,13 @@ export function SesionFormSheet({
             </div>
           </div>
 
-          <SheetFooter className="px-0">
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Guardando…' : 'Guardar'}
-            </Button>
+          <SpeakersAsignados
+            sesionId={sesion?.id ?? null}
+            capacidad={capacidadNum}
+            onChanged={onSaved}
+          />
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -325,9 +326,12 @@ export function SesionFormSheet({
             >
               Cancelar
             </Button>
-          </SheetFooter>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </div>
         </form>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
 }

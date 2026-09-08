@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, CalendarPlus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -38,13 +37,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { eliminarSesion, useSesionesData, type Sesion } from '@/hooks/useSesionesData'
-import { SesionFormSheet } from './SesionFormSheet'
+import { SesionFormDialog } from './SesionFormDialog'
+import { EstadoBadge, FormatoBadge } from './badges'
+import { formatDiaLargo } from './format'
 
-const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-const MESES = [
-  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
-]
 const ESTADOS = ['BORRADOR', 'CONFIRMADA', 'CANCELADA'] as const
 const TODOS = '__todos__'
 
@@ -59,13 +55,6 @@ type SortKey =
   | 'estado'
 
 type SortState = { key: SortKey; dir: 'asc' | 'desc' }
-
-function formatDia(iso: string): string {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y || !m || !d) return iso
-  return `${DIAS[new Date(y, m - 1, d).getDay()]}, ${d} ${MESES[m - 1]}`
-}
 
 function sortValue(row: Sesion, key: SortKey): string | number {
   switch (key) {
@@ -88,32 +77,6 @@ function sortValue(row: Sesion, key: SortKey): string | number {
     case 'estado':
       return row.estado
   }
-}
-
-function FormatoBadge({ formato }: { formato: string | null }) {
-  if (!formato) return <span className="text-muted-foreground">—</span>
-  const normal = formato.toLowerCase()
-  if (normal.includes('keynote'))
-    return <Badge variant="secondary">{formato}</Badge>
-  if (normal.includes('panel')) return <Badge>{formato}</Badge>
-  if (normal.includes('workshop'))
-    return (
-      <Badge className="bg-muted text-muted-foreground">{formato}</Badge>
-    )
-  return <Badge variant="outline">{formato}</Badge>
-}
-
-function EstadoBadge({ estado }: { estado: string }) {
-  const styles: Record<string, string> = {
-    BORRADOR: 'bg-status-pending/20 text-foreground border border-status-pending/50',
-    CONFIRMADA: 'bg-status-approved/20 text-foreground border border-status-approved/50',
-    CANCELADA: 'bg-status-rejected/15 text-destructive border border-status-rejected/40',
-  }
-  return (
-    <Badge className={cn('font-medium', styles[estado] ?? 'bg-muted text-muted-foreground')}>
-      {estado}
-    </Badge>
-  )
 }
 
 function SortHeader({
@@ -360,7 +323,7 @@ export function SesionesTablaView({
                           {sesion.track ?? '—'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          {formatDia(sesion.dia)}
+                          {formatDiaLargo(sesion.dia)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap tabular-nums">
                           {sesion.horaInicio && sesion.horaFin
@@ -411,7 +374,7 @@ export function SesionesTablaView({
         )}
       </div>
 
-      <SesionFormSheet
+      <SesionFormDialog
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         mode={sheetMode}
