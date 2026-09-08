@@ -5,9 +5,7 @@ import { WorkspaceCoverBanner } from '@/components/layout/WorkspaceCoverBanner'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { useDashboardData } from '@/hooks/useDashboardData'
 import { cn } from '@/lib/utils'
-import type { Role } from '@/contexts/RoleContext'
-
-type ViewRole = Exclude<Role, null>
+import type { ViewRole } from '@/lib/workspaceRoutes'
 
 type TabItem = {
   label: string

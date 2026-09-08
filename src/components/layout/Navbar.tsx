@@ -1,27 +1,23 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ChevronDown, Settings } from 'lucide-react'
-import { useRole, type Role } from '@/contexts/RoleContext'
+import { ChevronDown, LogOut, Settings } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
-import { workspaceHomePath } from '@/lib/workspaceRoutes'
+import { workspaceHomePath, type ViewRole } from '@/lib/workspaceRoutes'
 import { cn } from '@/lib/utils'
 
-const AREA = {
-  agenda: { name: 'Agenda Ops', initials: 'TS' },
-  sales: { name: 'Sales', initials: 'SA' },
-  cs: { name: 'Customer Success', initials: 'CS' },
-} as const
-
-const ROLE_OPTIONS: { role: Exclude<Role, null>; label: string }[] = [
+const ROLE_OPTIONS: { role: ViewRole; label: string }[] = [
   { role: 'agenda', label: 'Equipo Agenda' },
   { role: 'sales', label: 'Sales' },
   { role: 'cs', label: 'Customer Success' },
 ]
+
+function iniciales(nombre: string): string {
+  const partes = nombre.trim().split(/\s+/).filter(Boolean)
+  if (partes.length === 0) return 'EP'
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase()
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+}
 
 function Dropdown({
   trigger,
@@ -66,12 +62,19 @@ export function Navbar() {
   const navigate = useNavigate()
   const location = useLocation()
   const { id: routeWorkspaceId } = useParams()
-  const { role, setRole } = useRole()
+  const { usuario, signOut } = useAuth()
   const { workspaces, workspace, setWorkspace } = useWorkspace()
 
-  const area = role ? AREA[role] : { name: 'EPMS', initials: 'EP' }
+  const nombre = usuario?.nombre ?? 'EPMS'
+  const initials = usuario ? iniciales(usuario.nombre) : 'EP'
+  const areaName = usuario?.area ?? 'EPMS'
+  const isAdmin = usuario?.rol === 'admin'
+
+  const currentView = location.pathname.match(
+    /\/workspace\/[^/]+\/(agenda|sales|cs)/,
+  )?.[1] as ViewRole | undefined
   const activeRoleLabel =
-    ROLE_OPTIONS.find((o) => o.role === role)?.label ?? 'Seleccionar rol'
+    ROLE_OPTIONS.find((o) => o.role === currentView)?.label ?? 'Seleccionar vista'
 
   function selectWorkspace(nextId: string) {
     const next = workspaces.find((w) => w.id === nextId)
@@ -87,11 +90,15 @@ export function Navbar() {
     }
   }
 
-  function switchRole(next: Exclude<Role, null>) {
-    setRole(next)
+  function switchView(next: ViewRole) {
     const id = workspace?.id ?? workspaces[0]?.id
     if (id) navigate(workspaceHomePath(id, next))
     else navigate('/home')
+  }
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login')
   }
 
   return (
@@ -104,12 +111,12 @@ export function Navbar() {
             className="flex min-w-0 max-w-[320px] items-center gap-3 text-left"
           >
             <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-semibold text-white">
-              {area.initials}
+              {initials}
             </div>
             <div className="min-w-0 leading-tight">
-              <p className="truncate font-semibold">{area.name}</p>
+              <p className="truncate font-semibold">{nombre}</p>
               <p className="truncate text-sm text-muted-foreground">
-                {workspace?.nombre ?? 'Sin evento seleccionado'}
+                {areaName} · {workspace?.nombre ?? 'Sin evento'}
               </p>
             </div>
           </button>
@@ -151,39 +158,50 @@ export function Navbar() {
             </button>
           </>
         )}
+        <div className="my-1 border-t border-border" />
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-muted"
+          onClick={handleSignOut}
+        >
+          <LogOut className="size-4" />
+          Cerrar sesión
+        </button>
       </Dropdown>
 
       <div className="flex-1" />
 
-      <div className="flex flex-col items-end">
-        <p className="text-xs text-muted-foreground">Ingresar como</p>
-        <Dropdown
-          align="end"
-          trigger={
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-sm font-semibold"
-            >
-              {activeRoleLabel}
-              <ChevronDown className="size-4 text-muted-foreground" />
-            </button>
-          }
-        >
-          {ROLE_OPTIONS.map((option) => (
-            <button
-              key={option.role}
-              type="button"
-              className={cn(
-                'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
-                option.role === role && 'font-semibold',
-              )}
-              onClick={() => switchRole(option.role)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </Dropdown>
-      </div>
+      {isAdmin && (
+        <div className="flex flex-col items-end">
+          <p className="text-xs text-muted-foreground">Ingresar como</p>
+          <Dropdown
+            align="end"
+            trigger={
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-sm font-semibold"
+              >
+                {activeRoleLabel}
+                <ChevronDown className="size-4 text-muted-foreground" />
+              </button>
+            }
+          >
+            {ROLE_OPTIONS.map((option) => (
+              <button
+                key={option.role}
+                type="button"
+                className={cn(
+                  'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
+                  option.role === currentView && 'font-semibold',
+                )}
+                onClick={() => switchView(option.role)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </Dropdown>
+        </div>
+      )}
     </header>
   )
 }

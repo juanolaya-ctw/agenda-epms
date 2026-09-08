@@ -2,9 +2,9 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Image as ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { useRole } from '@/contexts/RoleContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace, type Workspace } from '@/contexts/WorkspaceContext'
-import { workspaceHomePath } from '@/lib/workspaceRoutes'
+import { areaToRoute, workspaceHomePath } from '@/lib/workspaceRoutes'
 import { supabase } from '@/lib/supabase'
 
 function formatDateRange(inicio: string, fin: string): string {
@@ -34,7 +34,7 @@ type WorkspaceCardProps = {
 
 export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
   const navigate = useNavigate()
-  const { role } = useRole()
+  const { usuario } = useAuth()
   const { workspace: active, setWorkspace } = useWorkspace()
   const isActive = active?.id === workspace.id
 
@@ -46,8 +46,11 @@ export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
 
   function open() {
     setWorkspace(workspace)
-    if (role) navigate(workspaceHomePath(workspace.id, role))
-    else navigate(`/workspace/${workspace.id}/agenda`)
+    const view =
+      usuario && usuario.rol !== 'admin'
+        ? areaToRoute(usuario.area)
+        : 'agenda'
+    navigate(workspaceHomePath(workspace.id, view))
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
