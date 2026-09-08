@@ -2,10 +2,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
+import { supabase } from '@/lib/supabase'
 
 export type Workspace = {
   id: string
@@ -24,20 +26,45 @@ const LIST_STORAGE_KEY = 'epms_workspaces'
 const GOVTECH_EVENT_ID = '2f042639-cc2d-4c06-bea3-f8316a3419c1'
 const LEGACY_GOVTECH_ID = 'govtech-2026'
 
-const MOCK_WORKSPACES: Workspace[] = [
+// La fuente de verdad de los eventos es epms.eventos (ver loadEventos abajo).
+// Esta lista solo se usa como estado inicial síncrono mientras llega la
+// respuesta de Supabase, o si Supabase no responde.
+const FALLBACK_WORKSPACES: Workspace[] = [
   {
     id: GOVTECH_EVENT_ID,
     nombre: 'GovTech Summit | 2026',
     fechaInicio: '2026-08-13',
     fechaFin: '2026-08-14',
   },
-  {
-    id: 'ai-summit-2027',
-    nombre: 'AI Summit 2027',
-    fechaInicio: '2027-05-07',
-    fechaFin: '2027-05-08',
-  },
 ]
+
+type EventoRow = {
+  id: string
+  nombre: string | null
+  fecha_inicio: string | null
+  fecha_fin: string | null
+  cover_url: string | null
+}
+
+function mapEvento(row: EventoRow): Workspace {
+  const ws: Workspace = {
+    id: row.id,
+    nombre: row.nombre ?? '',
+    fechaInicio: row.fecha_inicio ?? '',
+    fechaFin: row.fecha_fin ?? '',
+  }
+  if (row.cover_url) ws.coverUrl = row.cover_url
+  return ws
+}
+
+async function loadEventos(): Promise<Workspace[] | null> {
+  const { data, error } = await supabase
+    .from('eventos')
+    .select('id, nombre, fecha_inicio, fecha_fin, cover_url, activo')
+    .order('created_at', { ascending: false })
+  if (error || !data) return null
+  return (data as EventoRow[]).map(mapEvento)
+}
 
 type WorkspaceContextValue = {
   workspaces: Workspace[]
@@ -66,21 +93,19 @@ function migrateWorkspaces(list: Workspace[]): Workspace[] {
 function readStoredList(): Workspace[] {
   try {
     const raw = localStorage.getItem(LIST_STORAGE_KEY)
-    if (!raw) return MOCK_WORKSPACES
+    if (!raw) return FALLBACK_WORKSPACES
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed) || parsed.length === 0) return MOCK_WORKSPACES
+    if (!Array.isArray(parsed) || parsed.length === 0) return FALLBACK_WORKSPACES
     return migrateWorkspaces(parsed as Workspace[])
   } catch {
-    return MOCK_WORKSPACES
+    return FALLBACK_WORKSPACES
   }
 }
 
-function readStoredActiveId(list: Workspace[]): string | null {
+function readStoredActiveId(): string | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const id = migrateWorkspaceId(raw)
-    if (list.some((w) => w.id === id)) return id
+    if (raw) return migrateWorkspaceId(raw)
   } catch {
     // localStorage no disponible
   }
@@ -99,9 +124,7 @@ function slugify(nombre: string): string {
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(readStoredList)
-  const [activeId, setActiveId] = useState<string | null>(() =>
-    readStoredActiveId(readStoredList()),
-  )
+  const [activeId, setActiveId] = useState<string | null>(readStoredActiveId)
 
   const persistList = useCallback((next: Workspace[]) => {
     try {
@@ -110,6 +133,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // no-op
     }
   }, [])
+
+  // Fuente de verdad: epms.eventos. Al montar, reemplaza la lista local con
+  // los eventos reales (incluye cover_url), conservando cualquier workspace
+  // creado solo en el cliente que aún no exista en Supabase.
+  useEffect(() => {
+    let cancelled = false
+    loadEventos().then((remotos) => {
+      if (cancelled || !remotos) return
+      setWorkspaces((prev) => {
+        const locales = new Map(prev.map((w) => [w.id, w]))
+        const merged = remotos.map((remoto) => {
+          const local = locales.get(remoto.id)
+          locales.delete(remoto.id)
+          return local ? { ...local, ...remoto } : remoto
+        })
+        const soloLocales = [...locales.values()]
+        const next = [...merged, ...soloLocales]
+        persistList(next)
+        return next
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [persistList])
 
   const persistActive = useCallback((id: string | null) => {
     try {
