@@ -12,8 +12,6 @@ import { CrmGlobal } from '@/pages/CrmGlobal'
 import { NotFound } from '@/pages/NotFound'
 import { DashboardTab } from '@/pages/workspace/agenda/DashboardTab'
 import { SesionesTab } from '@/pages/workspace/agenda/SesionesTab'
-import { TablaTab } from '@/pages/workspace/agenda/TablaTab'
-import { CalendarioTab as AgendaCalendarioTab } from '@/pages/workspace/agenda/CalendarioTab'
 import { SpeakersTab } from '@/pages/workspace/agenda/SpeakersTab'
 import { RequestsTab } from '@/pages/workspace/agenda/RequestsTab'
 import { AgendaTab } from '@/pages/workspace/sales/AgendaTab'
@@ -43,8 +41,6 @@ createRoot(document.getElementById('root')!).render(
               >
                 <Route index element={<DashboardTab />} />
                 <Route path="sesiones" element={<SesionesTab />} />
-                <Route path="tabla" element={<TablaTab />} />
-                <Route path="calendario" element={<AgendaCalendarioTab />} />
                 <Route path="speakers" element={<SpeakersTab />} />
                 <Route path="requests" element={<RequestsTab />} />
               </Route>

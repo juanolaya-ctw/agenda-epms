@@ -44,8 +44,6 @@ function tabsFor(id: string, role: ViewRole, requestCount: number): TabItem[] {
     return [
       { label: 'Dashboard', to: `/workspace/${id}/agenda`, end: true },
       { label: 'Sesiones', to: `/workspace/${id}/agenda/sesiones` },
-      { label: 'Tabla', to: `/workspace/${id}/agenda/tabla` },
-      { label: 'Calendario', to: `/workspace/${id}/agenda/calendario` },
       { label: 'Speakers', to: `/workspace/${id}/agenda/speakers` },
       {
         label: 'Requests',
