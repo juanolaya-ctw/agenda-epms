@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, UserPlus } from 'lucide-react'
+import { Pencil, Trash2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +34,7 @@ import { InlineText } from '@/components/InlineText'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
+import { EliminarSpeakerDialog } from './EliminarSpeakerDialog'
 import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
 
 type SpeakersTableProps = { eventoId: string }
@@ -59,6 +60,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
+  const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
 
   // Overrides optimistas para edición inline (no se hace refetch por celda).
   // Campos base: key = speakerId. Propiedades custom: key = `${speakerId}:${propId}`.
@@ -350,14 +352,24 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                       )
                     })}
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Editar ${sp.nombre}`}
-                        onClick={() => abrirEditar(sp)}
-                      >
-                        <Pencil />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Editar ${sp.nombre}`}
+                          onClick={() => abrirEditar(sp)}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Eliminar ${sp.nombre}`}
+                          onClick={() => setSpeakerAEliminar(sp)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -365,6 +377,13 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
           </Table>
         </div>
       )}
+
+      <EliminarSpeakerDialog
+        speaker={speakerAEliminar}
+        eventoId={eventoId}
+        onOpenChange={(open) => !open && setSpeakerAEliminar(null)}
+        onDeleted={refetch}
+      />
 
       <SpeakerPerfilDialog
         open={dialogOpen}

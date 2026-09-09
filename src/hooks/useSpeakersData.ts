@@ -294,6 +294,15 @@ export async function crearSpeaker(
   return data.id as string
 }
 
+export async function eliminarSpeaker(id: string): Promise<void> {
+  // Limpieza explícita de referencias antes del DELETE, por si alguna FK no
+  // tiene ON DELETE CASCADE en la BD real.
+  await supabase.from('sesion_speakers').delete().eq('speaker_id', id)
+  await supabase.from('valores_propiedades').delete().eq('speaker_id', id)
+  const { error } = await supabase.from('speakers').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
 type EscenarioNombreEmbed = { nombre: string | null; evento_id: string }
 type SlotPartEmbed = {
   dia: string | null

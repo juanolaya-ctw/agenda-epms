@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, UserPlus } from 'lucide-react'
+import { Pencil, Trash2, UserPlus } from 'lucide-react'
 import { InlineText } from '@/components/InlineText'
 import { Navbar } from '@/components/layout/Navbar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -23,6 +23,7 @@ import {
   type Speaker,
   type SpeakerEditable,
 } from '@/hooks/useSpeakersData'
+import { EliminarSpeakerDialog } from '@/pages/workspace/agenda/speakers/EliminarSpeakerDialog'
 import { SpeakerPerfilDialog } from '@/pages/workspace/agenda/speakers/SpeakerPerfilDialog'
 import { FuenteBadge, iniciales } from '@/pages/workspace/agenda/speakers/speakerUtils'
 
@@ -65,6 +66,7 @@ export function CrmGlobal() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
+  const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
 
   const ov = useOptimisticOverrides<CampoTexto>()
   const campoActual = (sp: Speaker, campo: CampoTexto): string =>
@@ -238,14 +240,24 @@ export function CrmGlobal() {
                           <EventosBadges nombres={sp.eventosParticipados} />
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Editar ${sp.nombre}`}
-                            onClick={() => abrirEditar(sp)}
-                          >
-                            <Pencil />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Editar ${sp.nombre}`}
+                              onClick={() => abrirEditar(sp)}
+                            >
+                              <Pencil />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Eliminar ${sp.nombre}`}
+                              onClick={() => setSpeakerAEliminar(sp)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -255,6 +267,13 @@ export function CrmGlobal() {
           )}
         </div>
       </main>
+
+      <EliminarSpeakerDialog
+        speaker={speakerAEliminar}
+        eventoId={eventoId}
+        onOpenChange={(open) => !open && setSpeakerAEliminar(null)}
+        onDeleted={refetch}
+      />
 
       <SpeakerPerfilDialog
         open={dialogOpen}
