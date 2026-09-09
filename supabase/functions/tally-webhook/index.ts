@@ -27,18 +27,36 @@ const FIELD_MAP: Record<string, string> = {
   "Material Gráfico (OBLIGATORIO) / Media Assets (REQUIRED)":          "foto_url",
 };
 
-// ─── Extrae el valor de un campo Tally por su label ─────────────────────────
-function extractField(fields: any[], label: string): string | null {
-  const field = fields.find((f: any) => {
-    const fieldLabel = f.label?.trim() ?? "";
-    return fieldLabel === label.trim();
-  });
-  if (!field) return null;
+// ─── Normalización de labels ────────────────────────────────────────────────
+// Tally envía labels con la entidad HTML literal "&nbsp;" sin decodificar
+// donde el FIELD_MAP tiene el carácter NBSP real; normalizamos ambos lados.
+function normalizarLabel(label: string): string {
+  // Causa confirmada por codepoints: Tally manda la entidad HTML literal
+  // "&nbsp;" (6 chars) en vez del caracter NBSP real (U+00A0) de las keys.
+  // Orden: decodificar entidades -> NFKC -> colapsar espacios.
+  return label
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .normalize("NFKC")      // formas Unicode equivalentes → forma canónica
+    .replace(/\s+/g, " ")   // cualquier tipo de espacio (NBSP, thin, etc.) → espacio normal
+    .trim()
+    .toLowerCase();
+}
 
-  const value = field.value;
+// FIELD_MAP con las keys ya normalizadas.
+const FIELD_MAP_NORMALIZADO: Record<string, string> = Object.fromEntries(
+  Object.entries(FIELD_MAP).map(([label, campo]) => [
+    normalizarLabel(label),
+    campo,
+  ])
+);
+
+// ─── Extrae el valor plano de un campo Tally ────────────────────────────────
+function extractValue(field: any): string | null {
+  const value = field?.value;
   if (!value) return null;
 
-  // Archivos subidos a Tally (foto): entrega array de objetos con `url`
+  // Archivos subidos a Tally (foto): array de objetos con `url`
   if (Array.isArray(value) && value[0]?.url) {
     return value[0].url;
   }
@@ -65,6 +83,7 @@ serve(async (req: Request) => {
 
   // El payload de Tally tiene la forma: { data: { fields: [...] } }
   const fields: any[] = body?.data?.fields ?? [];
+
   if (fields.length === 0) {
     return new Response("No fields in payload", { status: 400 });
   }
@@ -86,8 +105,12 @@ serve(async (req: Request) => {
   const telefonoField = fields.find((f: any) => f.type === 'INPUT_PHONE_NUMBER');
   if (telefonoField?.value) speaker.telefono = telefonoField.value;
 
-  for (const [tallyLabel, supabaseField] of Object.entries(FIELD_MAP)) {
-    speaker[supabaseField] = extractField(fields, tallyLabel);
+  for (const f of fields) {
+    if (typeof f?.label !== "string" || f.label === "") continue;
+    const campoDestino = FIELD_MAP_NORMALIZADO[normalizarLabel(f.label)];
+    if (campoDestino) {
+      speaker[campoDestino] = extractValue(f);
+    }
   }
 
   // `nombre` y `email` son obligatorios — si faltan, rechazar
