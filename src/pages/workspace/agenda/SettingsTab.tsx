@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -37,6 +38,7 @@ type EstadoRow = {
   nombre: string
   orden: number
   color: EstadoColor
+  cuentaParaCupos: boolean
 }
 
 const ESTADO_COLORS: { value: EstadoColor; label: string }[] = [
@@ -49,12 +51,15 @@ const ESTADO_COLORS: { value: EstadoColor; label: string }[] = [
 
 const COLORES_VALIDOS = new Set(ESTADO_COLORS.map((c) => c.value))
 
-function normalizeEstado(row: {
+type EstadoDbRow = {
   id: string
   nombre: string | null
   orden: number | null
   color: string | null
-}): EstadoRow {
+  cuenta_para_cupos: boolean | null
+}
+
+function normalizeEstado(row: EstadoDbRow): EstadoRow {
   return {
     id: row.id,
     nombre: row.nombre ?? '',
@@ -62,6 +67,7 @@ function normalizeEstado(row: {
     color: COLORES_VALIDOS.has(row.color as EstadoColor)
       ? (row.color as EstadoColor)
       : 'gray',
+    cuentaParaCupos: row.cuenta_para_cupos ?? true,
   }
 }
 
@@ -150,11 +156,13 @@ function EstadosEditor({
   estados,
   onAdd,
   onUpdateColor,
+  onToggleCuenta,
   onRemove,
 }: {
   estados: EstadoRow[]
   onAdd: (nombre: string) => Promise<void>
   onUpdateColor: (id: string, color: EstadoColor) => Promise<void>
+  onToggleCuenta: (id: string, value: boolean) => Promise<void>
   onRemove: (estado: EstadoRow) => void
 }) {
   const [draft, setDraft] = useState('')
@@ -182,48 +190,59 @@ function EstadosEditor({
         {estados.map((estado) => (
           <li
             key={estado.id}
-            className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-sm"
+            className="flex flex-col gap-1.5 rounded-md bg-muted px-2 py-1.5 text-sm"
           >
-            <span
-              className={cn(
-                'inline-block size-2.5 shrink-0 rounded-full',
-                estadoDotClass(estado.color),
-              )}
-            />
-            <span className="flex-1 truncate">{estado.nombre}</span>
-            <Select
-              value={estado.color}
-              onValueChange={(value) =>
-                void onUpdateColor(estado.id, value as EstadoColor)
-              }
-            >
-              <SelectTrigger className="h-7 w-28 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ESTADO_COLORS.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'inline-block size-2 rounded-full',
-                          estadoDotClass(c.value),
-                        )}
-                      />
-                      {c.label}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <button
-              type="button"
-              aria-label={`Eliminar ${estado.nombre}`}
-              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-              onClick={() => onRemove(estado)}
-            >
-              <X className="size-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  'inline-block size-2.5 shrink-0 rounded-full',
+                  estadoDotClass(estado.color),
+                )}
+              />
+              <span className="flex-1 truncate">{estado.nombre}</span>
+              <Select
+                value={estado.color}
+                onValueChange={(value) =>
+                  void onUpdateColor(estado.id, value as EstadoColor)
+                }
+              >
+                <SelectTrigger className="h-7 w-28 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ESTADO_COLORS.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'inline-block size-2 rounded-full',
+                            estadoDotClass(c.value),
+                          )}
+                        />
+                        {c.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                aria-label={`Eliminar ${estado.nombre}`}
+                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                onClick={() => onRemove(estado)}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <label className="flex items-center gap-2 pl-[18px] text-xs text-muted-foreground">
+              <Checkbox
+                checked={estado.cuentaParaCupos}
+                onCheckedChange={(value) =>
+                  void onToggleCuenta(estado.id, value === true)
+                }
+              />
+              Contar para cupos disponibles
+            </label>
           </li>
         ))}
       </ul>
@@ -304,7 +323,7 @@ export function SettingsTab() {
           .order('nombre'),
         supabase
           .from('estados_sesion')
-          .select('id, nombre, orden, color')
+          .select('id, nombre, orden, color, cuenta_para_cupos')
           .eq('evento_id', eventoId)
           .order('orden'),
       ])
@@ -317,7 +336,7 @@ export function SettingsTab() {
       setFormatos((fmt.data as CatalogItem[] | null) ?? [])
       setTracks((trk.data as CatalogItem[] | null) ?? [])
       setEstados(
-        ((est.data as EstadoRow[] | null) ?? []).map((r) => normalizeEstado(r)),
+        ((est.data ?? []) as EstadoDbRow[]).map((r) => normalizeEstado(r)),
       )
     }
     void load()
@@ -434,11 +453,11 @@ export function SettingsTab() {
       const { data, error } = await supabase
         .from('estados_sesion')
         .insert({ evento_id: eventoId, nombre: nombreItem, orden, color: 'gray' })
-        .select('id, nombre, orden, color')
+        .select('id, nombre, orden, color, cuenta_para_cupos')
         .single()
       if (error) throw new Error(error.message)
       setEstados((prev) =>
-        [...prev, normalizeEstado(data as EstadoRow)].sort(
+        [...prev, normalizeEstado(data as EstadoDbRow)].sort(
           (a, b) => a.orden - b.orden,
         ),
       )
@@ -462,6 +481,25 @@ export function SettingsTab() {
     } catch (err) {
       toast.error(
         `No se pudo cambiar el color: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
+  async function handleToggleCuenta(id: string, value: boolean) {
+    try {
+      const { error } = await supabase
+        .from('estados_sesion')
+        .update({ cuenta_para_cupos: value })
+        .eq('id', id)
+      if (error) throw new Error(error.message)
+      setEstados((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, cuentaParaCupos: value } : e)),
+      )
+    } catch (err) {
+      toast.error(
+        `No se pudo actualizar: ${
           err instanceof Error ? err.message : String(err)
         }`,
       )
@@ -591,6 +629,7 @@ export function SettingsTab() {
           estados={estados}
           onAdd={handleAddEstado}
           onUpdateColor={handleUpdateColorEstado}
+          onToggleCuenta={handleToggleCuenta}
           onRemove={handleRemoveEstado}
         />
       </section>

@@ -8,7 +8,7 @@ import { WorkspaceCard } from '@/components/layout/WorkspaceCard'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { supabase } from '@/lib/supabase'
 
-const ESTADOS_POR_DEFECTO = ['BORRADOR', 'CONFIRMADA', 'CANCELADA']
+const ESTADOS_POR_DEFECTO = ['BORRADOR', 'CONFIRMADA']
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

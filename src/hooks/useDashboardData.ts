@@ -125,6 +125,18 @@ async function fetchSesiones(slotIds: string[]) {
   return { rows: (data ?? []) as SesionRow[], error: queryErrorMessage(error) }
 }
 
+// Nombres de estados marcados `cuenta_para_cupos = true` en el catálogo del
+// evento. Reemplaza el literal 'CANCELADA' hardcodeado. Set vacío = el evento
+// no tiene catálogo → no se filtra por estado (se cuentan todas).
+async function fetchEstadosQueCuentan(eventoId: string): Promise<Set<string>> {
+  const { data } = await supabase
+    .from('estados_sesion')
+    .select('nombre')
+    .eq('evento_id', eventoId)
+    .eq('cuenta_para_cupos', true)
+  return new Set((data ?? []).map((r) => r.nombre as string))
+}
+
 async function fetchAsignadosBySesion(sesionIds: string[]) {
   if (sesionIds.length === 0) {
     return { map: new Map<string, number>(), error: null as string | null }
@@ -151,9 +163,14 @@ function construirSesionesAbiertas(
     { dia: string; hora_inicio: string; escenario_id: string }
   >,
   escenarioNombre: Map<string, string>,
+  estadosQueCuentan: Set<string>,
 ): SesionConCupo[] {
+  const filtrarPorEstado = estadosQueCuentan.size > 0
   return rows
-    .filter((row) => row.estado !== 'CANCELADA')
+    .filter(
+      (row) =>
+        !filtrarPorEstado || estadosQueCuentan.has((row.estado ?? '').trim()),
+    )
     .map((row) => {
       const slot = slotsById.get(row.slot_id ?? '')
       return {
@@ -189,7 +206,11 @@ async function countRequests(sesionIds: string[], estado: 'PENDIENTE' | 'EN_REVI
 }
 
 async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loading'>> {
-  const graph = await loadEventGraph(eventoId)
+  // El catálogo de estados solo depende de eventoId → en paralelo con el grafo.
+  const [graph, estadosQueCuentan] = await Promise.all([
+    loadEventGraph(eventoId),
+    fetchEstadosQueCuentan(eventoId),
+  ])
   if (graph.error) {
     return {
       ...EMPTY,
@@ -231,6 +252,7 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
     asignados.map,
     graph.slotsById,
     graph.escenarioNombre,
+    estadosQueCuentan,
   )
 
   const kpiErrors: DashboardData['kpiErrors'] = {}

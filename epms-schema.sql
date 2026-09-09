@@ -73,13 +73,17 @@ CREATE TABLE epms.slots (
 
 -- 5b. Estados de sesión (catálogo editable por evento, igual que tracks/formatos)
 CREATE TABLE epms.estados_sesion (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    evento_id   uuid NOT NULL REFERENCES epms.eventos(id) ON DELETE CASCADE,
-    nombre      text NOT NULL,
-    orden       integer NOT NULL DEFAULT 0,
-    color       text DEFAULT 'gray',  -- 'gray'|'yellow'|'green'|'red'|'blue' — usado en badges/kanban
-    created_at  timestamptz DEFAULT now()
+    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    evento_id          uuid NOT NULL REFERENCES epms.eventos(id) ON DELETE CASCADE,
+    nombre             text NOT NULL,
+    orden              integer NOT NULL DEFAULT 0,
+    color              text DEFAULT 'gray',  -- 'gray'|'yellow'|'green'|'red'|'blue' — badges/kanban
+    cuenta_para_cupos  boolean NOT NULL DEFAULT true,  -- si false, el Dashboard lo excluye del KPI de cupos abiertos
+    created_at         timestamptz DEFAULT now()
 );
+-- Defaults sembrados al crear un evento: solo 'BORRADOR' y 'CONFIRMADA'.
+-- No hay estado 'CANCELADA' de fábrica; el equipo crea los que necesite
+-- (y desmarca cuenta_para_cupos en los que no deban contar).
 
 -- 6. Sesiones
 -- estado: texto libre; el catálogo válido vive en epms.estados_sesion (por evento),
