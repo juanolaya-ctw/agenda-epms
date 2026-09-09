@@ -30,10 +30,10 @@ import {
   type SpeakerEditable,
   useSpeakersData,
 } from '@/hooks/useSpeakersData'
+import { InlineText } from '@/components/InlineText'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
-import { InlineText } from './InlineText'
 import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
 
 type SpeakersTableProps = { eventoId: string }

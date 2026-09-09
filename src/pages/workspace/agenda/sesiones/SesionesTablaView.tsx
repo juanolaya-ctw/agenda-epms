@@ -20,12 +20,6 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -36,16 +30,21 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { InlineText } from '@/components/InlineText'
+import { useOptimisticOverrides } from '@/hooks/useOptimisticOverrides'
 import {
+  actualizarCampoSesion,
+  actualizarCampoSlot,
   eliminarSesion,
   type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { SesionFormDialog } from './SesionFormDialog'
 import { EstadoBadge, FormatoBadge } from './badges'
-import { formatDiaLargo } from './format'
 
 const TODOS = '__todos__'
+const SIN_TRACK = '__sin_track__'
+const toStr = (v: unknown): string => (v == null ? '' : String(v))
 
 type SortKey =
   | 'titulo'
@@ -152,6 +151,51 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
     [estados],
   )
 
+  // Edición inline: overrides optimistas + refetch para mantener las 3
+  // subvistas (tabla/kanban/calendario) consistentes.
+  const ov = useOptimisticOverrides<'titulo' | 'track' | 'dia' | 'horaInicio'>()
+
+  async function guardarTitulo(s: Sesion, v: string) {
+    await ov.commit(s.id, 'titulo', v, s.titulo, async () => {
+      const { error: e } = await actualizarCampoSesion(s.id, { titulo: v })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
+  async function guardarTrack(s: Sesion, value: string) {
+    const track = value === SIN_TRACK ? null : value
+    await ov.commit(s.id, 'track', track, s.track, async () => {
+      const { error: e } = await actualizarCampoSesion(s.id, { track })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
+  async function guardarDia(s: Sesion, v: string) {
+    if (!v || v === s.dia) return
+    await ov.commit(s.id, 'dia', v, s.dia, async () => {
+      const { error: e } = await actualizarCampoSlot(s.slotId, { dia: v })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
+  async function guardarHora(s: Sesion, v: string) {
+    if (!v || v === s.horaInicio) return
+    if (s.horaFin && v >= s.horaFin) {
+      toast.error('La hora de inicio debe ser anterior a la hora de fin.')
+      return
+    }
+    await ov.commit(s.id, 'horaInicio', v, s.horaInicio, async () => {
+      const { error: e } = await actualizarCampoSlot(s.slotId, {
+        hora_inicio: v,
+      })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
   const [busqueda, setBusqueda] = useState('')
   const [filtroEscenario, setFiltroEscenario] = useState<string>(TODOS)
   const [filtroEstado, setFiltroEstado] = useState<string>(TODOS)
@@ -221,7 +265,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
   const sinResultados = !loading && sesiones.length > 0 && filtered.length === 0
 
   return (
-    <TooltipProvider>
+    <>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -319,29 +363,86 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                         onClick={() => openEdit(sesion)}
                         className="cursor-pointer hover:bg-muted/50"
                       >
-                        <TableCell className="max-w-[240px]">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="block truncate font-medium">
-                                {sesion.titulo}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>{sesion.titulo}</TooltipContent>
-                          </Tooltip>
+                        <TableCell
+                          className="max-w-[240px]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <InlineText
+                            value={toStr(
+                              ov.get(sesion.id, 'titulo', sesion.titulo),
+                            )}
+                            placeholder="Sin título"
+                            displayClassName="font-medium"
+                            onSave={(v) => guardarTitulo(sesion, v)}
+                          />
                         </TableCell>
                         <TableCell>
                           <FormatoBadge formato={sesion.formato} />
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {sesion.track ?? '—'}
+                        <TableCell
+                          className="text-muted-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Select
+                            value={
+                              toStr(ov.get(sesion.id, 'track', sesion.track)) ||
+                              SIN_TRACK
+                            }
+                            onValueChange={(v) => void guardarTrack(sesion, v)}
+                          >
+                            <SelectTrigger className="h-7 w-36 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={SIN_TRACK}>Sin track</SelectItem>
+                              {tracks.map((t) => (
+                                <SelectItem key={t.id} value={t.nombre}>
+                                  {t.nombre}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {formatDiaLargo(sesion.dia)}
+                        <TableCell
+                          className="whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Input
+                            type="date"
+                            value={toStr(ov.get(sesion.id, 'dia', sesion.dia))}
+                            min={eventoRango.inicio || undefined}
+                            max={eventoRango.fin || undefined}
+                            onChange={(e) => void guardarDia(sesion, e.target.value)}
+                            className="h-7 w-[9.5rem] text-xs"
+                          />
                         </TableCell>
-                        <TableCell className="whitespace-nowrap tabular-nums">
-                          {sesion.horaInicio && sesion.horaFin
-                            ? `${sesion.horaInicio} – ${sesion.horaFin}`
-                            : '—'}
+                        <TableCell
+                          className="whitespace-nowrap tabular-nums"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {sesion.slotId ? (
+                            <span className="flex items-center gap-1">
+                              <Input
+                                type="time"
+                                value={toStr(
+                                  ov.get(
+                                    sesion.id,
+                                    'horaInicio',
+                                    sesion.horaInicio,
+                                  ),
+                                )}
+                                onChange={(e) =>
+                                  void guardarHora(sesion, e.target.value)
+                                }
+                                className="h-7 w-[5.5rem] text-xs"
+                              />
+                              <span className="text-muted-foreground">
+                                – {sesion.horaFin || '—'}
+                              </span>
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </TableCell>
                         <TableCell>{sesion.escenarioNombre || '—'}</TableCell>
                         <TableCell
@@ -428,6 +529,6 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </TooltipProvider>
+    </>
   )
 }

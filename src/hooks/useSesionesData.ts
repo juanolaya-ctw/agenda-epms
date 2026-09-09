@@ -303,6 +303,24 @@ export async function actualizarEstadoSesion(
   return { error: res.error?.message ?? null }
 }
 
+// Updates puntuales para edición inline en la tabla (título/track en sesiones,
+// día/hora en el slot). El SesionFormDialog sigue siendo el camino completo.
+export async function actualizarCampoSesion(
+  sesionId: string,
+  patch: { titulo?: string; track?: string | null },
+): Promise<{ error: string | null }> {
+  const res = await supabase.from('sesiones').update(patch).eq('id', sesionId)
+  return { error: res.error?.message ?? null }
+}
+
+export async function actualizarCampoSlot(
+  slotId: string,
+  patch: { dia?: string; hora_inicio?: string },
+): Promise<{ error: string | null }> {
+  const res = await supabase.from('slots').update(patch).eq('id', slotId)
+  return { error: res.error?.message ?? null }
+}
+
 export type SpeakerLite = {
   id: string
   nombre: string

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Pencil, UserPlus } from 'lucide-react'
+import { InlineText } from '@/components/InlineText'
 import { Navbar } from '@/components/layout/Navbar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -15,11 +16,24 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
-import { useSpeakersData, type Speaker } from '@/hooks/useSpeakersData'
+import { useOptimisticOverrides } from '@/hooks/useOptimisticOverrides'
+import {
+  actualizarSpeaker,
+  useSpeakersData,
+  type Speaker,
+  type SpeakerEditable,
+} from '@/hooks/useSpeakersData'
 import { SpeakerPerfilDialog } from '@/pages/workspace/agenda/speakers/SpeakerPerfilDialog'
 import { FuenteBadge, iniciales } from '@/pages/workspace/agenda/speakers/speakerUtils'
 
 const COLS = 10
+
+type CampoTexto = Extract<
+  keyof SpeakerEditable,
+  'nombre' | 'cargo' | 'empresa' | 'pais' | 'email'
+>
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const toStr = (v: unknown): string => (v == null ? '' : String(v))
 
 function EventosBadges({ nombres }: { nombres: string[] }) {
   if (nombres.length === 0) {
@@ -51,6 +65,14 @@ export function CrmGlobal() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
+
+  const ov = useOptimisticOverrides<CampoTexto>()
+  const campoActual = (sp: Speaker, campo: CampoTexto): string =>
+    toStr(ov.get(sp.id, campo, sp[campo]))
+  const guardarCampo = (sp: Speaker, campo: CampoTexto, valor: string) =>
+    ov.commit(sp.id, campo, valor, toStr(sp[campo]), () =>
+      actualizarSpeaker(sp.id, { [campo]: valor } as Partial<SpeakerEditable>),
+    )
 
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase()
@@ -165,23 +187,37 @@ export function CrmGlobal() {
                           </Avatar>
                         </TableCell>
                         <TableCell>
-                          <button
-                            type="button"
-                            onClick={() => abrirEditar(sp)}
-                            className="font-semibold hover:underline"
-                          >
-                            {sp.nombre || 'Sin nombre'}
-                          </button>
+                          <InlineText
+                            value={campoActual(sp, 'nombre')}
+                            placeholder="Sin nombre"
+                            displayClassName="font-semibold"
+                            onSave={(v) => guardarCampo(sp, 'nombre', v)}
+                          />
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {sp.cargo ?? '—'}
+                          <InlineText
+                            value={campoActual(sp, 'cargo')}
+                            onSave={(v) => guardarCampo(sp, 'cargo', v)}
+                          />
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {sp.empresa ?? '—'}
+                          <InlineText
+                            value={campoActual(sp, 'empresa')}
+                            onSave={(v) => guardarCampo(sp, 'empresa', v)}
+                          />
                         </TableCell>
-                        <TableCell>{sp.pais ?? '—'}</TableCell>
-                        <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                          {sp.email ?? '—'}
+                        <TableCell>
+                          <InlineText
+                            value={campoActual(sp, 'pais')}
+                            onSave={(v) => guardarCampo(sp, 'pais', v)}
+                          />
+                        </TableCell>
+                        <TableCell className="max-w-[200px] text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'email')}
+                            validate={(v) => EMAIL_RE.test(v)}
+                            onSave={(v) => guardarCampo(sp, 'email', v)}
+                          />
                         </TableCell>
                         <TableCell>
                           {sp.sesionesEnEvento > 0 ? (
