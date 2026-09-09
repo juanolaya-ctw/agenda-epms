@@ -3,6 +3,15 @@ import { supabase } from '@/lib/supabase'
 
 export type OpcionCatalogo = { id: string; nombre: string }
 
+export type EstadoColor = 'gray' | 'yellow' | 'green' | 'red' | 'blue'
+
+export type EstadoSesion = {
+  id: string
+  nombre: string
+  orden: number
+  color: EstadoColor
+}
+
 export type Sesion = {
   id: string
   titulo: string
@@ -25,6 +34,7 @@ export type SesionesData = {
   escenarios: OpcionCatalogo[]
   tracks: OpcionCatalogo[]
   formatos: OpcionCatalogo[]
+  estados: EstadoSesion[]
   loading: boolean
   error: string | null
   refetch: () => void
@@ -48,7 +58,16 @@ const EMPTY: Omit<SesionesData, 'loading' | 'refetch'> = {
   escenarios: [],
   tracks: [],
   formatos: [],
+  estados: [],
   error: null,
+}
+
+const COLORES_ESTADO: EstadoColor[] = ['gray', 'yellow', 'green', 'red', 'blue']
+
+function normalizarColorEstado(value: unknown): EstadoColor {
+  return COLORES_ESTADO.includes(value as EstadoColor)
+    ? (value as EstadoColor)
+    : 'gray'
 }
 
 function hhmm(value: string | null | undefined): string {
@@ -102,8 +121,8 @@ const SESIONES_SELECT = `
 async function loadSesiones(
   eventoId: string,
 ): Promise<Omit<SesionesData, 'loading' | 'refetch'>> {
-  const [escenariosRes, tracksRes, formatosRes, sesionesRes] = await Promise.all(
-    [
+  const [escenariosRes, tracksRes, formatosRes, estadosRes, sesionesRes] =
+    await Promise.all([
       supabase
         .from('escenarios')
         .select('id, nombre')
@@ -120,24 +139,35 @@ async function loadSesiones(
         .eq('evento_id', eventoId)
         .order('nombre'),
       supabase
+        .from('estados_sesion')
+        .select('id, nombre, orden, color')
+        .eq('evento_id', eventoId)
+        .order('orden'),
+      supabase
         .from('sesiones')
         .select(SESIONES_SELECT)
         .eq('slot.escenario.evento_id', eventoId),
-    ],
-  )
+    ])
 
   const escenarios = (escenariosRes.data ?? []) as OpcionCatalogo[]
   const tracks = (tracksRes.data ?? []) as OpcionCatalogo[]
   const formatos = (formatosRes.data ?? []) as OpcionCatalogo[]
+  const estados: EstadoSesion[] = (estadosRes.data ?? []).map((row) => ({
+    id: row.id as string,
+    nombre: (row.nombre as string | null) ?? '',
+    orden: (row.orden as number | null) ?? 0,
+    color: normalizarColorEstado(row.color),
+  }))
   const error =
     sesionesRes.error?.message ??
     escenariosRes.error?.message ??
     tracksRes.error?.message ??
     formatosRes.error?.message ??
+    estadosRes.error?.message ??
     null
 
   if (sesionesRes.error) {
-    return { ...EMPTY, escenarios, tracks, formatos, error }
+    return { ...EMPTY, escenarios, tracks, formatos, estados, error }
   }
 
   const sesiones: Sesion[] = ((sesionesRes.data ?? []) as SesionEmbedRow[])
@@ -165,7 +195,7 @@ async function loadSesiones(
     })
     .sort(bySlot)
 
-  return { sesiones, escenarios, tracks, formatos, error }
+  return { sesiones, escenarios, tracks, formatos, estados, error }
 }
 
 async function findOrCreateSlot(

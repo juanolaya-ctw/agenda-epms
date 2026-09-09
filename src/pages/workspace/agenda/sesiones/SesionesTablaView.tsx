@@ -45,7 +45,6 @@ import { SesionFormDialog } from './SesionFormDialog'
 import { EstadoBadge, FormatoBadge } from './badges'
 import { formatDiaLargo } from './format'
 
-const ESTADOS = ['BORRADOR', 'CONFIRMADA', 'CANCELADA'] as const
 const TODOS = '__todos__'
 
 type SortKey =
@@ -137,8 +136,21 @@ type SesionesTablaViewProps = {
 }
 
 export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps) {
-  const { sesiones, escenarios, tracks, formatos, loading, error, refetch } =
-    data
+  const {
+    sesiones,
+    escenarios,
+    tracks,
+    formatos,
+    estados,
+    loading,
+    error,
+    refetch,
+  } = data
+
+  const colorPorEstado = useMemo(
+    () => new Map(estados.map((e) => [e.nombre, e.color])),
+    [estados],
+  )
 
   const [busqueda, setBusqueda] = useState('')
   const [filtroEscenario, setFiltroEscenario] = useState<string>(TODOS)
@@ -238,9 +250,9 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODOS}>Todos los estados</SelectItem>
-                {ESTADOS.map((estado) => (
-                  <SelectItem key={estado} value={estado}>
-                    {estado}
+                {estados.map((estado) => (
+                  <SelectItem key={estado.id} value={estado.nombre}>
+                    {estado.nombre}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -341,7 +353,10 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                           {sesion.speakersAsignados}/{sesion.capacidadSpeakers}
                         </TableCell>
                         <TableCell>
-                          <EstadoBadge estado={sesion.estado} />
+                          <EstadoBadge
+                            estado={sesion.estado}
+                            color={colorPorEstado.get(sesion.estado)}
+                          />
                         </TableCell>
                         <TableCell
                           className="text-right"
@@ -383,6 +398,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
         escenarios={escenarios}
         tracks={tracks}
         formatos={formatos}
+        estados={estados}
         eventoRango={eventoRango}
         onSaved={refetch}
       />

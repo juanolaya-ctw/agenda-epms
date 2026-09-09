@@ -21,13 +21,15 @@ import {
 import {
   actualizarSesion,
   crearSesion,
+  type EstadoSesion,
   type OpcionCatalogo,
   type Sesion,
   type SesionFormValues,
 } from '@/hooks/useSesionesData'
+import { cn } from '@/lib/utils'
 import { SpeakersAsignados } from './SpeakersAsignados'
+import { estadoDotClass } from './badges'
 
-const ESTADOS = ['BORRADOR', 'CONFIRMADA', 'CANCELADA'] as const
 const SIN_TRACK = '__sin_track__'
 
 type SesionFormDialogProps = {
@@ -38,6 +40,7 @@ type SesionFormDialogProps = {
   escenarios: OpcionCatalogo[]
   tracks: OpcionCatalogo[]
   formatos: OpcionCatalogo[]
+  estados: EstadoSesion[]
   eventoRango: { inicio: string; fin: string }
   onSaved: () => void
 }
@@ -55,7 +58,11 @@ type FormState = {
   estado: string
 }
 
-function initialState(sesion: Sesion | null, rangoInicio: string): FormState {
+function initialState(
+  sesion: Sesion | null,
+  rangoInicio: string,
+  defaultEstado: string,
+): FormState {
   return {
     titulo: sesion?.titulo ?? '',
     descripcion: sesion?.descripcion ?? '',
@@ -66,7 +73,7 @@ function initialState(sesion: Sesion | null, rangoInicio: string): FormState {
     horaInicio: sesion?.horaInicio ?? '',
     horaFin: sesion?.horaFin ?? '',
     capacidadSpeakers: String(sesion?.capacidadSpeakers ?? 1),
-    estado: sesion?.estado ?? 'BORRADOR',
+    estado: sesion?.estado ?? defaultEstado,
   }
 }
 
@@ -92,22 +99,24 @@ export function SesionFormDialog({
   escenarios,
   tracks,
   formatos,
+  estados,
   eventoRango,
   onSaved,
 }: SesionFormDialogProps) {
+  const defaultEstado = estados[0]?.nombre ?? 'BORRADOR'
   const [form, setForm] = useState<FormState>(() =>
-    initialState(sesion, eventoRango.inicio),
+    initialState(sesion, eventoRango.inicio, defaultEstado),
   )
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setForm(initialState(sesion, eventoRango.inicio))
+      setForm(initialState(sesion, eventoRango.inicio, defaultEstado))
       setSaving(false)
     }
     // Reinicia solo al abrir o al cambiar de sesión, no en cada refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sesion?.id, eventoRango.inicio])
+  }, [open, sesion?.id, eventoRango.inicio, defaultEstado])
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -303,9 +312,21 @@ export function SesionFormDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ESTADOS.map((estado) => (
-                    <SelectItem key={estado} value={estado}>
-                      {estado}
+                  {form.estado &&
+                    !estados.some((e) => e.nombre === form.estado) && (
+                      <SelectItem value={form.estado}>{form.estado}</SelectItem>
+                    )}
+                  {estados.map((estado) => (
+                    <SelectItem key={estado.id} value={estado.nombre}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'inline-block size-2 shrink-0 rounded-full',
+                            estadoDotClass(estado.color),
+                          )}
+                        />
+                        {estado.nombre}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>

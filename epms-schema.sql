@@ -71,7 +71,19 @@ CREATE TABLE epms.slots (
     CONSTRAINT hora_valida CHECK (hora_fin > hora_inicio)
 );
 
+-- 5b. Estados de sesión (catálogo editable por evento, igual que tracks/formatos)
+CREATE TABLE epms.estados_sesion (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    evento_id   uuid NOT NULL REFERENCES epms.eventos(id) ON DELETE CASCADE,
+    nombre      text NOT NULL,
+    orden       integer NOT NULL DEFAULT 0,
+    color       text DEFAULT 'gray',  -- 'gray'|'yellow'|'green'|'red'|'blue' — usado en badges/kanban
+    created_at  timestamptz DEFAULT now()
+);
+
 -- 6. Sesiones
+-- estado: texto libre; el catálogo válido vive en epms.estados_sesion (por evento),
+-- no en un CHECK. El DEFAULT 'BORRADOR' se conserva por compatibilidad.
 CREATE TABLE epms.sesiones (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     slot_id             uuid REFERENCES epms.slots(id) ON DELETE SET NULL,
@@ -80,7 +92,7 @@ CREATE TABLE epms.sesiones (
     formato             text,           -- 'Keynote' | 'Panel' | 'Workshop' (texto libre, no FK a formatos para flexibilidad)
     track               text,
     capacidad_speakers  integer DEFAULT 1 CHECK (capacidad_speakers BETWEEN 1 AND 4),
-    estado              text DEFAULT 'BORRADOR' CHECK (estado IN ('BORRADOR', 'CONFIRMADA', 'CANCELADA')),
+    estado              text DEFAULT 'BORRADOR',
     created_at          timestamptz DEFAULT now(),
     updated_at          timestamptz DEFAULT now()
 );
@@ -244,6 +256,7 @@ CREATE INDEX idx_formatos_evento ON epms.formatos(evento_id);
 CREATE INDEX idx_requests_sesion ON epms.requests(sesion_id);
 CREATE INDEX idx_valores_propiedad ON epms.valores_propiedades(propiedad_id);
 CREATE INDEX idx_valores_speaker ON epms.valores_propiedades(speaker_id);
+CREATE INDEX idx_estados_sesion_evento ON epms.estados_sesion(evento_id);
 
 -- ============================================================
 -- RLS — Row Level Security
@@ -263,6 +276,10 @@ ALTER TABLE epms.requests                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE epms.tally_duplicados_pendientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE epms.propiedades_custom         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE epms.valores_propiedades        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE epms.estados_sesion             ENABLE ROW LEVEL SECURITY;
+-- NOTA: estados_sesion se creó con políticas permisivas (anon+authenticated,
+-- USING(true)/WITH CHECK(true)) — diverge del patrón mi_area()='Agenda' del
+-- resto del schema. Revisar si se quiere endurecer.
 
 -- Helper: obtener área del usuario autenticado
 CREATE OR REPLACE FUNCTION epms.mi_area()

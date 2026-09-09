@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -17,10 +24,46 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { supabase } from '@/lib/supabase'
+import { cn } from '@/lib/utils'
+import type { EstadoColor } from '@/hooks/useSesionesData'
+import { estadoDotClass } from './sesiones/badges'
 
 type CatalogItem = { id: string; nombre: string }
 
 type CatalogTable = 'escenarios' | 'formatos' | 'tracks'
+
+type EstadoRow = {
+  id: string
+  nombre: string
+  orden: number
+  color: EstadoColor
+}
+
+const ESTADO_COLORS: { value: EstadoColor; label: string }[] = [
+  { value: 'gray', label: 'Gris' },
+  { value: 'yellow', label: 'Amarillo' },
+  { value: 'green', label: 'Verde' },
+  { value: 'red', label: 'Rojo' },
+  { value: 'blue', label: 'Azul' },
+]
+
+const COLORES_VALIDOS = new Set(ESTADO_COLORS.map((c) => c.value))
+
+function normalizeEstado(row: {
+  id: string
+  nombre: string | null
+  orden: number | null
+  color: string | null
+}): EstadoRow {
+  return {
+    id: row.id,
+    nombre: row.nombre ?? '',
+    orden: row.orden ?? 0,
+    color: COLORES_VALIDOS.has(row.color as EstadoColor)
+      ? (row.color as EstadoColor)
+      : 'gray',
+  }
+}
 
 function CatalogEditor({
   title,
@@ -103,6 +146,114 @@ function CatalogEditor({
   )
 }
 
+function EstadosEditor({
+  estados,
+  onAdd,
+  onUpdateColor,
+  onRemove,
+}: {
+  estados: EstadoRow[]
+  onAdd: (nombre: string) => Promise<void>
+  onUpdateColor: (id: string, color: EstadoColor) => Promise<void>
+  onRemove: (estado: EstadoRow) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function add() {
+    const nombre = draft.trim()
+    if (!nombre || busy) return
+    setBusy(true)
+    try {
+      await onAdd(nombre)
+      setDraft('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-semibold">Estados de sesión</p>
+      <ul className="space-y-1">
+        {estados.length === 0 && (
+          <li className="text-xs text-muted-foreground">Ninguno todavía.</li>
+        )}
+        {estados.map((estado) => (
+          <li
+            key={estado.id}
+            className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-sm"
+          >
+            <span
+              className={cn(
+                'inline-block size-2.5 shrink-0 rounded-full',
+                estadoDotClass(estado.color),
+              )}
+            />
+            <span className="flex-1 truncate">{estado.nombre}</span>
+            <Select
+              value={estado.color}
+              onValueChange={(value) =>
+                void onUpdateColor(estado.id, value as EstadoColor)
+              }
+            >
+              <SelectTrigger className="h-7 w-28 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ESTADO_COLORS.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'inline-block size-2 rounded-full',
+                          estadoDotClass(c.value),
+                        )}
+                      />
+                      {c.label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              type="button"
+              aria-label={`Eliminar ${estado.nombre}`}
+              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+              onClick={() => onRemove(estado)}
+            >
+              <X className="size-3.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void add()
+            }
+          }}
+          placeholder="Nombre del estado"
+          className="h-8 flex-1"
+          disabled={busy}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void add()}
+          disabled={busy || !draft.trim()}
+        >
+          Agregar estado
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function SettingsTab() {
   const { id: eventoId } = useParams()
   const navigate = useNavigate()
@@ -118,6 +269,11 @@ export function SettingsTab() {
   const [escenarios, setEscenarios] = useState<CatalogItem[]>([])
   const [formatos, setFormatos] = useState<CatalogItem[]>([])
   const [tracks, setTracks] = useState<CatalogItem[]>([])
+  const [estados, setEstados] = useState<EstadoRow[]>([])
+  const [estadoAEliminar, setEstadoAEliminar] = useState<
+    (EstadoRow & { count: number }) | null
+  >(null)
+  const [borrandoEstado, setBorrandoEstado] = useState(false)
 
   useEffect(() => {
     if (!workspace) return
@@ -130,7 +286,7 @@ export function SettingsTab() {
     if (!eventoId) return
     let cancelled = false
     async function load() {
-      const [esc, fmt, trk] = await Promise.all([
+      const [esc, fmt, trk, est] = await Promise.all([
         supabase
           .from('escenarios')
           .select('id, nombre')
@@ -146,14 +302,23 @@ export function SettingsTab() {
           .select('id, nombre')
           .eq('evento_id', eventoId)
           .order('nombre'),
+        supabase
+          .from('estados_sesion')
+          .select('id, nombre, orden, color')
+          .eq('evento_id', eventoId)
+          .order('orden'),
       ])
       if (cancelled) return
       if (esc.error) toast.error(`Escenarios: ${esc.error.message}`)
       if (fmt.error) toast.error(`Formatos: ${fmt.error.message}`)
       if (trk.error) toast.error(`Tracks: ${trk.error.message}`)
+      if (est.error) toast.error(`Estados: ${est.error.message}`)
       setEscenarios((esc.data as CatalogItem[] | null) ?? [])
       setFormatos((fmt.data as CatalogItem[] | null) ?? [])
       setTracks((trk.data as CatalogItem[] | null) ?? [])
+      setEstados(
+        ((est.data as EstadoRow[] | null) ?? []).map((r) => normalizeEstado(r)),
+      )
     }
     void load()
     return () => {
@@ -261,6 +426,97 @@ export function SettingsTab() {
     }
   }
 
+  async function handleAddEstado(nombreItem: string) {
+    if (!eventoId) return
+    try {
+      const orden =
+        estados.reduce((max, e) => Math.max(max, e.orden), -1) + 1
+      const { data, error } = await supabase
+        .from('estados_sesion')
+        .insert({ evento_id: eventoId, nombre: nombreItem, orden, color: 'gray' })
+        .select('id, nombre, orden, color')
+        .single()
+      if (error) throw new Error(error.message)
+      setEstados((prev) =>
+        [...prev, normalizeEstado(data as EstadoRow)].sort(
+          (a, b) => a.orden - b.orden,
+        ),
+      )
+    } catch (err) {
+      toast.error(
+        `No se pudo agregar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  async function handleUpdateColorEstado(id: string, color: EstadoColor) {
+    try {
+      const { error } = await supabase
+        .from('estados_sesion')
+        .update({ color })
+        .eq('id', id)
+      if (error) throw new Error(error.message)
+      setEstados((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, color } : e)),
+      )
+    } catch (err) {
+      toast.error(
+        `No se pudo cambiar el color: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
+  async function borrarEstado(id: string) {
+    const { error } = await supabase
+      .from('estados_sesion')
+      .delete()
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+    setEstados((prev) => prev.filter((e) => e.id !== id))
+  }
+
+  async function handleRemoveEstado(estado: EstadoRow) {
+    if (!eventoId) return
+    try {
+      const { count, error } = await supabase
+        .from('sesiones')
+        .select(
+          'id, slot:slots!inner(escenario:escenarios!inner(evento_id))',
+          { count: 'exact', head: true },
+        )
+        .eq('estado', estado.nombre)
+        .eq('slot.escenario.evento_id', eventoId)
+      if (error) throw new Error(error.message)
+
+      if ((count ?? 0) > 0) {
+        setEstadoAEliminar({ ...estado, count: count ?? 0 })
+        return
+      }
+      await borrarEstado(estado.id)
+    } catch (err) {
+      toast.error(
+        `No se pudo eliminar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  async function confirmEliminarEstado() {
+    if (!estadoAEliminar) return
+    setBorrandoEstado(true)
+    try {
+      await borrarEstado(estadoAEliminar.id)
+      setEstadoAEliminar(null)
+    } catch (err) {
+      toast.error(
+        `No se pudo eliminar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    } finally {
+      setBorrandoEstado(false)
+    }
+  }
+
   const nombreEvento = workspace?.nombre || 'este workspace'
 
   return (
@@ -331,6 +587,12 @@ export function SettingsTab() {
           onAdd={(n) => handleAdd('tracks', n)}
           onRemove={(id) => handleRemove('tracks', id)}
         />
+        <EstadosEditor
+          estados={estados}
+          onAdd={handleAddEstado}
+          onUpdateColor={handleUpdateColorEstado}
+          onRemove={handleRemoveEstado}
+        />
       </section>
 
       <section className="space-y-3 rounded-xl border border-destructive p-6">
@@ -365,6 +627,42 @@ export function SettingsTab() {
               }}
             >
               {eliminando ? 'Eliminando…' : 'Eliminar workspace'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={estadoAEliminar !== null}
+        onOpenChange={(open) => !open && setEstadoAEliminar(null)}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Eliminar el estado «{estadoAEliminar?.nombre}»?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {estadoAEliminar?.count} sesión
+              {estadoAEliminar?.count === 1 ? '' : 'es'} de este evento{' '}
+              {estadoAEliminar?.count === 1 ? 'usa' : 'usan'} este estado. Al
+              eliminarlo del catálogo, esas sesiones conservarán el texto «
+              {estadoAEliminar?.nombre}» pero ya no aparecerá como columna en
+              el Kanban ni como opción en el formulario.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={borrandoEstado}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={borrandoEstado}
+              onClick={(e) => {
+                e.preventDefault()
+                void confirmEliminarEstado()
+              }}
+            >
+              {borrandoEstado ? 'Eliminando…' : 'Eliminar de todas formas'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

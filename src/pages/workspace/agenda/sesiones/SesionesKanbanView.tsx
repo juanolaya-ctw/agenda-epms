@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -14,14 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import {
   actualizarEstadoSesion,
+  type EstadoColor,
   type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
-import { FormatoBadge } from './badges'
+import { estadoDotClass, FormatoBadge } from './badges'
 import { formatDiaCorto, rangoHora } from './format'
 
-const COLUMNAS = ['BORRADOR', 'CONFIRMADA', 'CANCELADA'] as const
-type Estado = (typeof COLUMNAS)[number]
+type ColumnaEstado = { nombre: string; color: EstadoColor }
 
 function SesionCard({ sesion }: { sesion: Sesion }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
@@ -78,15 +78,21 @@ function Columna({
   estado,
   sesiones,
 }: {
-  estado: Estado
+  estado: ColumnaEstado
   sesiones: Sesion[]
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: estado })
+  const { setNodeRef, isOver } = useDroppable({ id: estado.nombre })
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-3">
       <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            'inline-block size-2 shrink-0 rounded-full',
+            estadoDotClass(estado.color),
+          )}
+        />
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {estado}
+          {estado.nombre}
         </h3>
         <Badge variant="outline">{sesiones.length}</Badge>
       </div>
@@ -113,16 +119,34 @@ function Columna({
 type SesionesKanbanViewProps = { data: SesionesData }
 
 export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
-  const { sesiones, loading, error, refetch } = data
+  const { sesiones, estados, loading, error, refetch } = data
   const [guardando, setGuardando] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   )
 
+  // Columnas desde el catálogo del evento (ordenadas por `orden`). Si el
+  // evento aún no tiene estados configurados, se derivan de los valores
+  // presentes en las sesiones para no ocultar nada.
+  const columnas: ColumnaEstado[] = useMemo(() => {
+    if (estados.length > 0) {
+      return estados.map((e) => ({ nombre: e.nombre, color: e.color }))
+    }
+    const vistos = new Set<string>()
+    const derivadas: ColumnaEstado[] = []
+    for (const s of sesiones) {
+      if (s.estado && !vistos.has(s.estado)) {
+        vistos.add(s.estado)
+        derivadas.push({ nombre: s.estado, color: 'gray' })
+      }
+    }
+    return derivadas
+  }, [estados, sesiones])
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over) return
-    const destino = over.id as Estado
+    const destino = String(over.id)
     const sesion = sesiones.find((row) => row.id === active.id)
     if (!sesion || sesion.estado === destino) return
 
@@ -142,9 +166,9 @@ export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
 
   if (loading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-3">
-        {COLUMNAS.map((estado) => (
-          <div key={estado} className="flex flex-col gap-2">
+      <div className="flex flex-col gap-4 sm:flex-row">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex flex-1 flex-col gap-2">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-24 w-full" />
@@ -161,17 +185,24 @@ export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
           {error}
         </p>
       )}
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {COLUMNAS.map((estado) => (
-            <Columna
-              key={estado}
-              estado={estado}
-              sesiones={sesiones.filter((row) => row.estado === estado)}
-            />
-          ))}
-        </div>
-      </DndContext>
+      {columnas.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+          Este evento no tiene estados de sesión configurados. Agrégalos en
+          Configuración del workspace.
+        </p>
+      ) : (
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <div className="flex flex-col gap-4 sm:flex-row">
+            {columnas.map((estado) => (
+              <Columna
+                key={estado.nombre}
+                estado={estado}
+                sesiones={sesiones.filter((row) => row.estado === estado.nombre)}
+              />
+            ))}
+          </div>
+        </DndContext>
+      )}
       {guardando && (
         <p className="text-xs text-muted-foreground">Guardando cambio…</p>
       )}

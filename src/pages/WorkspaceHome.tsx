@@ -1,10 +1,23 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Plus, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Navbar } from '@/components/layout/Navbar'
 import { WorkspaceCard } from '@/components/layout/WorkspaceCard'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { supabase } from '@/lib/supabase'
+
+const ESTADOS_POR_DEFECTO = ['BORRADOR', 'CONFIRMADA', 'CANCELADA']
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function colorPorNombreEstado(nombre: string): string {
+  const n = nombre.trim().toUpperCase()
+  if (n === 'CONFIRMADA') return 'green'
+  if (n === 'CANCELADA') return 'red'
+  return 'gray'
+}
 
 export function WorkspaceHome() {
   const navigate = useNavigate()
@@ -86,8 +99,29 @@ export function WorkspaceHome() {
         <CreateWorkspaceModal
           onClose={() => setShowCreateModal(false)}
           onCreate={(payload) => {
-            addWorkspace(payload)
+            const created = addWorkspace(payload)
             setShowCreateModal(false)
+            // Persistir los estados de sesión si el workspace corresponde a un
+            // evento real en Supabase (id UUID). Los workspaces solo-locales
+            // conservan la lista en el objeto Workspace (localStorage).
+            if (UUID_RE.test(created.id) && payload.estados.length > 0) {
+              void supabase
+                .from('estados_sesion')
+                .insert(
+                  payload.estados.map((nombre, orden) => ({
+                    evento_id: created.id,
+                    nombre,
+                    orden,
+                    color: colorPorNombreEstado(nombre),
+                  })),
+                )
+                .then(({ error }) => {
+                  if (error)
+                    toast.error(
+                      `No se pudieron crear los estados: ${error.message}`,
+                    )
+                })
+            }
           }}
         />
       )}
@@ -103,6 +137,7 @@ type CreatePayload = {
   escenarios: string[]
   formatos: string[]
   tracks: string[]
+  estados: string[]
 }
 
 function CreateWorkspaceModal({
@@ -119,6 +154,7 @@ function CreateWorkspaceModal({
   const [escenarios, setEscenarios] = useState<string[]>([])
   const [formatos, setFormatos] = useState<string[]>([])
   const [tracks, setTracks] = useState<string[]>([])
+  const [estados, setEstados] = useState<string[]>(ESTADOS_POR_DEFECTO)
 
   function handleCover(file: File | undefined) {
     if (!file) {
@@ -143,6 +179,7 @@ function CreateWorkspaceModal({
       escenarios,
       formatos,
       tracks,
+      estados: estados.map((e) => e.trim()).filter(Boolean),
     })
   }
 
@@ -205,6 +242,11 @@ function CreateWorkspaceModal({
             onChange={setFormatos}
           />
           <EditableList label="Tracks" items={tracks} onChange={setTracks} />
+          <EditableList
+            label="Estados de sesión"
+            items={estados}
+            onChange={setEstados}
+          />
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>

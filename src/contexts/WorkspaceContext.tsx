@@ -18,6 +18,7 @@ export type Workspace = {
   escenarios?: string[]
   formatos?: string[]
   tracks?: string[]
+  estados?: string[]
 }
 
 const STORAGE_KEY = 'epms_workspace'
