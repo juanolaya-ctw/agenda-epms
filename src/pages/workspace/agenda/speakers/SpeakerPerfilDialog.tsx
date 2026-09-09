@@ -448,7 +448,24 @@ export function SpeakerPerfilDialog({
                     </p>
                   )}
 
-                  {propiedades.map((prop) => (
+                  {propiedades.map((prop) =>
+                    prop.tipo === 'checkbox' ? (
+                      <label
+                        key={prop.id}
+                        className="flex items-center gap-2 text-xs font-medium"
+                      >
+                        <Checkbox
+                          checked={
+                            valores[prop.id] === true ||
+                            valores[prop.id] === 'true'
+                          }
+                          onCheckedChange={(checked) =>
+                            void persistirValor(prop.id, checked === true)
+                          }
+                        />
+                        {prop.nombre}
+                      </label>
+                    ) : (
                     <div key={prop.id} className="flex flex-col gap-1.5">
                       <Label className="text-xs">{prop.nombre}</Label>
 
@@ -552,7 +569,8 @@ export function SpeakerPerfilDialog({
                         />
                       )}
                     </div>
-                  ))}
+                    ),
+                  )}
 
                   <div>
                     <NuevaPropiedadDialog

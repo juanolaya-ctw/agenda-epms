@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { X } from 'lucide-react'
+import { ArrowLeft, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -559,7 +559,19 @@ export function SettingsTab() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Configuración del workspace</h1>
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() =>
+            navigate(eventoId ? `/workspace/${eventoId}/agenda` : '/home')
+          }
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Volver a {workspace?.nombre ?? 'el workspace'}
+        </button>
+        <h1 className="text-2xl font-semibold">Configuración del workspace</h1>
+      </div>
 
       <section className="space-y-4 rounded-xl border border-border bg-white p-6">
         <h2 className="text-sm font-semibold">Información del evento</h2>

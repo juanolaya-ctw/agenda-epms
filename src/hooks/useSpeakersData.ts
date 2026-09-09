@@ -62,7 +62,7 @@ export type ParticipacionSesion = {
 export type PropiedadCustom = {
   id: string
   nombre: string
-  tipo: string // 'checklist' | 'texto' | 'select' | 'fecha'
+  tipo: string // 'checklist' | 'texto' | 'select' | 'fecha' | 'checkbox'
   opciones: string[]
   orden: number | null
 }
@@ -433,15 +433,24 @@ export async function crearPropiedad(
   if (error) throw new Error(error.message)
 }
 
-export async function renombrarPropiedad(
+export async function actualizarPropiedad(
   id: string,
-  nombre: string,
+  patch: { nombre?: string; tipo?: string },
 ): Promise<void> {
   const { error } = await supabase
     .from('propiedades_custom')
-    .update({ nombre })
+    .update(patch)
     .eq('id', id)
   if (error) throw new Error(error.message)
+}
+
+export async function contarValoresPropiedad(id: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('valores_propiedades')
+    .select('id', { count: 'exact', head: true })
+    .eq('propiedad_id', id)
+  if (error) throw new Error(error.message)
+  return count ?? 0
 }
 
 export async function eliminarPropiedad(id: string): Promise<void> {

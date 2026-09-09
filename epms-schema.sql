@@ -190,7 +190,7 @@ CREATE TABLE epms.propiedades_custom (
     evento_id   uuid NOT NULL REFERENCES epms.eventos(id) ON DELETE CASCADE,
     entidad     text NOT NULL DEFAULT 'sesion' CHECK (entidad IN ('sesion', 'speaker')),
     nombre      text NOT NULL,
-    tipo        text NOT NULL CHECK (tipo IN ('texto', 'select', 'fecha', 'checklist')),
+    tipo        text NOT NULL CHECK (tipo IN ('texto', 'select', 'fecha', 'checklist', 'checkbox')),  -- checkbox: valor jsonb boolean simple
     opciones    jsonb,          -- solo aplica si tipo = 'select': ["opción 1", "opción 2"]
     orden       integer DEFAULT 0,
     created_at  timestamptz DEFAULT now()
@@ -417,6 +417,46 @@ ALTER TABLE epms.sesiones         REPLICA IDENTITY FULL;
 ALTER TABLE epms.sesion_speakers  REPLICA IDENTITY FULL;
 ALTER TABLE epms.requests         REPLICA IDENTITY FULL;
 ALTER TABLE epms.speakers         REPLICA IDENTITY FULL;
+
+-- ============================================================
+-- VISTAS DE REPORTES (solo lectura; base para un dashboard de reportes futuro)
+-- ============================================================
+-- v_resumen_speakers_evento: por evento, total de speakers asignados a alguna
+--   sesión, cuántos entraron vía Tally y cuántos tienen foto.
+-- v_progreso_propiedades_speaker: por propiedad custom de speaker, cuántos
+--   valores hay registrados y (para tipo 'checkbox') cuántos están en true.
+--   Sirve para reportes tipo "cuántos speakers tienen 'Pieza Soy Speaker' marcada".
+-- Ambas usan SECURITY INVOKER (default) → respetan la RLS del que consulta.
+
+CREATE OR REPLACE VIEW epms.v_resumen_speakers_evento AS
+SELECT
+  e.id as evento_id,
+  e.nombre as evento_nombre,
+  COUNT(DISTINCT sp.id) as total_speakers,
+  COUNT(DISTINCT sp.id) FILTER (WHERE sp.fuente = 'tally') as speakers_via_tally,
+  COUNT(DISTINCT sp.id) FILTER (WHERE sp.foto_url IS NOT NULL) as speakers_con_foto
+FROM epms.eventos e
+LEFT JOIN epms.escenarios esc ON esc.evento_id = e.id
+LEFT JOIN epms.slots sl ON sl.escenario_id = esc.id
+LEFT JOIN epms.sesiones ses ON ses.slot_id = sl.id
+LEFT JOIN epms.sesion_speakers ss ON ss.sesion_id = ses.id
+LEFT JOIN epms.speakers sp ON sp.id = ss.speaker_id
+GROUP BY e.id, e.nombre;
+
+CREATE OR REPLACE VIEW epms.v_progreso_propiedades_speaker AS
+SELECT
+  pc.evento_id,
+  pc.id as propiedad_id,
+  pc.nombre as propiedad_nombre,
+  pc.tipo,
+  COUNT(vp.id) as total_valores_registrados,
+  COUNT(vp.id) FILTER (
+    WHERE pc.tipo = 'checkbox' AND vp.valor::text = 'true'
+  ) as marcados_true
+FROM epms.propiedades_custom pc
+LEFT JOIN epms.valores_propiedades vp ON vp.propiedad_id = pc.id
+WHERE pc.entidad = 'speaker'
+GROUP BY pc.evento_id, pc.id, pc.nombre, pc.tipo;
 
 -- ============================================================
 -- DATO INICIAL — GovTech Summit 2026

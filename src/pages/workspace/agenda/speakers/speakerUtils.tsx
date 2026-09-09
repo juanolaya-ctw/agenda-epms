@@ -11,6 +11,9 @@ export function asChecklist(value: unknown): ChecklistItem[] {
 
 /** Resumen corto del valor de una propiedad para mostrar en la tabla. */
 export function resumenValor(prop: PropiedadCustom, valor: unknown): string {
+  if (prop.tipo === 'checkbox') {
+    return valor === true || valor === 'true' ? 'Sí' : 'No'
+  }
   if (prop.tipo === 'checklist') {
     const items = asChecklist(valor)
     if (items.length === 0) return '0/0'

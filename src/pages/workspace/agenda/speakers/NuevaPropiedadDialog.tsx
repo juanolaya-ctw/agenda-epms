@@ -25,6 +25,7 @@ const TIPOS = [
   { value: 'texto', label: 'Texto' },
   { value: 'select', label: 'Select' },
   { value: 'fecha', label: 'Fecha' },
+  { value: 'checkbox', label: 'Checkbox' },
 ] as const
 
 type NuevaPropiedadDialogProps = {

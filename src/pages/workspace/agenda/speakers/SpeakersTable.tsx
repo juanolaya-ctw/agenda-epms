@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Pencil, UserPlus } from 'lucide-react'
+import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -14,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  guardarValorPropiedad,
   useSpeakersData,
   type PropiedadCustom,
   type Speaker,
@@ -35,6 +38,34 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
+  // Overrides optimistas para las celdas checkbox (key = `${speakerId}:${propId}`)
+  const [checkOverrides, setCheckOverrides] = useState<Record<string, boolean>>(
+    {},
+  )
+
+  function valorCheckbox(speakerId: string, propId: string): boolean {
+    const key = `${speakerId}:${propId}`
+    if (key in checkOverrides) return checkOverrides[key]
+    const raw = valoresPorSpeaker[speakerId]?.[propId]
+    return raw === true || raw === 'true'
+  }
+
+  async function toggleCheckbox(
+    speakerId: string,
+    propId: string,
+    checked: boolean,
+  ) {
+    const key = `${speakerId}:${propId}`
+    setCheckOverrides((prev) => ({ ...prev, [key]: checked }))
+    try {
+      await guardarValorPropiedad(speakerId, propId, checked)
+    } catch (err) {
+      setCheckOverrides((prev) => ({ ...prev, [key]: !checked }))
+      toast.error(
+        `No se pudo guardar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
 
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase()
@@ -191,9 +222,20 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                         key={prop.id}
                         className="max-w-[160px] truncate text-xs text-muted-foreground"
                       >
-                        {resumenValor(
-                          prop,
-                          valoresPorSpeaker[sp.id]?.[prop.id],
+                        {prop.tipo === 'checkbox' ? (
+                          <Checkbox
+                            aria-label={prop.nombre}
+                            checked={valorCheckbox(sp.id, prop.id)}
+                            onCheckedChange={(checked) =>
+                              void toggleCheckbox(
+                                sp.id,
+                                prop.id,
+                                checked === true,
+                              )
+                            }
+                          />
+                        ) : (
+                          resumenValor(prop, valoresPorSpeaker[sp.id]?.[prop.id])
                         )}
                       </TableCell>
                     ))}
