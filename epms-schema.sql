@@ -1,4 +1,10 @@
 -- ============================================================
+-- ACTUALIZADO: refleja el estado real de producción al 2026-09-09.
+-- Incluye cambios aplicados directamente en Supabase que no
+-- estaban en la versión original de este archivo
+-- (propiedades_custom.entidad, valores_propiedades.speaker_id,
+-- e índices de FKs muy consultadas).
+-- ============================================================
 -- EPMS — Event Programming Management System
 -- Schema: epms
 -- Proyecto Supabase: ydqbjyhcntszvrytdkml (ctw-speakers-system)
@@ -166,6 +172,7 @@ CREATE TABLE epms.tally_duplicados_pendientes (
 CREATE TABLE epms.propiedades_custom (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     evento_id   uuid NOT NULL REFERENCES epms.eventos(id) ON DELETE CASCADE,
+    entidad     text NOT NULL DEFAULT 'sesion' CHECK (entidad IN ('sesion', 'speaker')),
     nombre      text NOT NULL,
     tipo        text NOT NULL CHECK (tipo IN ('texto', 'select', 'fecha', 'checklist')),
     opciones    jsonb,          -- solo aplica si tipo = 'select': ["opción 1", "opción 2"]
@@ -173,13 +180,18 @@ CREATE TABLE epms.propiedades_custom (
     created_at  timestamptz DEFAULT now()
 );
 
--- 13. Valores de propiedades custom por sesión
+-- 13. Valores de propiedades custom por sesión O por speaker
 CREATE TABLE epms.valores_propiedades (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    sesion_id       uuid NOT NULL REFERENCES epms.sesiones(id) ON DELETE CASCADE,
+    sesion_id       uuid REFERENCES epms.sesiones(id) ON DELETE CASCADE,
+    speaker_id      uuid REFERENCES epms.speakers(id) ON DELETE CASCADE,
     propiedad_id    uuid NOT NULL REFERENCES epms.propiedades_custom(id) ON DELETE CASCADE,
     valor           jsonb,      -- texto: "string", select: "opción", fecha: "2026-08-13", checklist: [{"label":"X","checked":true}]
     updated_at      timestamptz DEFAULT now(),
+    CONSTRAINT valor_tiene_exactamente_una_entidad CHECK (
+        (sesion_id IS NOT NULL AND speaker_id IS NULL) OR
+        (sesion_id IS NULL AND speaker_id IS NOT NULL)
+    ),
     UNIQUE (sesion_id, propiedad_id)
 );
 
@@ -225,6 +237,13 @@ CREATE INDEX idx_requests_estado ON epms.requests(estado);
 CREATE INDEX idx_requests_solicitante ON epms.requests(solicitante_id);
 CREATE INDEX idx_propiedades_evento ON epms.propiedades_custom(evento_id);
 CREATE INDEX idx_valores_sesion ON epms.valores_propiedades(sesion_id);
+
+-- Índices agregados post-lanzamiento (FKs consultadas en cada carga de vista)
+CREATE INDEX idx_tracks_evento ON epms.tracks(evento_id);
+CREATE INDEX idx_formatos_evento ON epms.formatos(evento_id);
+CREATE INDEX idx_requests_sesion ON epms.requests(sesion_id);
+CREATE INDEX idx_valores_propiedad ON epms.valores_propiedades(propiedad_id);
+CREATE INDEX idx_valores_speaker ON epms.valores_propiedades(speaker_id);
 
 -- ============================================================
 -- RLS — Row Level Security
