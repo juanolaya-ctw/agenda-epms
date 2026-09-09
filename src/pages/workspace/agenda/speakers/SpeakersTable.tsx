@@ -6,6 +6,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -16,19 +23,33 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  actualizarSpeaker,
   guardarValorPropiedad,
-  useSpeakersData,
   type PropiedadCustom,
   type Speaker,
+  type SpeakerEditable,
+  useSpeakersData,
 } from '@/hooks/useSpeakersData'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
+import { InlineText } from './InlineText'
 import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
 
 type SpeakersTableProps = { eventoId: string }
 
 const COLS_FIJAS = 9
+
+type CampoTexto = Extract<
+  keyof SpeakerEditable,
+  'nombre' | 'cargo' | 'empresa' | 'pais' | 'email'
+>
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function toStr(v: unknown): string {
+  return v == null ? '' : String(v)
+}
 
 export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const { speakers, propiedades, valoresPorSpeaker, loading, error, refetch } =
@@ -38,32 +59,64 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
-  // Overrides optimistas para las celdas checkbox (key = `${speakerId}:${propId}`)
-  const [checkOverrides, setCheckOverrides] = useState<Record<string, boolean>>(
+
+  // Overrides optimistas para edición inline (no se hace refetch por celda).
+  // Campos base: key = speakerId. Propiedades custom: key = `${speakerId}:${propId}`.
+  const [fieldOverrides, setFieldOverrides] = useState<
+    Record<string, Partial<Record<CampoTexto, string>>>
+  >({})
+  const [valorOverrides, setValorOverrides] = useState<Record<string, unknown>>(
     {},
   )
 
-  function valorCheckbox(speakerId: string, propId: string): boolean {
-    const key = `${speakerId}:${propId}`
-    if (key in checkOverrides) return checkOverrides[key]
-    const raw = valoresPorSpeaker[speakerId]?.[propId]
-    return raw === true || raw === 'true'
+  function campoActual(sp: Speaker, campo: CampoTexto): string {
+    const ov = fieldOverrides[sp.id]?.[campo]
+    if (ov !== undefined) return ov
+    return toStr(sp[campo])
   }
 
-  async function toggleCheckbox(
-    speakerId: string,
-    propId: string,
-    checked: boolean,
-  ) {
-    const key = `${speakerId}:${propId}`
-    setCheckOverrides((prev) => ({ ...prev, [key]: checked }))
+  async function guardarCampo(sp: Speaker, campo: CampoTexto, valor: string) {
+    const previo = toStr(sp[campo])
+    setFieldOverrides((prev) => ({
+      ...prev,
+      [sp.id]: { ...prev[sp.id], [campo]: valor },
+    }))
     try {
-      await guardarValorPropiedad(speakerId, propId, checked)
+      await actualizarSpeaker(sp.id, { [campo]: valor } as Partial<SpeakerEditable>)
     } catch (err) {
-      setCheckOverrides((prev) => ({ ...prev, [key]: !checked }))
+      setFieldOverrides((prev) => ({
+        ...prev,
+        [sp.id]: { ...prev[sp.id], [campo]: previo },
+      }))
       toast.error(
         `No se pudo guardar: ${err instanceof Error ? err.message : String(err)}`,
       )
+      throw err
+    }
+  }
+
+  function valorActual(speakerId: string, propId: string): unknown {
+    const key = `${speakerId}:${propId}`
+    if (key in valorOverrides) return valorOverrides[key]
+    return valoresPorSpeaker[speakerId]?.[propId]
+  }
+
+  async function guardarValor(
+    speakerId: string,
+    propId: string,
+    valor: unknown,
+  ) {
+    const key = `${speakerId}:${propId}`
+    const previo = valorActual(speakerId, propId)
+    setValorOverrides((prev) => ({ ...prev, [key]: valor }))
+    try {
+      await guardarValorPropiedad(speakerId, propId, valor)
+    } catch (err) {
+      setValorOverrides((prev) => ({ ...prev, [key]: previo }))
+      toast.error(
+        `No se pudo guardar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
     }
   }
 
@@ -184,23 +237,37 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                       </Avatar>
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => abrirEditar(sp)}
-                        className="font-semibold hover:underline"
-                      >
-                        {sp.nombre || 'Sin nombre'}
-                      </button>
+                      <InlineText
+                        value={campoActual(sp, 'nombre')}
+                        placeholder="Sin nombre"
+                        displayClassName="font-semibold"
+                        onSave={(v) => guardarCampo(sp, 'nombre', v)}
+                      />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {sp.cargo ?? '—'}
+                      <InlineText
+                        value={campoActual(sp, 'cargo')}
+                        onSave={(v) => guardarCampo(sp, 'cargo', v)}
+                      />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {sp.empresa ?? '—'}
+                      <InlineText
+                        value={campoActual(sp, 'empresa')}
+                        onSave={(v) => guardarCampo(sp, 'empresa', v)}
+                      />
                     </TableCell>
-                    <TableCell>{sp.pais ?? '—'}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                      {sp.email ?? '—'}
+                    <TableCell>
+                      <InlineText
+                        value={campoActual(sp, 'pais')}
+                        onSave={(v) => guardarCampo(sp, 'pais', v)}
+                      />
+                    </TableCell>
+                    <TableCell className="max-w-[200px] text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'email')}
+                        validate={(v) => EMAIL_RE.test(v)}
+                        onSave={(v) => guardarCampo(sp, 'email', v)}
+                      />
                     </TableCell>
                     <TableCell>
                       {sp.sesionesEnEvento > 0 ? (
@@ -217,28 +284,71 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                     <TableCell>
                       <FuenteBadge fuente={sp.fuente} />
                     </TableCell>
-                    {propiedades.map((prop) => (
-                      <TableCell
-                        key={prop.id}
-                        className="max-w-[160px] truncate text-xs text-muted-foreground"
-                      >
-                        {prop.tipo === 'checkbox' ? (
-                          <Checkbox
-                            aria-label={prop.nombre}
-                            checked={valorCheckbox(sp.id, prop.id)}
-                            onCheckedChange={(checked) =>
-                              void toggleCheckbox(
-                                sp.id,
-                                prop.id,
-                                checked === true,
-                              )
-                            }
-                          />
-                        ) : (
-                          resumenValor(prop, valoresPorSpeaker[sp.id]?.[prop.id])
-                        )}
-                      </TableCell>
-                    ))}
+                    {propiedades.map((prop) => {
+                      const v = valorActual(sp.id, prop.id)
+                      return (
+                        <TableCell
+                          key={prop.id}
+                          className="max-w-[160px] text-xs text-muted-foreground"
+                        >
+                          {prop.tipo === 'checkbox' ? (
+                            <Checkbox
+                              aria-label={prop.nombre}
+                              checked={v === true || v === 'true'}
+                              onCheckedChange={(checked) =>
+                                void guardarValor(
+                                  sp.id,
+                                  prop.id,
+                                  checked === true,
+                                )
+                              }
+                            />
+                          ) : prop.tipo === 'texto' ? (
+                            <InlineText
+                              value={toStr(v)}
+                              onSave={(next) =>
+                                guardarValor(sp.id, prop.id, next)
+                              }
+                            />
+                          ) : prop.tipo === 'fecha' ? (
+                            <Input
+                              type="date"
+                              value={toStr(v)}
+                              onChange={(e) =>
+                                void guardarValor(
+                                  sp.id,
+                                  prop.id,
+                                  e.target.value,
+                                )
+                              }
+                              className="h-7 text-xs"
+                            />
+                          ) : prop.tipo === 'select' ? (
+                            <Select
+                              value={toStr(v)}
+                              onValueChange={(next) =>
+                                void guardarValor(sp.id, prop.id, next)
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-xs">
+                                <SelectValue placeholder="—" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {prop.opciones.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>
+                                    {opt}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="truncate">
+                              {resumenValor(prop, v)}
+                            </span>
+                          )}
+                        </TableCell>
+                      )
+                    })}
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
