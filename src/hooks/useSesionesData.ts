@@ -303,11 +303,17 @@ export async function actualizarEstadoSesion(
   return { error: res.error?.message ?? null }
 }
 
-// Updates puntuales para edición inline en la tabla (título/track en sesiones,
-// día/hora en el slot). El SesionFormDialog sigue siendo el camino completo.
+// Updates puntuales para edición inline en la tabla (título/track/capacidad/
+// estado en sesiones, día/hora en el slot). El SesionFormDialog sigue siendo
+// el camino completo.
 export async function actualizarCampoSesion(
   sesionId: string,
-  patch: { titulo?: string; track?: string | null },
+  patch: {
+    titulo?: string
+    track?: string | null
+    capacidad_speakers?: number
+    estado?: string
+  },
 ): Promise<{ error: string | null }> {
   const res = await supabase.from('sesiones').update(patch).eq('id', sesionId)
   return { error: res.error?.message ?? null }
@@ -318,6 +324,52 @@ export async function actualizarCampoSlot(
   patch: { dia?: string; hora_inicio?: string },
 ): Promise<{ error: string | null }> {
   const res = await supabase.from('slots').update(patch).eq('id', slotId)
+  return { error: res.error?.message ?? null }
+}
+
+// Edición inline de escenario: ¿el slot destino (escenario+día+hora) ya lo
+// ocupa OTRA sesión? (un slot admite una sola sesión).
+export async function slotOcupadoPorOtraSesion(
+  escenarioId: string,
+  dia: string,
+  horaInicio: string,
+  sesionIdActual: string,
+): Promise<{ ocupado: boolean; error: string | null }> {
+  const slotRes = await supabase
+    .from('slots')
+    .select('id')
+    .eq('escenario_id', escenarioId)
+    .eq('dia', dia)
+    .eq('hora_inicio', horaInicio)
+    .maybeSingle()
+  if (slotRes.error) return { ocupado: false, error: slotRes.error.message }
+  if (!slotRes.data) return { ocupado: false, error: null }
+
+  const sesRes = await supabase
+    .from('sesiones')
+    .select('id')
+    .eq('slot_id', slotRes.data.id as string)
+    .neq('id', sesionIdActual)
+    .limit(1)
+  if (sesRes.error) return { ocupado: false, error: sesRes.error.message }
+  return { ocupado: (sesRes.data ?? []).length > 0, error: null }
+}
+
+// Reasigna la sesión a un slot del nuevo escenario (mismo día/hora),
+// creándolo si no existe. Reutiliza findOrCreateSlot.
+export async function reasignarEscenarioSesion(
+  sesionId: string,
+  escenarioId: string,
+  dia: string,
+  horaInicio: string,
+  horaFin: string,
+): Promise<{ error: string | null }> {
+  const slot = await findOrCreateSlot(escenarioId, dia, horaInicio, horaFin)
+  if ('error' in slot) return { error: slot.error }
+  const res = await supabase
+    .from('sesiones')
+    .update({ slot_id: slot.id })
+    .eq('id', sesionId)
   return { error: res.error?.message ?? null }
 }
 

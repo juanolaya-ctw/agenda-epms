@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, CalendarPlus, Pencil, Trash2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CalendarPlus,
+  Check,
+  Loader2,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,11 +45,13 @@ import {
   actualizarCampoSesion,
   actualizarCampoSlot,
   eliminarSesion,
+  reasignarEscenarioSesion,
+  slotOcupadoPorOtraSesion,
   type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { SesionFormDialog } from './SesionFormDialog'
-import { EstadoBadge, FormatoBadge } from './badges'
+import { EstadoBadge, estadoDotClass, FormatoBadge } from './badges'
 
 const TODOS = '__todos__'
 const SIN_TRACK = '__sin_track__'
@@ -129,6 +140,106 @@ function LoadingRows() {
   )
 }
 
+function CapacidadCell({
+  capacidad,
+  asignados,
+  onSave,
+}: {
+  capacidad: number
+  asignados: number
+  onSave: (n: number) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(capacidad))
+  const [saving, setSaving] = useState(false)
+  const [ok, setOk] = useState(false)
+
+  const n = Number(draft)
+  const rangoInvalido = !Number.isInteger(n) || n < 1 || n > 4
+  const menorQueAsignados = Number.isInteger(n) && n < asignados
+  const invalid = rangoInvalido || menorQueAsignados
+  const msg = menorQueAsignados
+    ? `Esta sesión ya tiene ${asignados} speakers asignados. La capacidad no puede ser menor a ${asignados}.`
+    : rangoInvalido
+      ? 'La capacidad debe estar entre 1 y 4.'
+      : ''
+
+  async function commit() {
+    if (saving) return
+    if (n === capacidad) {
+      setEditing(false)
+      return
+    }
+    if (invalid) return
+    setSaving(true)
+    try {
+      await onSave(n)
+      setOk(true)
+      setTimeout(() => setOk(false), 1200)
+    } catch {
+      setDraft(String(capacidad))
+    } finally {
+      setSaving(false)
+      setEditing(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(String(capacidad))
+          setEditing(true)
+        }}
+        className={cn(
+          'flex items-center gap-1 rounded px-1 py-0.5 tabular-nums transition-colors hover:cursor-pointer hover:bg-muted/40',
+          asignados >= capacidad && 'font-medium text-secondary',
+        )}
+      >
+        {asignados}/{capacidad}
+        {ok && <Check className="size-3 text-status-approved" />}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        type="number"
+        min={1}
+        max={4}
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            void commit()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            setDraft(String(capacidad))
+            setEditing(false)
+          }
+        }}
+        disabled={saving}
+        aria-invalid={invalid}
+        title={msg || undefined}
+        className={cn(
+          'h-7 w-14 text-xs',
+          invalid &&
+            'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/30',
+        )}
+      />
+      {saving && (
+        <Loader2 className="size-3 animate-spin text-muted-foreground" />
+      )}
+    </div>
+  )
+}
+
 type SesionesTablaViewProps = {
   data: SesionesData
   eventoRango: { inicio: string; fin: string }
@@ -153,7 +264,90 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
 
   // Edición inline: overrides optimistas + refetch para mantener las 3
   // subvistas (tabla/kanban/calendario) consistentes.
-  const ov = useOptimisticOverrides<'titulo' | 'track' | 'dia' | 'horaInicio'>()
+  const ov = useOptimisticOverrides<
+    | 'titulo'
+    | 'track'
+    | 'dia'
+    | 'horaInicio'
+    | 'escenarioId'
+    | 'capacidadSpeakers'
+    | 'estado'
+  >()
+
+  const [conflictoEsc, setConflictoEsc] = useState<{
+    sesion: Sesion
+    escenarioId: string
+  } | null>(null)
+  const [aplicandoEsc, setAplicandoEsc] = useState(false)
+
+  async function aplicarEscenario(s: Sesion, escenarioId: string) {
+    await ov.commit(s.id, 'escenarioId', escenarioId, s.escenarioId, async () => {
+      const { error: e } = await reasignarEscenarioSesion(
+        s.id,
+        escenarioId,
+        s.dia,
+        s.horaInicio,
+        s.horaFin,
+      )
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
+  async function guardarEscenario(s: Sesion, escenarioId: string) {
+    if (escenarioId === s.escenarioId) return
+    const chk = await slotOcupadoPorOtraSesion(
+      escenarioId,
+      s.dia,
+      s.horaInicio,
+      s.id,
+    )
+    if (chk.error) {
+      toast.error(`No se pudo verificar: ${chk.error}`)
+      return
+    }
+    if (chk.ocupado) {
+      setConflictoEsc({ sesion: s, escenarioId })
+      return
+    }
+    await aplicarEscenario(s, escenarioId)
+  }
+
+  async function confirmarConflictoEsc() {
+    if (!conflictoEsc) return
+    setAplicandoEsc(true)
+    try {
+      await aplicarEscenario(conflictoEsc.sesion, conflictoEsc.escenarioId)
+      setConflictoEsc(null)
+    } finally {
+      setAplicandoEsc(false)
+    }
+  }
+
+  async function guardarCapacidad(s: Sesion, n: number) {
+    await ov.commit(
+      s.id,
+      'capacidadSpeakers',
+      n,
+      s.capacidadSpeakers,
+      async () => {
+        const { error: e } = await actualizarCampoSesion(s.id, {
+          capacidad_speakers: n,
+        })
+        if (e) throw new Error(e)
+      },
+    )
+    refetch()
+  }
+
+  async function guardarEstado(s: Sesion, estado: string) {
+    if (estado === s.estado) return
+    await ov.commit(s.id, 'estado', estado, s.estado, async () => {
+      const { error: e } = await actualizarCampoSesion(s.id, { estado })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
 
   async function guardarTitulo(s: Sesion, v: string) {
     await ov.commit(s.id, 'titulo', v, s.titulo, async () => {
@@ -355,8 +549,6 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
 
                 {!loading &&
                   filtered.map((sesion) => {
-                    const completo =
-                      sesion.speakersAsignados >= sesion.capacidadSpeakers
                     return (
                       <TableRow
                         key={sesion.id}
@@ -444,20 +636,88 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                             '—'
                           )}
                         </TableCell>
-                        <TableCell>{sesion.escenarioNombre || '—'}</TableCell>
-                        <TableCell
-                          className={cn(
-                            'tabular-nums',
-                            completo && 'font-medium text-secondary',
-                          )}
-                        >
-                          {sesion.speakersAsignados}/{sesion.capacidadSpeakers}
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Select
+                            value={toStr(
+                              ov.get(
+                                sesion.id,
+                                'escenarioId',
+                                sesion.escenarioId,
+                              ),
+                            )}
+                            onValueChange={(v) =>
+                              void guardarEscenario(sesion, v)
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-40 text-xs">
+                              <SelectValue placeholder="—" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {escenarios.map((esc) => (
+                                <SelectItem key={esc.id} value={esc.id}>
+                                  {esc.nombre}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
-                        <TableCell>
-                          <EstadoBadge
-                            estado={sesion.estado}
-                            color={colorPorEstado.get(sesion.estado)}
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <CapacidadCell
+                            capacidad={Number(
+                              ov.get(
+                                sesion.id,
+                                'capacidadSpeakers',
+                                sesion.capacidadSpeakers,
+                              ),
+                            )}
+                            asignados={sesion.speakersAsignados}
+                            onSave={(n) => guardarCapacidad(sesion, n)}
                           />
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const estadoActual = toStr(
+                              ov.get(sesion.id, 'estado', sesion.estado),
+                            )
+                            return (
+                              <Select
+                                value={estadoActual}
+                                onValueChange={(v) =>
+                                  void guardarEstado(sesion, v)
+                                }
+                              >
+                                <SelectTrigger className="h-7 w-fit gap-1 border-0 px-1 text-xs shadow-none hover:bg-muted/40">
+                                  <EstadoBadge
+                                    estado={estadoActual}
+                                    color={colorPorEstado.get(estadoActual)}
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {!estados.some(
+                                    (e) => e.nombre === estadoActual,
+                                  ) &&
+                                    estadoActual && (
+                                      <SelectItem value={estadoActual}>
+                                        {estadoActual}
+                                      </SelectItem>
+                                    )}
+                                  {estados.map((e) => (
+                                    <SelectItem key={e.id} value={e.nombre}>
+                                      <span className="flex items-center gap-2">
+                                        <span
+                                          className={cn(
+                                            'inline-block size-2 shrink-0 rounded-full',
+                                            estadoDotClass(e.color),
+                                          )}
+                                        />
+                                        {e.nombre}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )
+                          })()}
                         </TableCell>
                         <TableCell
                           className="text-right"
@@ -525,6 +785,37 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
               disabled={eliminando}
             >
               {eliminando ? 'Eliminando…' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={conflictoEsc !== null}
+        onOpenChange={(open) => !open && setConflictoEsc(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Ya existe una sesión en ese escenario y horario
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Continuar de todas formas? Ambas sesiones quedarán en el mismo
+              escenario, día y hora.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={aplicandoEsc}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={aplicandoEsc}
+              onClick={(e) => {
+                e.preventDefault()
+                void confirmarConflictoEsc()
+              }}
+            >
+              {aplicandoEsc ? 'Aplicando…' : 'Continuar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
