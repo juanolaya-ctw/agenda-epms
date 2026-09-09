@@ -43,9 +43,10 @@ function EventosBadges({ nombres }: { nombres: string[] }) {
 export function CrmGlobal() {
   const { workspace, workspaces } = useWorkspace()
   const eventoId = workspace?.id ?? workspaces[0]?.id ?? ''
-  const { speakers, loading, error, refetch } = useSpeakersData(null, {
-    global: true,
-  })
+  const { speakers, propiedades, loading, error, refetch } = useSpeakersData(
+    null,
+    { global: true },
+  )
   const [busqueda, setBusqueda] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [modo, setModo] = useState<'create' | 'edit'>('create')
@@ -226,6 +227,7 @@ export function CrmGlobal() {
         speaker={activo}
         eventoId={eventoId}
         onSaved={refetch}
+        propiedadesEvento={propiedades}
       />
     </div>
   )

@@ -62,109 +62,110 @@ function bySlot(a: Sesion, b: Sesion): number {
   return a.horaInicio.localeCompare(b.horaInicio)
 }
 
-type SlotRow = {
+function one<T>(rel: T | T[] | null | undefined): T | null {
+  if (Array.isArray(rel)) return rel[0] ?? null
+  return rel ?? null
+}
+
+type EscenarioEmbed = { id: string; nombre: string | null; evento_id: string }
+type SlotEmbed = {
   id: string
   dia: string | null
   hora_inicio: string | null
   hora_fin: string | null
-  escenario_id: string
+  escenario: EscenarioEmbed | EscenarioEmbed[] | null
+}
+type SesionEmbedRow = {
+  id: string
+  titulo: string | null
+  descripcion: string | null
+  formato: string | null
+  track: string | null
+  capacidad_speakers: number | null
+  estado: string | null
+  slot: SlotEmbed | SlotEmbed[] | null
+  sesion_speakers: { id: string }[] | null
 }
 
+const SESIONES_SELECT = `
+  id, titulo, descripcion, formato, track, capacidad_speakers, estado,
+  slot:slots!inner (
+    id, dia, hora_inicio, hora_fin,
+    escenario:escenarios!inner ( id, nombre, evento_id )
+  ),
+  sesion_speakers ( id )
+`
+
+// Una sola query embebida trae sesiones + slot + escenario + conteo de
+// speakers; tracks/formatos/escenarios son catálogos pequeños e
+// independientes, así que corren en paralelo (no encadenados).
 async function loadSesiones(
   eventoId: string,
 ): Promise<Omit<SesionesData, 'loading' | 'refetch'>> {
-  const escenariosRes = await supabase
-    .from('escenarios')
-    .select('id, nombre')
-    .eq('evento_id', eventoId)
-    .order('nombre')
-
-  if (escenariosRes.error) {
-    return { ...EMPTY, error: escenariosRes.error.message }
-  }
+  const [escenariosRes, tracksRes, formatosRes, sesionesRes] = await Promise.all(
+    [
+      supabase
+        .from('escenarios')
+        .select('id, nombre')
+        .eq('evento_id', eventoId)
+        .order('nombre'),
+      supabase
+        .from('tracks')
+        .select('id, nombre')
+        .eq('evento_id', eventoId)
+        .order('nombre'),
+      supabase
+        .from('formatos')
+        .select('id, nombre')
+        .eq('evento_id', eventoId)
+        .order('nombre'),
+      supabase
+        .from('sesiones')
+        .select(SESIONES_SELECT)
+        .eq('slot.escenario.evento_id', eventoId),
+    ],
+  )
 
   const escenarios = (escenariosRes.data ?? []) as OpcionCatalogo[]
-  const escenarioIds = escenarios.map((row) => row.id)
-  const escenarioNombre = new Map(escenarios.map((row) => [row.id, row.nombre]))
-
-  const [tracksRes, formatosRes] = await Promise.all([
-    supabase
-      .from('tracks')
-      .select('id, nombre')
-      .eq('evento_id', eventoId)
-      .order('nombre'),
-    supabase
-      .from('formatos')
-      .select('id, nombre')
-      .eq('evento_id', eventoId)
-      .order('nombre'),
-  ])
-
-  const catalogError = tracksRes.error?.message ?? formatosRes.error?.message ?? null
   const tracks = (tracksRes.data ?? []) as OpcionCatalogo[]
   const formatos = (formatosRes.data ?? []) as OpcionCatalogo[]
-
-  if (escenarioIds.length === 0) {
-    return { ...EMPTY, escenarios, tracks, formatos, error: catalogError }
-  }
-
-  const slotsRes = await supabase
-    .from('slots')
-    .select('id, dia, hora_inicio, hora_fin, escenario_id')
-    .in('escenario_id', escenarioIds)
-
-  if (slotsRes.error) {
-    return { ...EMPTY, escenarios, tracks, formatos, error: slotsRes.error.message }
-  }
-
-  const slotsById = new Map<string, SlotRow>(
-    (slotsRes.data ?? []).map((slot) => [slot.id as string, slot as SlotRow]),
-  )
-  const slotIds = [...slotsById.keys()]
-
-  if (slotIds.length === 0) {
-    return { ...EMPTY, escenarios, tracks, formatos, error: catalogError }
-  }
-
-  const sesionesRes = await supabase
-    .from('sesiones')
-    .select(
-      'id, titulo, descripcion, formato, track, capacidad_speakers, estado, slot_id, sesion_speakers(count)',
-    )
-    .in('slot_id', slotIds)
+  const error =
+    sesionesRes.error?.message ??
+    escenariosRes.error?.message ??
+    tracksRes.error?.message ??
+    formatosRes.error?.message ??
+    null
 
   if (sesionesRes.error) {
-    return { ...EMPTY, escenarios, tracks, formatos, error: sesionesRes.error.message }
+    return { ...EMPTY, escenarios, tracks, formatos, error }
   }
 
-  const sesiones: Sesion[] = (sesionesRes.data ?? [])
+  const sesiones: Sesion[] = ((sesionesRes.data ?? []) as SesionEmbedRow[])
     .map((row) => {
-      const slot = slotsById.get(row.slot_id as string)
-      const speakersRel = row.sesion_speakers as { count: number }[] | null
-      const speakersAsignados = Array.isArray(speakersRel)
-        ? Number(speakersRel[0]?.count ?? 0)
-        : 0
-      const escenarioId = slot?.escenario_id ?? ''
+      const slot = one(row.slot)
+      const escenario = one(slot?.escenario)
       return {
-        id: row.id as string,
-        titulo: (row.titulo as string | null) ?? '',
-        descripcion: (row.descripcion as string | null) ?? null,
-        formato: (row.formato as string | null) ?? null,
-        track: (row.track as string | null) ?? null,
-        capacidadSpeakers: (row.capacidad_speakers as number | null) ?? 1,
-        estado: (row.estado as string | null) ?? 'BORRADOR',
-        slotId: row.slot_id as string,
+        id: row.id,
+        titulo: row.titulo ?? '',
+        descripcion: row.descripcion ?? null,
+        formato: row.formato ?? null,
+        track: row.track ?? null,
+        capacidadSpeakers: row.capacidad_speakers ?? 1,
+        estado: row.estado ?? 'BORRADOR',
+        slotId: slot?.id ?? '',
         dia: slot?.dia ?? '',
         horaInicio: hhmm(slot?.hora_inicio),
         horaFin: hhmm(slot?.hora_fin),
-        escenarioId,
-        escenarioNombre: escenarioNombre.get(escenarioId) ?? '',
-        speakersAsignados,
+        escenarioId: escenario?.id ?? '',
+        escenarioNombre: escenario?.nombre ?? '',
+        speakersAsignados: Array.isArray(row.sesion_speakers)
+          ? row.sesion_speakers.length
+          : 0,
       }
     })
     .sort(bySlot)
 
-  return { sesiones, escenarios, tracks, formatos, error: catalogError }
+  return { sesiones, escenarios, tracks, formatos, error }
 }
 
 async function findOrCreateSlot(

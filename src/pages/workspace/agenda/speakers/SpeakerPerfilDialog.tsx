@@ -79,6 +79,10 @@ type SpeakerPerfilDialogProps = {
   speaker: Speaker | null
   eventoId: string
   onSaved: () => void
+  /** Propiedades del evento ya cargadas por el padre (evita refetch). */
+  propiedadesEvento?: PropiedadCustom[]
+  /** Valores de este speaker ya cargados por el padre (evita refetch). */
+  valoresDelSpeaker?: Record<string, unknown>
 }
 
 export function SpeakerPerfilDialog({
@@ -88,6 +92,8 @@ export function SpeakerPerfilDialog({
   speaker,
   eventoId,
   onSaved,
+  propiedadesEvento,
+  valoresDelSpeaker,
 }: SpeakerPerfilDialogProps) {
   const [form, setForm] = useState<FormState>(() => initialForm(speaker))
   const [saving, setSaving] = useState(false)
@@ -116,16 +122,27 @@ export function SpeakerPerfilDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, speakerId])
 
+  const tienePropsDelPadre = propiedadesEvento !== undefined
+
   async function recargarSeguimiento() {
     if (!speakerId) return
     setCargandoDerecha(true)
-    const [ses, props] = await Promise.all([
-      sesionesDeSpeaker(speakerId, eventoId),
-      propiedadesSpeaker(eventoId),
-    ])
+
+    // Participación siempre se pide (el padre no la tiene). Propiedades y
+    // valores se reutilizan del padre si los pasó.
+    const ses = await sesionesDeSpeaker(speakerId, eventoId)
     if (ses.error) toast.error(`Participación: ${ses.error}`)
-    if (props.error) toast.error(`Propiedades: ${props.error}`)
     setParticipaciones(ses.data)
+
+    if (tienePropsDelPadre) {
+      setPropiedades(propiedadesEvento ?? [])
+      setValores(valoresDelSpeaker ?? {})
+      setCargandoDerecha(false)
+      return
+    }
+
+    const props = await propiedadesSpeaker(eventoId)
+    if (props.error) toast.error(`Propiedades: ${props.error}`)
     setPropiedades(props.data)
     const vals = await valoresSpeaker(
       speakerId,
@@ -140,6 +157,15 @@ export function SpeakerPerfilDialog({
     if (open && mode === 'edit' && speakerId) void recargarSeguimiento()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, speakerId, eventoId])
+
+  // Si el padre refresca sus propiedades/valores mientras el diálogo está
+  // abierto (p. ej. tras crear una propiedad), sincroniza sin refetch.
+  useEffect(() => {
+    if (!open || !tienePropsDelPadre) return
+    setPropiedades(propiedadesEvento ?? [])
+    setValores(valoresDelSpeaker ?? {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, propiedadesEvento, valoresDelSpeaker])
 
   const set = (key: keyof SpeakerEditable, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -256,10 +282,19 @@ export function SpeakerPerfilDialog({
   }
 
   async function handlePropiedadCreada() {
-    await recargarSeguimiento()
     // La propiedad es global del evento: refresca la tabla para que
     // aparezca como columna para todos los speakers.
     onSaved()
+    // El padre tarda un tick en recargar; trae la propiedad nueva del
+    // servidor para reflejarla de inmediato en el diálogo.
+    if (!speakerId) return
+    const props = await propiedadesSpeaker(eventoId)
+    setPropiedades(props.data)
+    const vals = await valoresSpeaker(
+      speakerId,
+      props.data.map((p) => p.id),
+    )
+    setValores(vals.data)
   }
 
   return (

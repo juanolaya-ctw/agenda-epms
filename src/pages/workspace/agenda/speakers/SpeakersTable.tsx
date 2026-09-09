@@ -221,6 +221,8 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         speaker={activo}
         eventoId={eventoId}
         onSaved={refetch}
+        propiedadesEvento={propiedades}
+        valoresDelSpeaker={activo ? valoresPorSpeaker[activo.id] : undefined}
       />
 
       <PropiedadEditarDialog

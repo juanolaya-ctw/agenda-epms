@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { useSesionesData } from '@/hooks/useSesionesData'
 import { SesionesTablaView } from './sesiones/SesionesTablaView'
 import { SesionesKanbanView } from './sesiones/SesionesKanbanView'
 import { SesionesCalendarioView } from './sesiones/SesionesCalendarioView'
@@ -23,6 +24,10 @@ export function SesionesTab() {
     inicio: workspace?.fechaInicio ?? '',
     fin: workspace?.fechaFin ?? '',
   }
+
+  // Un solo fetch compartido por las 3 subvistas: cambiar de subvista ya
+  // no re-dispara la cascada de queries.
+  const data = useSesionesData(id)
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,11 +54,15 @@ export function SesionesTab() {
       ) : (
         <>
           {subVista === 'tabla' && (
-            <SesionesTablaView eventoId={id} eventoRango={eventoRango} />
+            <SesionesTablaView data={data} eventoRango={eventoRango} />
           )}
-          {subVista === 'kanban' && <SesionesKanbanView eventoId={id} />}
+          {subVista === 'kanban' && <SesionesKanbanView data={data} />}
           {subVista === 'calendario' && (
-            <SesionesCalendarioView eventoId={id} eventoRango={eventoRango} />
+            <SesionesCalendarioView
+              data={data}
+              eventoId={id}
+              eventoRango={eventoRango}
+            />
           )}
         </>
       )}

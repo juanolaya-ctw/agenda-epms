@@ -14,7 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   desplazarAgenda,
-  useSesionesData,
+  type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { diasEntre, formatDiaCorto, minutosDelDia } from './format'
@@ -79,16 +79,17 @@ function BloqueSesion({
 }
 
 type SesionesCalendarioViewProps = {
+  data: SesionesData
   eventoId: string
   eventoRango: { inicio: string; fin: string }
 }
 
 export function SesionesCalendarioView({
+  data,
   eventoId,
   eventoRango,
 }: SesionesCalendarioViewProps) {
-  const { sesiones, escenarios, loading, error, refetch } =
-    useSesionesData(eventoId)
+  const { sesiones, escenarios, loading, error, refetch } = data
   const [vista, setVista] = useState<'semana' | 'mes'>('semana')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [minutos, setMinutos] = useState('')

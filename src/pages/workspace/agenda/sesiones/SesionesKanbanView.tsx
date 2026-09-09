@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import {
   actualizarEstadoSesion,
-  useSesionesData,
+  type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { FormatoBadge } from './badges'
@@ -110,10 +110,10 @@ function Columna({
   )
 }
 
-type SesionesKanbanViewProps = { eventoId: string }
+type SesionesKanbanViewProps = { data: SesionesData }
 
-export function SesionesKanbanView({ eventoId }: SesionesKanbanViewProps) {
-  const { sesiones, loading, error, refetch } = useSesionesData(eventoId)
+export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
+  const { sesiones, loading, error, refetch } = data
   const [guardando, setGuardando] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

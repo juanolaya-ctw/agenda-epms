@@ -3,7 +3,7 @@ import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { WorkspaceCoverBanner } from '@/components/layout/WorkspaceCoverBanner'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
-import { useDashboardData } from '@/hooks/useDashboardData'
+import { useRequestsPendientesCount } from '@/hooks/useDashboardData'
 import { cn } from '@/lib/utils'
 import type { ViewRole } from '@/lib/workspaceRoutes'
 
@@ -72,8 +72,7 @@ type WorkspaceLayoutProps = {
 export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
   const { id } = useParams()
   const { workspaces, workspace, setWorkspace } = useWorkspace()
-  const dashboard = useDashboardData(role === 'agenda' ? id : null)
-  const requestCount = dashboard.requestsPendientes
+  const requestCount = useRequestsPendientesCount(role === 'agenda' ? id : null)
 
   const found = workspaces.find((w) => w.id === id)
 
@@ -137,7 +136,7 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
       </div>
 
       <main className="flex-1 overflow-auto px-8 py-6">
-        <Outlet context={dashboard} />
+        <Outlet />
       </main>
     </div>
   )

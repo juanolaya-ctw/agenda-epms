@@ -73,6 +73,13 @@ function pick<T>(value: T | null | undefined): T | null {
   return value ?? null
 }
 
+// Los embeds a-uno de PostgREST llegan como objeto, pero supabase-js a veces
+// los tipa como array; normalizamos.
+function one<T>(rel: T | T[] | null | undefined): T | null {
+  if (Array.isArray(rel)) return rel[0] ?? null
+  return rel ?? null
+}
+
 function mapSpeakerRow(
   r: Record<string, unknown>,
   extras: { sesionesEnEvento: number; eventosParticipados: string[] },
@@ -189,122 +196,60 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
   }
 }
 
+type EventoNombreEmbed = { nombre: string | null }
+type EscenarioEventoEmbed = {
+  evento: EventoNombreEmbed | EventoNombreEmbed[] | null
+}
+type SlotEventoEmbed = {
+  escenario: EscenarioEventoEmbed | EscenarioEventoEmbed[] | null
+}
+type SesionEventoEmbed = { slot: SlotEventoEmbed | SlotEventoEmbed[] | null }
+type SesionSpeakerEventoRel = {
+  sesion: SesionEventoEmbed | SesionEventoEmbed[] | null
+}
+type SpeakerGlobalRow = Record<string, unknown> & {
+  id: string
+  sesion_speakers?: SesionSpeakerEventoRel[] | null
+}
+
+const SPEAKERS_GLOBAL_SELECT = `
+  *,
+  sesion_speakers (
+    sesion:sesiones (
+      slot:slots (
+        escenario:escenarios (
+          evento:eventos ( nombre )
+        )
+      )
+    )
+  )
+`
+
+// Una sola query embebida: speakers + todas sus participaciones con el
+// nombre del evento, en vez de reconstruir el grafo a mano en 6 pasos.
 async function loadSpeakersGlobal(): Promise<LoadResult> {
   const empty = { propiedades: [] as PropiedadCustom[], valoresPorSpeaker: {} }
-  const spRes = await supabase.from('speakers').select('*').order('nombre')
-  if (spRes.error) return { speakers: [], ...empty, error: spRes.error.message }
-  const rows = spRes.data ?? []
+  const { data, error } = await supabase
+    .from('speakers')
+    .select(SPEAKERS_GLOBAL_SELECT)
+    .order('nombre')
 
-  const eventsBySpeaker = new Map<string, Set<string>>()
-  const sessionsBySpeaker = new Map<string, Set<string>>()
+  if (error) return { speakers: [], ...empty, error: error.message }
 
-  const ss = await supabase
-    .from('sesion_speakers')
-    .select('speaker_id, sesion_id')
-  if (ss.error) {
-    return {
-      speakers: rows.map((r) =>
-        mapSpeakerRow(r as Record<string, unknown>, {
-          sesionesEnEvento: 0,
-          eventosParticipados: [],
-        }),
-      ),
-      ...empty,
-      error: ss.error.message,
+  const speakers: Speaker[] = ((data ?? []) as SpeakerGlobalRow[]).map((r) => {
+    const rels = Array.isArray(r.sesion_speakers) ? r.sesion_speakers : []
+    const eventos = new Set<string>()
+    for (const rel of rels) {
+      const sesion = one(rel.sesion)
+      const slot = one(sesion?.slot)
+      const escenario = one(slot?.escenario)
+      const evento = one(escenario?.evento)
+      const nombre = evento?.nombre
+      if (nombre) eventos.add(nombre)
     }
-  }
-
-  const sesionIds = [
-    ...new Set((ss.data ?? []).map((r) => r.sesion_id as string)),
-  ]
-  const eventoNombreBySesion = new Map<string, string>()
-
-  if (sesionIds.length > 0) {
-    const ses = await supabase
-      .from('sesiones')
-      .select('id, slot_id')
-      .in('id', sesionIds)
-    if (ses.error) return { speakers: [], ...empty, error: ses.error.message }
-
-    const slotIds = [
-      ...new Set(
-        (ses.data ?? []).map((r) => r.slot_id as string).filter(Boolean),
-      ),
-    ]
-    const slotById = new Map<string, { escenario_id: string }>()
-    if (slotIds.length > 0) {
-      const slots = await supabase
-        .from('slots')
-        .select('id, escenario_id')
-        .in('id', slotIds)
-      if (slots.error)
-        return { speakers: [], ...empty, error: slots.error.message }
-      for (const s of slots.data ?? []) {
-        slotById.set(s.id as string, { escenario_id: s.escenario_id as string })
-      }
-    }
-
-    const escIds = [
-      ...new Set([...slotById.values()].map((s) => s.escenario_id)),
-    ]
-    const eventoByEsc = new Map<string, string>()
-    if (escIds.length > 0) {
-      const esc = await supabase
-        .from('escenarios')
-        .select('id, evento_id')
-        .in('id', escIds)
-      if (esc.error)
-        return { speakers: [], ...empty, error: esc.error.message }
-      const eventoIds = [
-        ...new Set(
-          (esc.data ?? []).map((e) => e.evento_id as string).filter(Boolean),
-        ),
-      ]
-      const nombreByEvento = new Map<string, string>()
-      if (eventoIds.length > 0) {
-        const ev = await supabase
-          .from('eventos')
-          .select('id, nombre')
-          .in('id', eventoIds)
-        if (ev.error)
-          return { speakers: [], ...empty, error: ev.error.message }
-        for (const e of ev.data ?? []) {
-          nombreByEvento.set(e.id as string, (e.nombre as string) ?? '')
-        }
-      }
-      for (const e of esc.data ?? []) {
-        const nombre = nombreByEvento.get(e.evento_id as string)
-        if (nombre) eventoByEsc.set(e.id as string, nombre)
-      }
-    }
-
-    for (const s of ses.data ?? []) {
-      const slot = slotById.get(s.slot_id as string)
-      const nombre = slot ? eventoByEsc.get(slot.escenario_id) : undefined
-      if (nombre) eventoNombreBySesion.set(s.id as string, nombre)
-    }
-  }
-
-  for (const r of ss.data ?? []) {
-    const speakerId = r.speaker_id as string
-    const sesionId = r.sesion_id as string
-    if (!sessionsBySpeaker.has(speakerId)) {
-      sessionsBySpeaker.set(speakerId, new Set())
-    }
-    sessionsBySpeaker.get(speakerId)!.add(sesionId)
-    const nombre = eventoNombreBySesion.get(sesionId)
-    if (!nombre) continue
-    if (!eventsBySpeaker.has(speakerId)) {
-      eventsBySpeaker.set(speakerId, new Set())
-    }
-    eventsBySpeaker.get(speakerId)!.add(nombre)
-  }
-
-  const speakers: Speaker[] = rows.map((r) => {
-    const id = r.id as string
-    return mapSpeakerRow(r as Record<string, unknown>, {
-      sesionesEnEvento: sessionsBySpeaker.get(id)?.size ?? 0,
-      eventosParticipados: [...(eventsBySpeaker.get(id) ?? [])].sort(),
+    return mapSpeakerRow(r as unknown as Record<string, unknown>, {
+      sesionesEnEvento: rels.length,
+      eventosParticipados: [...eventos].sort(),
     })
   })
 
@@ -331,75 +276,64 @@ export async function crearSpeaker(
   return data.id as string
 }
 
+type EscenarioNombreEmbed = { nombre: string | null; evento_id: string }
+type SlotPartEmbed = {
+  dia: string | null
+  hora_inicio: string | null
+  hora_fin: string | null
+  escenario: EscenarioNombreEmbed | EscenarioNombreEmbed[] | null
+}
+type SesionPartEmbed = {
+  id: string
+  titulo: string | null
+  slot: SlotPartEmbed | SlotPartEmbed[] | null
+}
+type SesionSpeakerPartRow = {
+  rol: string | null
+  sesion: SesionPartEmbed | SesionPartEmbed[] | null
+}
+
+const SESIONES_DE_SPEAKER_SELECT = `
+  rol,
+  sesion:sesiones!inner (
+    id, titulo,
+    slot:slots!inner (
+      dia, hora_inicio, hora_fin,
+      escenario:escenarios!inner ( nombre, evento_id )
+    )
+  )
+`
+
+// Una sola query embebida filtrada por evento en el servidor, en vez de la
+// cascada sesion_speakers → sesiones → slots → escenarios.
 export async function sesionesDeSpeaker(
   speakerId: string,
   eventoId: string,
 ): Promise<{ data: ParticipacionSesion[]; error: string | null }> {
-  const ss = await supabase
+  const { data, error } = await supabase
     .from('sesion_speakers')
-    .select('rol, sesion_id')
+    .select(SESIONES_DE_SPEAKER_SELECT)
     .eq('speaker_id', speakerId)
-  if (ss.error) return { data: [], error: ss.error.message }
+    .eq('sesion.slot.escenario.evento_id', eventoId)
 
-  const rolBySesion = new Map(
-    (ss.data ?? []).map((r) => [
-      r.sesion_id as string,
-      (r.rol as string | null) ?? '',
-    ]),
-  )
-  const sesionIds = [...rolBySesion.keys()]
-  if (sesionIds.length === 0) return { data: [], error: null }
+  if (error) return { data: [], error: error.message }
 
-  const ses = await supabase
-    .from('sesiones')
-    .select('id, titulo, slot_id')
-    .in('id', sesionIds)
-  if (ses.error) return { data: [], error: ses.error.message }
-
-  const slotIds = (ses.data ?? [])
-    .map((r) => r.slot_id as string)
-    .filter(Boolean)
-  const slots = slotIds.length
-    ? await supabase
-        .from('slots')
-        .select('id, dia, hora_inicio, hora_fin, escenario_id')
-        .in('id', slotIds)
-    : { data: [], error: null }
-  if (slots.error) return { data: [], error: slots.error.message }
-  const slotById = new Map(
-    (slots.data ?? []).map((s) => [s.id as string, s]),
-  )
-
-  const escIds = [
-    ...new Set((slots.data ?? []).map((s) => s.escenario_id as string)),
-  ]
-  const esc = escIds.length
-    ? await supabase
-        .from('escenarios')
-        .select('id, nombre, evento_id')
-        .in('id', escIds)
-    : { data: [], error: null }
-  if (esc.error) return { data: [], error: esc.error.message }
-  const escById = new Map((esc.data ?? []).map((e) => [e.id as string, e]))
-
-  const data: ParticipacionSesion[] = []
-  for (const s of ses.data ?? []) {
-    const slot = slotById.get(s.slot_id as string)
-    const escenario = slot
-      ? escById.get(slot.escenario_id as string)
-      : undefined
-    if (!escenario || escenario.evento_id !== eventoId) continue
-    data.push({
-      sesionId: s.id as string,
-      titulo: (s.titulo as string | null) ?? '',
-      dia: (slot?.dia as string | null) ?? '',
-      horaInicio: ((slot?.hora_inicio as string | null) ?? '').slice(0, 5),
-      horaFin: ((slot?.hora_fin as string | null) ?? '').slice(0, 5),
-      escenario: (escenario.nombre as string | null) ?? '',
-      rol: rolBySesion.get(s.id as string) ?? '',
+  const parts: ParticipacionSesion[] = ((data ?? []) as SesionSpeakerPartRow[])
+    .map((row) => {
+      const sesion = one(row.sesion)
+      const slot = one(sesion?.slot)
+      const escenario = one(slot?.escenario)
+      return {
+        sesionId: sesion?.id ?? '',
+        titulo: sesion?.titulo ?? '',
+        dia: slot?.dia ?? '',
+        horaInicio: (slot?.hora_inicio ?? '').slice(0, 5),
+        horaFin: (slot?.hora_fin ?? '').slice(0, 5),
+        escenario: escenario?.nombre ?? '',
+        rol: row.rol ?? '',
+      }
     })
-  }
-  return { data, error: null }
+  return { data: parts, error: null }
 }
 
 export async function propiedadesSpeaker(

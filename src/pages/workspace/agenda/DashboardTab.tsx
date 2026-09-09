@@ -1,6 +1,6 @@
-import { useOutletContext } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import type { DashboardData, DashboardKpiKey } from '@/hooks/useDashboardData'
+import { useDashboardData, type DashboardKpiKey } from '@/hooks/useDashboardData'
 
 type Kpi = {
   key: DashboardKpiKey
@@ -68,7 +68,8 @@ function KpiSkeleton() {
 }
 
 export function DashboardTab() {
-  const data = useOutletContext<DashboardData>()
+  const { id } = useParams()
+  const data = useDashboardData(id)
 
   if (data.loading) {
     return (

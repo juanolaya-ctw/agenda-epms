@@ -104,69 +104,63 @@ async function loadEventGraph(eventoId: string) {
   }
 }
 
-async function countTotalSesiones(slotIds: string[]) {
-  if (slotIds.length === 0) return { value: 0, error: null as string | null }
-
-  const { count, error } = await supabase
-    .from('sesiones')
-    .select('id', { count: 'exact', head: true })
-    .in('slot_id', slotIds)
-
-  return { value: count ?? 0, error: queryErrorMessage(error) }
+type SesionRow = {
+  id: string
+  titulo: string | null
+  capacidad_speakers: number | null
+  slot_id: string | null
+  estado: string | null
 }
 
-async function fetchSesionesConCupo(
-  slotIds: string[],
-  slotsById: Map<string, { dia: string; hora_inicio: string; escenario_id: string }>,
-  escenarioNombre: Map<string, string>,
-) {
+// Una sola lectura de `sesiones`; total, sesionIds y sesionesConCupo se
+// derivan de este mismo resultado en memoria (antes eran 3 queries).
+async function fetchSesiones(slotIds: string[]) {
   if (slotIds.length === 0) {
-    return { value: 0, rows: [] as SesionConCupo[], error: null as string | null }
+    return { rows: [] as SesionRow[], error: null as string | null }
   }
-
-  const sesionesRes = await supabase
+  const { data, error } = await supabase
     .from('sesiones')
     .select('id, titulo, capacidad_speakers, slot_id, estado')
     .in('slot_id', slotIds)
-    .neq('estado', 'CANCELADA')
+  return { rows: (data ?? []) as SesionRow[], error: queryErrorMessage(error) }
+}
 
-  const sesionesError = queryErrorMessage(sesionesRes.error)
-  if (sesionesError) {
-    return { value: 0, rows: [] as SesionConCupo[], error: sesionesError }
+async function fetchAsignadosBySesion(sesionIds: string[]) {
+  if (sesionIds.length === 0) {
+    return { map: new Map<string, number>(), error: null as string | null }
   }
+  const { data, error } = await supabase
+    .from('sesion_speakers')
+    .select('id, sesion_id')
+    .in('sesion_id', sesionIds)
 
-  const sesiones = sesionesRes.data ?? []
-  const sesionIds = sesiones.map((row) => row.id as string)
+  const map = (data ?? []).reduce((acc, row) => {
+    const sid = row.sesion_id as string
+    acc.set(sid, (acc.get(sid) ?? 0) + 1)
+    return acc
+  }, new Map<string, number>())
 
-  let assignedBySesion = new Map<string, number>()
-  if (sesionIds.length > 0) {
-    const speakersRes = await supabase
-      .from('sesion_speakers')
-      .select('id, sesion_id')
-      .in('sesion_id', sesionIds)
+  return { map, error: queryErrorMessage(error) }
+}
 
-    const speakersError = queryErrorMessage(speakersRes.error)
-    if (speakersError) {
-      return { value: 0, rows: [] as SesionConCupo[], error: speakersError }
-    }
-
-    assignedBySesion = (speakersRes.data ?? []).reduce((map, row) => {
-      const sesionId = row.sesion_id as string
-      map.set(sesionId, (map.get(sesionId) ?? 0) + 1)
-      return map
-    }, new Map<string, number>())
-  }
-
-  const rows = sesiones
+function construirSesionesAbiertas(
+  rows: SesionRow[],
+  asignadosBySesion: Map<string, number>,
+  slotsById: Map<
+    string,
+    { dia: string; hora_inicio: string; escenario_id: string }
+  >,
+  escenarioNombre: Map<string, string>,
+): SesionConCupo[] {
+  return rows
+    .filter((row) => row.estado !== 'CANCELADA')
     .map((row) => {
-      const slot = slotsById.get(row.slot_id as string)
-      const capacidad = (row.capacidad_speakers as number | null) ?? 1
-      const asignados = assignedBySesion.get(row.id as string) ?? 0
+      const slot = slotsById.get(row.slot_id ?? '')
       return {
-        id: row.id as string,
-        titulo: row.titulo as string,
-        capacidadSpeakers: capacidad,
-        speakersAsignados: asignados,
+        id: row.id,
+        titulo: row.titulo ?? '',
+        capacidadSpeakers: row.capacidad_speakers ?? 1,
+        speakersAsignados: asignadosBySesion.get(row.id) ?? 0,
         dia: slot?.dia ?? '',
         horaInicio: slot?.hora_inicio ?? '',
         escenarioNombre: slot
@@ -180,8 +174,6 @@ async function fetchSesionesConCupo(
       if (day !== 0) return day
       return a.horaInicio.localeCompare(b.horaInicio)
     })
-
-  return { value: rows.length, rows, error: null as string | null }
 }
 
 async function countRequests(sesionIds: string[], estado: 'PENDIENTE' | 'EN_REVISION') {
@@ -211,51 +203,88 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
     }
   }
 
-  const sesionesRes =
-    graph.slotIds.length === 0
-      ? { data: [] as { id: string }[], error: null }
-      : await supabase.from('sesiones').select('id').in('slot_id', graph.slotIds)
+  const sesionesRes = await fetchSesiones(graph.slotIds)
+  if (sesionesRes.error) {
+    return {
+      ...EMPTY,
+      error: sesionesRes.error,
+      kpiErrors: {
+        totalSesiones: sesionesRes.error,
+        sesionesConCupo: sesionesRes.error,
+        requestsPendientes: sesionesRes.error,
+        requestsEnRevision: sesionesRes.error,
+      },
+    }
+  }
 
-  const sesionesError = queryErrorMessage(sesionesRes.error)
-  const sesionIds = (sesionesRes.data ?? []).map((row) => row.id as string)
+  const sesiones = sesionesRes.rows
+  const sesionIds = sesiones.map((row) => row.id)
 
-  const [total, cupo, pendientes, revision] = await Promise.all([
-    sesionesError
-      ? Promise.resolve({ value: 0, error: sesionesError })
-      : countTotalSesiones(graph.slotIds),
-    sesionesError
-      ? Promise.resolve({
-          value: 0,
-          rows: [] as SesionConCupo[],
-          error: sesionesError,
-        })
-      : fetchSesionesConCupo(graph.slotIds, graph.slotsById, graph.escenarioNombre),
-    sesionesError
-      ? Promise.resolve({ value: 0, error: sesionesError })
-      : countRequests(sesionIds, 'PENDIENTE'),
-    sesionesError
-      ? Promise.resolve({ value: 0, error: sesionesError })
-      : countRequests(sesionIds, 'EN_REVISION'),
+  const [asignados, pendientes, revision] = await Promise.all([
+    fetchAsignadosBySesion(sesionIds),
+    countRequests(sesionIds, 'PENDIENTE'),
+    countRequests(sesionIds, 'EN_REVISION'),
   ])
 
+  const sesionesAbiertas = construirSesionesAbiertas(
+    sesiones,
+    asignados.map,
+    graph.slotsById,
+    graph.escenarioNombre,
+  )
+
   const kpiErrors: DashboardData['kpiErrors'] = {}
-  if (total.error) kpiErrors.totalSesiones = total.error
-  if (cupo.error) kpiErrors.sesionesConCupo = cupo.error
+  if (asignados.error) kpiErrors.sesionesConCupo = asignados.error
   if (pendientes.error) kpiErrors.requestsPendientes = pendientes.error
   if (revision.error) kpiErrors.requestsEnRevision = revision.error
 
   const firstError =
-    total.error ?? cupo.error ?? pendientes.error ?? revision.error ?? null
+    asignados.error ?? pendientes.error ?? revision.error ?? null
 
   return {
-    totalSesiones: total.value,
-    sesionesConCupo: cupo.value,
+    totalSesiones: sesiones.length,
+    sesionesConCupo: sesionesAbiertas.length,
     requestsPendientes: pendientes.value,
     requestsEnRevision: revision.value,
     error: firstError,
     kpiErrors,
-    sesionesAbiertas: cupo.rows,
+    sesionesAbiertas,
   }
+}
+
+// Conteo aislado para el badge de la pestaña Requests en WorkspaceLayout.
+// Una sola query filtrada en el servidor (join embebido, usa idx_requests_sesion)
+// en vez de cargar todo el agregado del dashboard.
+export function useRequestsPendientesCount(
+  eventoId: string | null | undefined,
+): number {
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    if (!eventoId) {
+      setCount(0)
+      return
+    }
+
+    let cancelled = false
+    supabase
+      .from('requests')
+      .select(
+        'id, sesion:sesiones!inner(slot:slots!inner(escenario:escenarios!inner(evento_id)))',
+        { count: 'exact', head: true },
+      )
+      .eq('estado', 'PENDIENTE')
+      .eq('sesion.slot.escenario.evento_id', eventoId)
+      .then(({ count: value }) => {
+        if (!cancelled) setCount(value ?? 0)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [eventoId])
+
+  return count
 }
 
 export function useDashboardData(eventoId: string | null | undefined): DashboardData {

@@ -36,7 +36,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
-import { eliminarSesion, useSesionesData, type Sesion } from '@/hooks/useSesionesData'
+import {
+  eliminarSesion,
+  type SesionesData,
+  type Sesion,
+} from '@/hooks/useSesionesData'
 import { SesionFormDialog } from './SesionFormDialog'
 import { EstadoBadge, FormatoBadge } from './badges'
 import { formatDiaLargo } from './format'
@@ -128,16 +132,13 @@ function LoadingRows() {
 }
 
 type SesionesTablaViewProps = {
-  eventoId: string
+  data: SesionesData
   eventoRango: { inicio: string; fin: string }
 }
 
-export function SesionesTablaView({
-  eventoId,
-  eventoRango,
-}: SesionesTablaViewProps) {
+export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps) {
   const { sesiones, escenarios, tracks, formatos, loading, error, refetch } =
-    useSesionesData(eventoId)
+    data
 
   const [busqueda, setBusqueda] = useState('')
   const [filtroEscenario, setFiltroEscenario] = useState<string>(TODOS)
