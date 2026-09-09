@@ -105,30 +105,6 @@ function mapSpeakerRow(
   }
 }
 
-async function eventoSesionIds(
-  eventoId: string,
-): Promise<{ ids: string[]; error: string | null }> {
-  const esc = await supabase
-    .from('escenarios')
-    .select('id')
-    .eq('evento_id', eventoId)
-  if (esc.error) return { ids: [], error: esc.error.message }
-  const escIds = (esc.data ?? []).map((r) => r.id as string)
-  if (escIds.length === 0) return { ids: [], error: null }
-
-  const slots = await supabase
-    .from('slots')
-    .select('id')
-    .in('escenario_id', escIds)
-  if (slots.error) return { ids: [], error: slots.error.message }
-  const slotIds = (slots.data ?? []).map((r) => r.id as string)
-  if (slotIds.length === 0) return { ids: [], error: null }
-
-  const ses = await supabase.from('sesiones').select('id').in('slot_id', slotIds)
-  if (ses.error) return { ids: [], error: ses.error.message }
-  return { ids: (ses.data ?? []).map((r) => r.id as string), error: null }
-}
-
 type LoadResult = {
   speakers: Speaker[]
   propiedades: PropiedadCustom[]
@@ -136,41 +112,21 @@ type LoadResult = {
   error: string | null
 }
 
-async function loadSpeakers(eventoId: string): Promise<LoadResult> {
-  const empty = { propiedades: [] as PropiedadCustom[], valoresPorSpeaker: {} }
-  const spRes = await supabase.from('speakers').select('*').order('nombre')
-  if (spRes.error) return { speakers: [], ...empty, error: spRes.error.message }
-  const rows = spRes.data ?? []
-
-  const graph = await eventoSesionIds(eventoId)
-  const countBySpeaker = new Map<string, number>()
-  if (!graph.error && graph.ids.length > 0) {
-    const ssRes = await supabase
-      .from('sesion_speakers')
-      .select('speaker_id, sesion_id')
-      .in('sesion_id', graph.ids)
-    if (!ssRes.error) {
-      const setBySpeaker = new Map<string, Set<string>>()
-      for (const r of ssRes.data ?? []) {
-        const sid = r.speaker_id as string
-        if (!setBySpeaker.has(sid)) setBySpeaker.set(sid, new Set())
-        setBySpeaker.get(sid)!.add(r.sesion_id as string)
-      }
-      for (const [sid, set] of setBySpeaker) countBySpeaker.set(sid, set.size)
-    }
+// #6 (propiedades) → #7 (valores) siguen encadenadas entre sí (valores
+// necesita los ids de propiedades), pero ya no dependen de la query de
+// speakers, así que corren en paralelo con ella (Promise.all).
+async function loadPropiedadesYValores(eventoId: string): Promise<{
+  propiedades: PropiedadCustom[]
+  valoresPorSpeaker: Record<string, Record<string, unknown>>
+  error: string | null
+}> {
+  const props = await propiedadesSpeaker(eventoId)
+  if (props.error) {
+    return { propiedades: [], valoresPorSpeaker: {}, error: props.error }
   }
 
-  const speakers: Speaker[] = rows.map((r) =>
-    mapSpeakerRow(r as Record<string, unknown>, {
-      sesionesEnEvento: countBySpeaker.get(r.id as string) ?? 0,
-      eventosParticipados: [],
-    }),
-  )
-
-  // Propiedades custom del evento (columnas globales) + valores de todos los speakers
-  const props = await propiedadesSpeaker(eventoId)
   const valoresPorSpeaker: Record<string, Record<string, unknown>> = {}
-  if (!props.error && props.data.length > 0) {
+  if (props.data.length > 0) {
     const vpRes = await supabase
       .from('valores_propiedades')
       .select('speaker_id, propiedad_id, valor')
@@ -188,11 +144,73 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     }
   }
 
+  return { propiedades: props.data, valoresPorSpeaker, error: null }
+}
+
+type EscenarioEventoIdEmbed = { evento_id: string }
+type SlotEscEmbed = {
+  escenario: EscenarioEventoIdEmbed | EscenarioEventoIdEmbed[] | null
+}
+type SesionSlotEmbed = { slot: SlotEscEmbed | SlotEscEmbed[] | null }
+type SesionSpeakerTablaRel = {
+  sesion: SesionSlotEmbed | SesionSlotEmbed[] | null
+}
+type SpeakerTablaRow = Record<string, unknown> & {
+  id: string
+  sesion_speakers?: SesionSpeakerTablaRel[] | null
+}
+
+// Solo las columnas que pinta SpeakersTable + embed a-uno para contar las
+// sesiones del speaker EN ESTE EVENTO. Sin !inner en la raíz: los speakers
+// con cero sesiones en el evento siguen apareciendo ("Sin sesiones").
+const SPEAKERS_TABLA_SELECT = `
+  id, foto_url, nombre, cargo, empresa, pais, email, fuente,
+  sesion_speakers (
+    sesion:sesiones (
+      slot:slots (
+        escenario:escenarios ( evento_id )
+      )
+    )
+  )
+`
+
+async function loadSpeakers(eventoId: string): Promise<LoadResult> {
+  const [spRes, pv] = await Promise.all([
+    supabase.from('speakers').select(SPEAKERS_TABLA_SELECT).order('nombre'),
+    loadPropiedadesYValores(eventoId),
+  ])
+
+  if (spRes.error) {
+    return {
+      speakers: [],
+      propiedades: pv.propiedades,
+      valoresPorSpeaker: pv.valoresPorSpeaker,
+      error: spRes.error.message,
+    }
+  }
+
+  const speakers: Speaker[] = ((spRes.data ?? []) as SpeakerTablaRow[]).map(
+    (r) => {
+      const rels = Array.isArray(r.sesion_speakers) ? r.sesion_speakers : []
+      let sesionesEnEvento = 0
+      for (const rel of rels) {
+        const sesion = one(rel.sesion)
+        const slot = one(sesion?.slot)
+        const escenario = one(slot?.escenario)
+        if (escenario?.evento_id === eventoId) sesionesEnEvento += 1
+      }
+      return mapSpeakerRow(r as unknown as Record<string, unknown>, {
+        sesionesEnEvento,
+        eventosParticipados: [],
+      })
+    },
+  )
+
   return {
     speakers,
-    propiedades: props.data,
-    valoresPorSpeaker,
-    error: graph.error ?? props.error,
+    propiedades: pv.propiedades,
+    valoresPorSpeaker: pv.valoresPorSpeaker,
+    error: pv.error,
   }
 }
 

@@ -122,6 +122,28 @@ export function SpeakerPerfilDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, speakerId])
 
+  // La tabla ahora trae solo columnas ligeras; al abrir un perfil se hace
+  // un point-lookup por PK para poblar el formulario completo (bio, doc,
+  // teléfono, etc.). Una sola query indexada.
+  useEffect(() => {
+    if (!open || mode !== 'edit' || !speakerId) return
+    let cancelled = false
+    supabase
+      .from('speakers')
+      .select('*')
+      .eq('id', speakerId)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return
+        setForm(initialForm(data as unknown as Speaker))
+        setFotoUrl((data as { foto_url?: string | null }).foto_url ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, speakerId])
+
   const tienePropsDelPadre = propiedadesEvento !== undefined
 
   async function recargarSeguimiento() {
