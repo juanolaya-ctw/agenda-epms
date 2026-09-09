@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ChevronDown, LogOut, Settings } from 'lucide-react'
+import { ArrowLeft, ChevronDown, LogOut, Settings } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { workspaceHomePath, type ViewRole } from '@/lib/workspaceRoutes'
@@ -76,6 +82,9 @@ export function Navbar() {
   const activeRoleLabel =
     ROLE_OPTIONS.find((o) => o.role === currentView)?.label ?? 'Seleccionar vista'
 
+  // El atajo a "todos los eventos" solo tiene sentido dentro de un workspace.
+  const enWorkspace = location.pathname.startsWith('/workspace/')
+
   function selectWorkspace(nextId: string) {
     const next = workspaces.find((w) => w.id === nextId)
     if (!next) return
@@ -102,7 +111,25 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 flex h-14 items-center border-b border-border bg-white px-4">
+    <header className="sticky top-0 z-50 flex h-14 items-center gap-2 border-b border-border bg-white px-4">
+      {enWorkspace && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Ver todos los eventos"
+                onClick={() => navigate('/home')}
+                className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ArrowLeft className="size-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Ver todos los eventos</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+
       <Dropdown
         align="start"
         trigger={

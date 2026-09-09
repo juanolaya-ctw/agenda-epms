@@ -2,10 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { LOGOS } from '@/assets/logos'
+import loginIllustration from '@/assets/login/login-illustration.png'
 import { useAuth } from '@/contexts/AuthContext'
 
-const ILUSTRACION_URL =
-  'https://www.figma.com/api/mcp/asset/752bbeb5-7caf-44a3-a7f6-8bdd3123c11f.svg'
+// Ilustración (patrón de rombos) exportada desde Figma y guardada como asset
+// local para no depender de la URL temporal de Figma (que expira a ~7 días).
+// Nodo Figma: f4e716f0-c324-43ca-8d18-cf834df5c835
 
 export function LoginPage() {
   const { usuario, loading, signIn } = useAuth()
@@ -34,65 +36,65 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-screen bg-[#e9ebdf]">
-      {/* Zona izquierda — 40% */}
-      <div className="w-2/5 max-md:w-full shrink-0 bg-[#e9ebdf] pl-[166px] pt-[111px] pr-8 pb-16">
-        <img
-          src={LOGOS.black}
-          alt="Colombiatech"
-          className="h-[41px] w-auto"
-        />
-
-        <h1 className="mt-[80px] font-semibold text-[clamp(32px,3.5vw,48px)] leading-[1.05] text-[#040402]">
-          Workspace para la
-          <br />
-          gestión de eventos.
-        </h1>
-
-        <form
-          onSubmit={onSubmit}
-          className="mt-[48px] flex w-[533px] max-w-full flex-col gap-4"
-        >
-          <input
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@company.com"
-            className="h-[74px] w-full rounded-[24px] bg-white px-4 text-[24px] font-semibold text-[#868686] outline-none placeholder:text-[#868686]"
-          />
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Contraseña"
-            className="h-[74px] w-full rounded-[24px] bg-white px-4 text-[24px] font-semibold text-[#868686] outline-none placeholder:text-[#868686]"
+      {/* Columna izquierda — formulario */}
+      <div className="flex w-full flex-col justify-center px-8 md:w-[45%] md:px-16 lg:px-24">
+        <div className="mx-auto w-full max-w-xl">
+          <img
+            src={LOGOS.black}
+            alt="Colombiatech"
+            className="h-auto"
+            style={{ width: 'clamp(150px, 45%, 280px)' }}
           />
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="mt-10 space-y-8 md:mt-12 md:space-y-12">
+            <h1 className="text-3xl font-semibold leading-tight text-[#040402] md:text-4xl lg:text-5xl">
+              Workspace para la gestión de eventos.
+            </h1>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="flex h-[74px] w-full items-center justify-center gap-2 rounded-[24px] bg-[#040402] text-[24px] font-semibold text-white disabled:opacity-60"
-          >
-            {submitting ? (
-              <Loader2 className="size-6 animate-spin text-white" />
-            ) : (
-              'Sign In'
-            )}
-          </button>
-        </form>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <input
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="h-14 w-full rounded-3xl bg-white px-6 text-base font-medium text-[#040402] outline-none placeholder:text-[#868686] md:h-16 md:text-lg"
+              />
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Contraseña"
+                className="h-14 w-full rounded-3xl bg-white px-6 text-base font-medium text-[#040402] outline-none placeholder:text-[#868686] md:h-16 md:text-lg"
+              />
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-3xl bg-[#040402] text-base font-semibold text-white disabled:opacity-60 md:h-16 md:text-lg"
+              >
+                {submitting ? (
+                  <Loader2 className="size-5 animate-spin text-white" />
+                ) : (
+                  'Sign In'
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
 
-      {/* Zona derecha — 60% (sin fondo propio, hereda el verde oliva) */}
-      <div className="w-3/5 overflow-hidden max-md:hidden">
+      {/* Columna derecha — ilustración (oculta en mobile) */}
+      <div className="relative hidden overflow-hidden md:block md:w-[55%]">
         <img
-          src={ILUSTRACION_URL}
+          src={loginIllustration}
           alt=""
-          className="h-full w-full object-cover object-left"
+          className="absolute inset-0 h-full w-full object-contain"
         />
       </div>
     </div>
