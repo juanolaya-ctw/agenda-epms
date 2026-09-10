@@ -23,17 +23,41 @@ import {
   type Speaker,
   type SpeakerEditable,
 } from '@/hooks/useSpeakersData'
+import {
+  TableFilters,
+  filaPasaFiltros,
+  type FiltroActivo,
+  type FiltroColumna,
+} from '@/components/table-filters/TableFilters'
 import { EliminarSpeakerDialog } from '@/pages/workspace/agenda/speakers/EliminarSpeakerDialog'
 import { SpeakerPerfilDialog } from '@/pages/workspace/agenda/speakers/SpeakerPerfilDialog'
 import { FuenteBadge, iniciales } from '@/pages/workspace/agenda/speakers/speakerUtils'
+import {
+  FUENTES_SPEAKER,
+  getValSpeaker,
+  opcionesUnicas,
+} from '@/pages/workspace/agenda/speakers/speakerFiltros'
 
-const COLS = 10
+// Foto, Nombre, Cargo, Empresa, País, Email, Teléfono, LinkedIn, Ciudad,
+// Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Eventos, Acciones
+const COLS = 16
 
 type CampoTexto = Extract<
   keyof SpeakerEditable,
-  'nombre' | 'cargo' | 'empresa' | 'pais' | 'email'
+  | 'nombre'
+  | 'cargo'
+  | 'empresa'
+  | 'pais'
+  | 'email'
+  | 'telefono'
+  | 'linkedin_url'
+  | 'ciudad'
+  | 'tipo_documento'
+  | 'numero_documento'
+  | 'email_secundario'
 >
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const emailOpcional = (v: string) => v === '' || EMAIL_RE.test(v)
 const toStr = (v: unknown): string => (v == null ? '' : String(v))
 
 function EventosBadges({ nombres }: { nombres: string[] }) {
@@ -67,6 +91,37 @@ export function CrmGlobal() {
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
+  const [filtros, setFiltros] = useState<FiltroActivo[]>([])
+
+  const filterColumns: FiltroColumna[] = useMemo(
+    () => [
+      {
+        campo: 'pais',
+        etiqueta: 'País',
+        tipo: 'select',
+        opciones: opcionesUnicas(speakers, 'pais'),
+      },
+      {
+        campo: 'ciudad',
+        etiqueta: 'Ciudad',
+        tipo: 'select',
+        opciones: opcionesUnicas(speakers, 'ciudad'),
+      },
+      {
+        campo: 'fuente',
+        etiqueta: 'Fuente',
+        tipo: 'select',
+        opciones: FUENTES_SPEAKER,
+      },
+      { campo: '_conSesiones', etiqueta: 'Tiene sesiones', tipo: 'boolean' },
+      {
+        campo: '_conEventos',
+        etiqueta: 'Participa en algún evento',
+        tipo: 'boolean',
+      },
+    ],
+    [speakers],
+  )
 
   const ov = useOptimisticOverrides<CampoTexto>()
   const campoActual = (sp: Speaker, campo: CampoTexto): string =>
@@ -78,13 +133,18 @@ export function CrmGlobal() {
 
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase()
-    if (!term) return speakers
-    return speakers.filter((sp) =>
-      [sp.nombre, sp.cargo, sp.empresa, sp.email, ...sp.eventosParticipados]
-        .filter(Boolean)
-        .some((campo) => campo!.toLowerCase().includes(term)),
-    )
-  }, [speakers, busqueda])
+    return speakers.filter((sp) => {
+      if (
+        term &&
+        ![sp.nombre, sp.cargo, sp.empresa, sp.email, ...sp.eventosParticipados]
+          .filter(Boolean)
+          .some((campo) => campo!.toLowerCase().includes(term))
+      ) {
+        return false
+      }
+      return filaPasaFiltros((campo) => getValSpeaker(sp, campo, {}), filtros)
+    })
+  }, [speakers, busqueda, filtros])
 
   function abrirCrear() {
     setModo('create')
@@ -112,12 +172,19 @@ export function CrmGlobal() {
 
         <div className="mt-8 flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Input
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar por nombre, cargo, empresa o email…"
-              className="h-8 w-72"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre, cargo, empresa o email…"
+                className="h-8 w-72"
+              />
+              <TableFilters
+                columnas={filterColumns}
+                filtros={filtros}
+                onChange={setFiltros}
+              />
+            </div>
             <Button onClick={abrirCrear}>
               <UserPlus /> Agregar speaker
             </Button>
@@ -144,6 +211,12 @@ export function CrmGlobal() {
                     <TableHead>Empresa</TableHead>
                     <TableHead>País</TableHead>
                     <TableHead>Email</TableHead>
+                    <TableHead>Teléfono</TableHead>
+                    <TableHead>LinkedIn</TableHead>
+                    <TableHead>Ciudad</TableHead>
+                    <TableHead>Tipo Doc.</TableHead>
+                    <TableHead>Núm. Doc.</TableHead>
+                    <TableHead>Email secundario</TableHead>
                     <TableHead>Sesiones</TableHead>
                     <TableHead>Fuente</TableHead>
                     <TableHead>Eventos</TableHead>
@@ -170,7 +243,7 @@ export function CrmGlobal() {
                           colSpan={COLS}
                           className="py-10 text-center text-sm text-muted-foreground"
                         >
-                          Ningún speaker coincide con la búsqueda.
+                          Ningún speaker coincide con la búsqueda o los filtros.
                         </TableCell>
                       </TableRow>
                     )}
@@ -219,6 +292,52 @@ export function CrmGlobal() {
                             value={campoActual(sp, 'email')}
                             validate={(v) => EMAIL_RE.test(v)}
                             onSave={(v) => guardarCampo(sp, 'email', v)}
+                          />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'telefono')}
+                            onSave={(v) => guardarCampo(sp, 'telefono', v)}
+                          />
+                        </TableCell>
+                        <TableCell className="max-w-[160px] text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'linkedin_url')}
+                            displayClassName="truncate text-secondary"
+                            onSave={(v) =>
+                              guardarCampo(sp, 'linkedin_url', v)
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'ciudad')}
+                            onSave={(v) => guardarCampo(sp, 'ciudad', v)}
+                          />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'tipo_documento')}
+                            onSave={(v) =>
+                              guardarCampo(sp, 'tipo_documento', v)
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'numero_documento')}
+                            onSave={(v) =>
+                              guardarCampo(sp, 'numero_documento', v)
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="max-w-[200px] text-muted-foreground">
+                          <InlineText
+                            value={campoActual(sp, 'email_secundario')}
+                            validate={emailOpcional}
+                            onSave={(v) =>
+                              guardarCampo(sp, 'email_secundario', v)
+                            }
                           />
                         </TableCell>
                         <TableCell>

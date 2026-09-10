@@ -40,6 +40,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { InlineText } from '@/components/InlineText'
+import {
+  TableFilters,
+  filaPasaFiltros,
+  type FiltroActivo,
+  type FiltroColumna,
+} from '@/components/table-filters/TableFilters'
 import { useOptimisticOverrides } from '@/hooks/useOptimisticOverrides'
 import {
   actualizarCampoSesion,
@@ -53,9 +59,15 @@ import {
 import { SesionFormDialog } from './SesionFormDialog'
 import { EstadoBadge, estadoDotClass, FormatoBadge } from './badges'
 
-const TODOS = '__todos__'
 const SIN_TRACK = '__sin_track__'
 const toStr = (v: unknown): string => (v == null ? '' : String(v))
+
+function getValSesion(s: Sesion, campo: string): unknown {
+  if (campo === '_conCupo') {
+    return s.capacidadSpeakers - s.speakersAsignados > 0
+  }
+  return (s as unknown as Record<string, unknown>)[campo]
+}
 
 type SortKey =
   | 'titulo'
@@ -391,9 +403,39 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
   }
 
   const [busqueda, setBusqueda] = useState('')
-  const [filtroEscenario, setFiltroEscenario] = useState<string>(TODOS)
-  const [filtroEstado, setFiltroEstado] = useState<string>(TODOS)
+  const [filtros, setFiltros] = useState<FiltroActivo[]>([])
   const [sort, setSort] = useState<SortState>({ key: 'dia', dir: 'asc' })
+
+  const filterColumns: FiltroColumna[] = useMemo(
+    () => [
+      {
+        campo: 'formato',
+        etiqueta: 'Formato',
+        tipo: 'select',
+        opciones: formatos.map((f) => f.nombre),
+      },
+      {
+        campo: 'track',
+        etiqueta: 'Track',
+        tipo: 'select',
+        opciones: tracks.map((t) => t.nombre),
+      },
+      {
+        campo: 'escenarioNombre',
+        etiqueta: 'Escenario',
+        tipo: 'select',
+        opciones: escenarios.map((e) => e.nombre),
+      },
+      {
+        campo: 'estado',
+        etiqueta: 'Estado',
+        tipo: 'select',
+        opciones: estados.map((e) => e.nombre),
+      },
+      { campo: '_conCupo', etiqueta: 'Cupo disponible', tipo: 'boolean' },
+    ],
+    [formatos, tracks, escenarios, estados],
+  )
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetMode, setSheetMode] = useState<'create' | 'edit'>('create')
@@ -405,10 +447,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
     const term = busqueda.trim().toLowerCase()
     const rows = sesiones.filter((row) => {
       if (term && !row.titulo.toLowerCase().includes(term)) return false
-      if (filtroEscenario !== TODOS && row.escenarioId !== filtroEscenario)
-        return false
-      if (filtroEstado !== TODOS && row.estado !== filtroEstado) return false
-      return true
+      return filaPasaFiltros((campo) => getValSesion(row, campo), filtros)
     })
 
     const factor = sort.dir === 'asc' ? 1 : -1
@@ -419,7 +458,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
       if (av > bv) return 1 * factor
       return 0
     })
-  }, [sesiones, busqueda, filtroEscenario, filtroEstado, sort])
+  }, [sesiones, busqueda, filtros, sort])
 
   function handleSort(key: SortKey) {
     setSort((prev) =>
@@ -469,32 +508,11 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
               placeholder="Buscar por título…"
               className="h-8 w-56"
             />
-            <Select value={filtroEscenario} onValueChange={setFiltroEscenario}>
-              <SelectTrigger className="h-8 w-44">
-                <SelectValue placeholder="Escenario" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TODOS}>Todos los escenarios</SelectItem>
-                {escenarios.map((escenario) => (
-                  <SelectItem key={escenario.id} value={escenario.id}>
-                    {escenario.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-              <SelectTrigger className="h-8 w-40">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TODOS}>Todos los estados</SelectItem>
-                {estados.map((estado) => (
-                  <SelectItem key={estado.id} value={estado.nombre}>
-                    {estado.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TableFilters
+              columnas={filterColumns}
+              filtros={filtros}
+              onChange={setFiltros}
+            />
           </div>
 
           <Button onClick={openCreate}>

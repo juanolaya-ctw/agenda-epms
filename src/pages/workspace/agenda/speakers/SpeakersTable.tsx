@@ -31,22 +31,47 @@ import {
   useSpeakersData,
 } from '@/hooks/useSpeakersData'
 import { InlineText } from '@/components/InlineText'
+import {
+  TableFilters,
+  filaPasaFiltros,
+  type FiltroActivo,
+  type FiltroColumna,
+} from '@/components/table-filters/TableFilters'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { EliminarSpeakerDialog } from './EliminarSpeakerDialog'
 import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
+import {
+  FUENTES_SPEAKER,
+  getValSpeaker,
+  opcionesUnicas,
+  propiedadFiltroColumna,
+} from './speakerFiltros'
 
 type SpeakersTableProps = { eventoId: string }
 
-const COLS_FIJAS = 9
+// Foto, Nombre, Cargo, Empresa, País, Email, Teléfono, LinkedIn, Ciudad,
+// Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Acciones
+const COLS_FIJAS = 15
 
 type CampoTexto = Extract<
   keyof SpeakerEditable,
-  'nombre' | 'cargo' | 'empresa' | 'pais' | 'email'
+  | 'nombre'
+  | 'cargo'
+  | 'empresa'
+  | 'pais'
+  | 'email'
+  | 'telefono'
+  | 'linkedin_url'
+  | 'ciudad'
+  | 'tipo_documento'
+  | 'numero_documento'
+  | 'email_secundario'
 >
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const emailOpcional = (v: string) => v === '' || EMAIL_RE.test(v)
 
 function toStr(v: unknown): string {
   return v == null ? '' : String(v)
@@ -61,6 +86,35 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
   const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
+  const [filtros, setFiltros] = useState<FiltroActivo[]>([])
+
+  const filterColumns: FiltroColumna[] = useMemo(() => {
+    const base: FiltroColumna[] = [
+      {
+        campo: 'pais',
+        etiqueta: 'País',
+        tipo: 'select',
+        opciones: opcionesUnicas(speakers, 'pais'),
+      },
+      {
+        campo: 'ciudad',
+        etiqueta: 'Ciudad',
+        tipo: 'select',
+        opciones: opcionesUnicas(speakers, 'ciudad'),
+      },
+      {
+        campo: 'fuente',
+        etiqueta: 'Fuente',
+        tipo: 'select',
+        opciones: FUENTES_SPEAKER,
+      },
+      { campo: '_conSesiones', etiqueta: 'Tiene sesiones', tipo: 'boolean' },
+    ]
+    const custom = propiedades
+      .map(propiedadFiltroColumna)
+      .filter((c): c is FiltroColumna => c !== null)
+    return [...base, ...custom]
+  }, [speakers, propiedades])
 
   // Overrides optimistas para edición inline (no se hace refetch por celda).
   // Campos base: key = speakerId. Propiedades custom: key = `${speakerId}:${propId}`.
@@ -124,13 +178,21 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
 
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase()
-    if (!term) return speakers
-    return speakers.filter((sp) =>
-      [sp.nombre, sp.cargo, sp.empresa, sp.email]
-        .filter(Boolean)
-        .some((campo) => campo!.toLowerCase().includes(term)),
-    )
-  }, [speakers, busqueda])
+    return speakers.filter((sp) => {
+      if (
+        term &&
+        ![sp.nombre, sp.cargo, sp.empresa, sp.email]
+          .filter(Boolean)
+          .some((campo) => campo!.toLowerCase().includes(term))
+      ) {
+        return false
+      }
+      return filaPasaFiltros(
+        (campo) => getValSpeaker(sp, campo, valoresPorSpeaker),
+        filtros,
+      )
+    })
+  }, [speakers, busqueda, filtros, valoresPorSpeaker])
 
   const totalCols = COLS_FIJAS + propiedades.length
 
@@ -149,12 +211,19 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre, cargo, empresa o email…"
-          className="h-8 w-72"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre, cargo, empresa o email…"
+            className="h-8 w-72"
+          />
+          <TableFilters
+            columnas={filterColumns}
+            filtros={filtros}
+            onChange={setFiltros}
+          />
+        </div>
         <div className="flex items-center gap-2">
           <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
           <Button onClick={abrirCrear}>
@@ -184,6 +253,12 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                 <TableHead>Empresa</TableHead>
                 <TableHead>País</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Teléfono</TableHead>
+                <TableHead>LinkedIn</TableHead>
+                <TableHead>Ciudad</TableHead>
+                <TableHead>Tipo Doc.</TableHead>
+                <TableHead>Núm. Doc.</TableHead>
+                <TableHead>Email secundario</TableHead>
                 <TableHead>Sesiones</TableHead>
                 <TableHead>Fuente</TableHead>
                 {propiedades.map((prop) => (
@@ -222,7 +297,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                     colSpan={totalCols}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    Ningún speaker coincide con la búsqueda.
+                    Ningún speaker coincide con la búsqueda o los filtros.
                   </TableCell>
                 </TableRow>
               )}
@@ -269,6 +344,48 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                         value={campoActual(sp, 'email')}
                         validate={(v) => EMAIL_RE.test(v)}
                         onSave={(v) => guardarCampo(sp, 'email', v)}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'telefono')}
+                        onSave={(v) => guardarCampo(sp, 'telefono', v)}
+                      />
+                    </TableCell>
+                    <TableCell className="max-w-[160px] text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'linkedin_url')}
+                        displayClassName="truncate text-secondary"
+                        onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'ciudad')}
+                        onSave={(v) => guardarCampo(sp, 'ciudad', v)}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'tipo_documento')}
+                        onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'numero_documento')}
+                        onSave={(v) =>
+                          guardarCampo(sp, 'numero_documento', v)
+                        }
+                      />
+                    </TableCell>
+                    <TableCell className="max-w-[200px] text-muted-foreground">
+                      <InlineText
+                        value={campoActual(sp, 'email_secundario')}
+                        validate={emailOpcional}
+                        onSave={(v) =>
+                          guardarCampo(sp, 'email_secundario', v)
+                        }
                       />
                     </TableCell>
                     <TableCell>
