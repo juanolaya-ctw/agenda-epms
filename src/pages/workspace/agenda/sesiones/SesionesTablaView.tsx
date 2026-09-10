@@ -51,6 +51,7 @@ import {
   actualizarCampoSesion,
   actualizarCampoSlot,
   eliminarSesion,
+  IDIOMAS_SESION,
   reasignarEscenarioSesion,
   slotOcupadoPorOtraSesion,
   type SesionesData,
@@ -73,6 +74,7 @@ type SortKey =
   | 'titulo'
   | 'formato'
   | 'track'
+  | 'idioma'
   | 'dia'
   | 'hora'
   | 'escenario'
@@ -89,6 +91,8 @@ function sortValue(row: Sesion, key: SortKey): string | number {
       return (row.formato ?? '').toLowerCase()
     case 'track':
       return (row.track ?? '').toLowerCase()
+    case 'idioma':
+      return row.idioma.toLowerCase()
     case 'dia':
       return `${row.dia} ${row.horaInicio}`
     case 'hora':
@@ -141,7 +145,7 @@ function LoadingRows() {
     <>
       {Array.from({ length: 5 }).map((_, index) => (
         <TableRow key={index}>
-          {Array.from({ length: 9 }).map((__, cell) => (
+          {Array.from({ length: 10 }).map((__, cell) => (
             <TableCell key={cell}>
               <Skeleton className="h-4 w-full" />
             </TableCell>
@@ -279,6 +283,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
   const ov = useOptimisticOverrides<
     | 'titulo'
     | 'track'
+    | 'idioma'
     | 'dia'
     | 'horaInicio'
     | 'escenarioId'
@@ -378,6 +383,15 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
     refetch()
   }
 
+  async function guardarIdioma(s: Sesion, value: string) {
+    if (value === s.idioma) return
+    await ov.commit(s.id, 'idioma', value, s.idioma, async () => {
+      const { error: e } = await actualizarCampoSesion(s.id, { idioma: value })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
   async function guardarDia(s: Sesion, v: string) {
     if (!v || v === s.dia) return
     await ov.commit(s.id, 'dia', v, s.dia, async () => {
@@ -419,6 +433,12 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
         etiqueta: 'Track',
         tipo: 'select',
         opciones: tracks.map((t) => t.nombre),
+      },
+      {
+        campo: 'idioma',
+        etiqueta: 'Idioma',
+        tipo: 'select',
+        opciones: [...IDIOMAS_SESION],
       },
       {
         campo: 'escenarioNombre',
@@ -544,6 +564,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                   <SortHeader label="Título" sortKey="titulo" sort={sort} onSort={handleSort} />
                   <SortHeader label="Formato" sortKey="formato" sort={sort} onSort={handleSort} />
                   <SortHeader label="Track" sortKey="track" sort={sort} onSort={handleSort} />
+                  <SortHeader label="Idioma" sortKey="idioma" sort={sort} onSort={handleSort} />
                   <SortHeader label="Día" sortKey="dia" sort={sort} onSort={handleSort} />
                   <SortHeader label="Hora" sortKey="hora" sort={sort} onSort={handleSort} />
                   <SortHeader label="Escenario" sortKey="escenario" sort={sort} onSort={handleSort} />
@@ -559,7 +580,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
 
                 {sinResultados && (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
                       Ninguna sesión coincide con los filtros.
                     </TableCell>
                   </TableRow>
@@ -608,6 +629,28 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                               {tracks.map((t) => (
                                 <SelectItem key={t.id} value={t.nombre}>
                                   {t.nombre}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell
+                          className="text-muted-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Select
+                            value={toStr(
+                              ov.get(sesion.id, 'idioma', sesion.idioma),
+                            )}
+                            onValueChange={(v) => void guardarIdioma(sesion, v)}
+                          >
+                            <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {IDIOMAS_SESION.map((idioma) => (
+                                <SelectItem key={idioma} value={idioma}>
+                                  {idioma}
                                 </SelectItem>
                               ))}
                             </SelectContent>

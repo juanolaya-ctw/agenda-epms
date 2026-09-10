@@ -21,6 +21,7 @@ import {
 import {
   actualizarSesion,
   crearSesion,
+  IDIOMAS_SESION,
   type EstadoSesion,
   type OpcionCatalogo,
   type Sesion,
@@ -50,6 +51,7 @@ type FormState = {
   descripcion: string
   formato: string
   track: string
+  idioma: string
   escenarioId: string
   dia: string
   horaInicio: string
@@ -68,6 +70,7 @@ function initialState(
     descripcion: sesion?.descripcion ?? '',
     formato: sesion?.formato ?? '',
     track: sesion?.track ?? SIN_TRACK,
+    idioma: sesion?.idioma ?? 'Español',
     escenarioId: sesion?.escenarioId ?? '',
     dia: sesion?.dia || rangoInicio,
     horaInicio: sesion?.horaInicio ?? '',
@@ -136,6 +139,7 @@ export function SesionFormDialog({
       descripcion: form.descripcion,
       formato: form.formato,
       track: form.track === SIN_TRACK ? null : form.track,
+      idioma: form.idioma,
       escenarioId: form.escenarioId,
       dia: form.dia,
       horaInicio: form.horaInicio,
@@ -236,6 +240,25 @@ export function SesionFormDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Idioma</Label>
+            <Select
+              value={form.idioma}
+              onValueChange={(value) => set('idioma', value)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {IDIOMAS_SESION.map((idioma) => (
+                  <SelectItem key={idioma} value={idioma}>
+                    {idioma}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-col gap-1.5">
