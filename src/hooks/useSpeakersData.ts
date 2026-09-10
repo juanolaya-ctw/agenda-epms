@@ -160,11 +160,17 @@ type SpeakerTablaRow = Record<string, unknown> & {
   sesion_speakers?: SesionSpeakerTablaRel[] | null
 }
 
-// Solo las columnas que pinta SpeakersTable + embed a-uno para contar las
-// sesiones del speaker EN ESTE EVENTO. Sin !inner en la raíz: los speakers
-// con cero sesiones en el evento siguen apareciendo ("Sin sesiones").
+// Columnas de speaker que pintan SpeakersTable / CrmGlobal. `bio` y las
+// piezas (link_pieza_*, estado_pieza) NO se traen aquí: solo viven en el
+// modal, que hace su propio point-lookup por PK.
+const SPEAKER_COLS =
+  'id, foto_url, nombre, cargo, empresa, pais, email, fuente, ' +
+  'telefono, linkedin_url, ciudad, tipo_documento, numero_documento, email_secundario'
+
+// Embed a-uno para contar las sesiones del speaker EN ESTE EVENTO. Sin
+// !inner en la raíz: los speakers con cero sesiones siguen apareciendo.
 const SPEAKERS_TABLA_SELECT = `
-  id, foto_url, nombre, cargo, empresa, pais, email, fuente,
+  ${SPEAKER_COLS},
   sesion_speakers (
     sesion:sesiones (
       slot:slots (
@@ -231,7 +237,7 @@ type SpeakerGlobalRow = Record<string, unknown> & {
 }
 
 const SPEAKERS_GLOBAL_SELECT = `
-  *,
+  ${SPEAKER_COLS},
   sesion_speakers (
     sesion:sesiones (
       slot:slots (
