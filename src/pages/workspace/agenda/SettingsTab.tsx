@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, X } from 'lucide-react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
+import { ArrowLeft, GripVertical, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -69,6 +81,14 @@ function normalizeEstado(row: EstadoDbRow): EstadoRow {
       : 'gray',
     cuentaParaCupos: row.cuenta_para_cupos ?? true,
   }
+}
+
+function arrayMove<T>(list: T[], from: number, to: number): T[] {
+  const next = list.slice()
+  const [item] = next.splice(from, 1)
+  if (item === undefined) return list
+  next.splice(to, 0, item)
+  return next
 }
 
 function CatalogEditor({
@@ -152,21 +172,119 @@ function CatalogEditor({
   )
 }
 
+function EstadoSortableRow({
+  estado,
+  onUpdateColor,
+  onToggleCuenta,
+  onRemove,
+}: {
+  estado: EstadoRow
+  onUpdateColor: (id: string, color: EstadoColor) => Promise<void>
+  onToggleCuenta: (id: string, value: boolean) => Promise<void>
+  onRemove: (estado: EstadoRow) => void
+}) {
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
+    useDraggable({ id: estado.id })
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: estado.id })
+
+  return (
+    <li
+      ref={(node) => {
+        setDragRef(node)
+        setDropRef(node)
+      }}
+      className={cn(
+        'flex flex-col gap-1.5 rounded-md bg-muted px-2 py-1.5 text-sm',
+        isDragging && 'opacity-40',
+        isOver && !isDragging && 'ring-2 ring-primary/40',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="inline-flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground active:cursor-grabbing"
+          aria-label={`Reordenar ${estado.nombre}`}
+          {...listeners}
+          {...attributes}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+        <span
+          className={cn(
+            'inline-block size-2.5 shrink-0 rounded-full',
+            estadoDotClass(estado.color),
+          )}
+        />
+        <span className="flex-1 truncate">{estado.nombre}</span>
+        <Select
+          value={estado.color}
+          onValueChange={(value) =>
+            void onUpdateColor(estado.id, value as EstadoColor)
+          }
+        >
+          <SelectTrigger className="h-7 w-28 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ESTADO_COLORS.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
+                <span className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'inline-block size-2 rounded-full',
+                      estadoDotClass(c.value),
+                    )}
+                  />
+                  {c.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <button
+          type="button"
+          aria-label={`Eliminar ${estado.nombre}`}
+          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          onClick={() => onRemove(estado)}
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      <label className="flex items-center gap-2 pl-[50px] text-xs text-muted-foreground">
+        <Checkbox
+          checked={estado.cuentaParaCupos}
+          onCheckedChange={(value) =>
+            void onToggleCuenta(estado.id, value === true)
+          }
+        />
+        Contar para cupos disponibles
+      </label>
+    </li>
+  )
+}
+
 function EstadosEditor({
   estados,
   onAdd,
   onUpdateColor,
   onToggleCuenta,
   onRemove,
+  onReorder,
 }: {
   estados: EstadoRow[]
   onAdd: (nombre: string) => Promise<void>
   onUpdateColor: (id: string, color: EstadoColor) => Promise<void>
   onToggleCuenta: (id: string, value: boolean) => Promise<void>
   onRemove: (estado: EstadoRow) => void
+  onReorder: (estadosReordenados: EstadoRow[]) => Promise<void>
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  )
+  const activeEstado = estados.find((e) => e.id === activeId) ?? null
 
   async function add() {
     const nombre = draft.trim()
@@ -180,72 +298,60 @@ function EstadosEditor({
     }
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(String(event.active.id))
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveId(null)
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const from = estados.findIndex((e) => e.id === active.id)
+    const to = estados.findIndex((e) => e.id === over.id)
+    if (from < 0 || to < 0) return
+    void onReorder(arrayMove(estados, from, to))
+  }
+
   return (
     <div className="space-y-2">
       <p className="text-sm font-semibold">Estados de sesión</p>
-      <ul className="space-y-1">
-        {estados.length === 0 && (
-          <li className="text-xs text-muted-foreground">Ninguno todavía.</li>
-        )}
-        {estados.map((estado) => (
-          <li
-            key={estado.id}
-            className="flex flex-col gap-1.5 rounded-md bg-muted px-2 py-1.5 text-sm"
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  'inline-block size-2.5 shrink-0 rounded-full',
-                  estadoDotClass(estado.color),
-                )}
+      {estados.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Ninguno todavía.</p>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveId(null)}
+        >
+          <ul className="space-y-1">
+            {estados.map((estado) => (
+              <EstadoSortableRow
+                key={estado.id}
+                estado={estado}
+                onUpdateColor={onUpdateColor}
+                onToggleCuenta={onToggleCuenta}
+                onRemove={onRemove}
               />
-              <span className="flex-1 truncate">{estado.nombre}</span>
-              <Select
-                value={estado.color}
-                onValueChange={(value) =>
-                  void onUpdateColor(estado.id, value as EstadoColor)
-                }
-              >
-                <SelectTrigger className="h-7 w-28 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ESTADO_COLORS.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            'inline-block size-2 rounded-full',
-                            estadoDotClass(c.value),
-                          )}
-                        />
-                        {c.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <button
-                type="button"
-                aria-label={`Eliminar ${estado.nombre}`}
-                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-                onClick={() => onRemove(estado)}
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-            <label className="flex items-center gap-2 pl-[18px] text-xs text-muted-foreground">
-              <Checkbox
-                checked={estado.cuentaParaCupos}
-                onCheckedChange={(value) =>
-                  void onToggleCuenta(estado.id, value === true)
-                }
-              />
-              Contar para cupos disponibles
-            </label>
-          </li>
-        ))}
-      </ul>
+            ))}
+          </ul>
+          <DragOverlay>
+            {activeEstado ? (
+              <div className="flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-sm shadow-lg">
+                <GripVertical className="size-3.5 text-muted-foreground" />
+                <span
+                  className={cn(
+                    'inline-block size-2.5 shrink-0 rounded-full',
+                    estadoDotClass(activeEstado.color),
+                  )}
+                />
+                <span className="truncate">{activeEstado.nombre}</span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      )}
       <div className="flex gap-2">
         <Input
           value={draft}
@@ -336,7 +442,9 @@ export function SettingsTab() {
       setFormatos((fmt.data as CatalogItem[] | null) ?? [])
       setTracks((trk.data as CatalogItem[] | null) ?? [])
       setEstados(
-        ((est.data ?? []) as EstadoDbRow[]).map((r) => normalizeEstado(r)),
+        ((est.data ?? []) as EstadoDbRow[])
+          .map((r) => normalizeEstado(r))
+          .sort((a, b) => a.orden - b.orden),
       )
     }
     void load()
@@ -441,6 +549,33 @@ export function SettingsTab() {
     } catch (err) {
       toast.error(
         `No se pudo eliminar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  async function handleReorderEstados(estadosReordenados: EstadoRow[]) {
+    const previous = estados
+    const next = estadosReordenados.map((estado, index) => ({
+      ...estado,
+      orden: index,
+    }))
+    setEstados(next)
+    try {
+      const updates = next.map((estado) =>
+        supabase
+          .from('estados_sesion')
+          .update({ orden: estado.orden })
+          .eq('id', estado.id),
+      )
+      const results = await Promise.all(updates)
+      const failed = results.find((r) => r.error)
+      if (failed?.error) throw new Error(failed.error.message)
+    } catch (err) {
+      setEstados(previous)
+      toast.error(
+        `No se pudo reordenar: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       )
     }
   }
@@ -643,6 +778,7 @@ export function SettingsTab() {
           onUpdateColor={handleUpdateColorEstado}
           onToggleCuenta={handleToggleCuenta}
           onRemove={handleRemoveEstado}
+          onReorder={handleReorderEstados}
         />
       </section>
 

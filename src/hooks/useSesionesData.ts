@@ -163,12 +163,14 @@ async function loadSesiones(
   const escenarios = (escenariosRes.data ?? []) as OpcionCatalogo[]
   const tracks = (tracksRes.data ?? []) as OpcionCatalogo[]
   const formatos = (formatosRes.data ?? []) as OpcionCatalogo[]
-  const estados: EstadoSesion[] = (estadosRes.data ?? []).map((row) => ({
-    id: row.id as string,
-    nombre: (row.nombre as string | null) ?? '',
-    orden: (row.orden as number | null) ?? 0,
-    color: normalizarColorEstado(row.color),
-  }))
+  const estados: EstadoSesion[] = (estadosRes.data ?? [])
+    .map((row) => ({
+      id: row.id as string,
+      nombre: (row.nombre as string | null) ?? '',
+      orden: (row.orden as number | null) ?? 0,
+      color: normalizarColorEstado(row.color),
+    }))
+    .sort((a, b) => a.orden - b.orden)
   const error =
     sesionesRes.error?.message ??
     escenariosRes.error?.message ??
