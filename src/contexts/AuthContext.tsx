@@ -32,9 +32,20 @@ async function fetchUsuario(userId: string): Promise<Usuario | null> {
     .select('id, nombre, email, area, rol')
     .eq('id', userId)
     .maybeSingle()
-  if (error || !data) return null
-  return data as Usuario
+  if (error) {
+    // Error real de red o RLS: es un fallo distinto de "no existe la fila".
+    // No debe interpretarse como "usuario no registrado".
+    console.error('[fetchUsuario] error real:', error)
+    throw error
+  }
+  return (data as Usuario) ?? null
 }
+
+// signIn() maneja el evento SIGNED_IN de forma explícita. Mientras está en
+// curso, el callback de onAuthStateChange no debe disparar su propio
+// fetchUsuario en paralelo: una lectura fallida ahí haría signOut() sobre la
+// sesión que signIn() acaba de abrir.
+let signInEnProgreso = false
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
@@ -48,7 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setUsuario(null)
         return
       }
-      const u = await fetchUsuario(userId)
+      let u: Usuario | null
+      try {
+        u = await fetchUsuario(userId)
+      } catch {
+        // Error transitorio de red/RLS: no cierres la sesión aquí. Deja que un
+        // evento posterior (o el propio signIn) lo resuelva.
+        return
+      }
       if (cancelled) return
       if (u) {
         setUsuario(u)
@@ -64,7 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!cancelled) setLoading(false)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // signIn() ya se está encargando de este SIGNED_IN de forma explícita;
+      // no dupliques el trabajo ni compitas con su fetchUsuario.
+      if (event === 'SIGNED_IN' && signInEnProgreso) return
       // No await directo aquí: llamar a supabase dentro del callback mientras
       // el lock de auth está tomado puede bloquear el cliente. Se difiere.
       const userId = session?.user?.id
@@ -80,18 +101,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    if (error) throw new Error(error.message)
+    signInEnProgreso = true
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) throw new Error(error.message)
+      if (!data.user) throw new Error('No se pudo autenticar.')
 
-    const u = data.user ? await fetchUsuario(data.user.id) : null
-    if (!u) {
-      await supabase.auth.signOut()
-      throw new Error('El usuario no está registrado en el sistema.')
+      // Confirma que el cliente ya tiene la sesión aplicada antes de consultar
+      // el perfil: fetchUsuario pasa por RLS (id = auth.uid()) y necesita el
+      // JWT nuevo en la request de PostgREST.
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        throw new Error(
+          'La sesión no se estableció correctamente. Intenta de nuevo.',
+        )
+      }
+
+      let usuario: Usuario | null
+      try {
+        usuario = await fetchUsuario(data.user.id)
+      } catch {
+        // Error real de red/RLS: no cierres la sesión, permite reintentar.
+        throw new Error(
+          'No se pudo verificar tu acceso. Intenta de nuevo en un momento.',
+        )
+      }
+
+      if (!usuario) {
+        await supabase.auth.signOut()
+        throw new Error('Tu cuenta no tiene acceso al sistema.')
+      }
+
+      setUsuario(usuario)
+    } finally {
+      signInEnProgreso = false
     }
-    setUsuario(u)
   }, [])
 
   const signOut = useCallback(async () => {

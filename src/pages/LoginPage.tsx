@@ -27,8 +27,11 @@ export function LoginPage() {
     try {
       await signIn(email.trim(), password)
       navigate('/home')
-    } catch {
-      setError('Correo o contraseña incorrectos')
+    } catch (e) {
+      console.error('[login] error real:', e)
+      const mensaje =
+        e instanceof Error ? e.message : 'Correo o contraseña incorrectos'
+      setError(mensaje)
     } finally {
       setSubmitting(false)
     }
