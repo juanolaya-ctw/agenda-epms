@@ -222,6 +222,27 @@ export function SesionFormDialog({
             </div>
 
             <div className="flex flex-col gap-1.5">
+              <Label>Escenario *</Label>
+              <Select
+                value={form.escenarioId}
+                onValueChange={(value) => set('escenarioId', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un escenario" />
+                </SelectTrigger>
+                <SelectContent>
+                  {escenarios.map((escenario) => (
+                    <SelectItem key={escenario.id} value={escenario.id}>
+                      {escenario.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
               <Label>Track</Label>
               <Select
                 value={form.track}
@@ -240,44 +261,25 @@ export function SesionFormDialog({
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Idioma</Label>
-            <Select
-              value={form.idioma}
-              onValueChange={(value) => set('idioma', value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {IDIOMAS_SESION.map((idioma) => (
-                  <SelectItem key={idioma} value={idioma}>
-                    {idioma}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Escenario *</Label>
-            <Select
-              value={form.escenarioId}
-              onValueChange={(value) => set('escenarioId', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un escenario" />
-              </SelectTrigger>
-              <SelectContent>
-                {escenarios.map((escenario) => (
-                  <SelectItem key={escenario.id} value={escenario.id}>
-                    {escenario.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-1.5">
+              <Label>Idioma</Label>
+              <Select
+                value={form.idioma}
+                onValueChange={(value) => set('idioma', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {IDIOMAS_SESION.map((idioma) => (
+                    <SelectItem key={idioma} value={idioma}>
+                      {idioma}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
