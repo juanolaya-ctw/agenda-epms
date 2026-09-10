@@ -336,7 +336,7 @@ export async function actualizarCampoSesion(
 
 export async function actualizarCampoSlot(
   slotId: string,
-  patch: { dia?: string; hora_inicio?: string },
+  patch: { dia?: string; hora_inicio?: string; hora_fin?: string },
 ): Promise<{ error: string | null }> {
   const res = await supabase.from('slots').update(patch).eq('id', slotId)
   return { error: res.error?.message ?? null }

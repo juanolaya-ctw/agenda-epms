@@ -76,7 +76,8 @@ type SortKey =
   | 'track'
   | 'idioma'
   | 'dia'
-  | 'hora'
+  | 'horaInicio'
+  | 'horaFin'
   | 'escenario'
   | 'capacidad'
   | 'estado'
@@ -95,8 +96,10 @@ function sortValue(row: Sesion, key: SortKey): string | number {
       return row.idioma.toLowerCase()
     case 'dia':
       return `${row.dia} ${row.horaInicio}`
-    case 'hora':
+    case 'horaInicio':
       return row.horaInicio
+    case 'horaFin':
+      return row.horaFin
     case 'escenario':
       return row.escenarioNombre.toLowerCase()
     case 'capacidad':
@@ -145,7 +148,7 @@ function LoadingRows() {
     <>
       {Array.from({ length: 5 }).map((_, index) => (
         <TableRow key={index}>
-          {Array.from({ length: 10 }).map((__, cell) => (
+          {Array.from({ length: 11 }).map((__, cell) => (
             <TableCell key={cell}>
               <Skeleton className="h-4 w-full" />
             </TableCell>
@@ -286,6 +289,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
     | 'idioma'
     | 'dia'
     | 'horaInicio'
+    | 'horaFin'
     | 'escenarioId'
     | 'capacidadSpeakers'
     | 'estado'
@@ -401,15 +405,32 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
     refetch()
   }
 
-  async function guardarHora(s: Sesion, v: string) {
-    if (!v || v === s.horaInicio) return
-    if (s.horaFin && v >= s.horaFin) {
-      toast.error('La hora de inicio debe ser anterior a la hora de fin.')
+  async function guardarHoraInicio(s: Sesion, v: string) {
+    if (!v || v === toStr(ov.get(s.id, 'horaInicio', s.horaInicio))) return
+    const finActual = toStr(ov.get(s.id, 'horaFin', s.horaFin))
+    if (finActual && v >= finActual) {
+      toast.error('La hora de inicio debe ser menor a la hora de fin.')
       return
     }
     await ov.commit(s.id, 'horaInicio', v, s.horaInicio, async () => {
       const { error: e } = await actualizarCampoSlot(s.slotId, {
         hora_inicio: v,
+      })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
+  async function guardarHoraFin(s: Sesion, v: string) {
+    if (!v || v === toStr(ov.get(s.id, 'horaFin', s.horaFin))) return
+    const inicioActual = toStr(ov.get(s.id, 'horaInicio', s.horaInicio))
+    if (inicioActual && v <= inicioActual) {
+      toast.error('La hora de fin debe ser mayor a la hora de inicio.')
+      return
+    }
+    await ov.commit(s.id, 'horaFin', v, s.horaFin, async () => {
+      const { error: e } = await actualizarCampoSlot(s.slotId, {
+        hora_fin: v,
       })
       if (e) throw new Error(e)
     })
@@ -566,7 +587,8 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                   <SortHeader label="Track" sortKey="track" sort={sort} onSort={handleSort} />
                   <SortHeader label="Idioma" sortKey="idioma" sort={sort} onSort={handleSort} />
                   <SortHeader label="Día" sortKey="dia" sort={sort} onSort={handleSort} />
-                  <SortHeader label="Hora" sortKey="hora" sort={sort} onSort={handleSort} />
+                  <SortHeader label="Hora inicio" sortKey="horaInicio" sort={sort} onSort={handleSort} />
+                  <SortHeader label="Hora fin" sortKey="horaFin" sort={sort} onSort={handleSort} />
                   <SortHeader label="Escenario" sortKey="escenario" sort={sort} onSort={handleSort} />
                   <SortHeader label="Capacidad" sortKey="capacidad" sort={sort} onSort={handleSort} />
                   <SortHeader label="Estado" sortKey="estado" sort={sort} onSort={handleSort} />
@@ -580,7 +602,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
 
                 {sinResultados && (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={11} className="py-10 text-center text-sm text-muted-foreground">
                       Ninguna sesión coincide con los filtros.
                     </TableCell>
                   </TableRow>
@@ -674,25 +696,39 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                           onClick={(e) => e.stopPropagation()}
                         >
                           {sesion.slotId ? (
-                            <span className="flex items-center gap-1">
-                              <Input
-                                type="time"
-                                value={toStr(
-                                  ov.get(
-                                    sesion.id,
-                                    'horaInicio',
-                                    sesion.horaInicio,
-                                  ),
-                                )}
-                                onChange={(e) =>
-                                  void guardarHora(sesion, e.target.value)
-                                }
-                                className="h-7 w-[5.5rem] text-xs"
-                              />
-                              <span className="text-muted-foreground">
-                                – {sesion.horaFin || '—'}
-                              </span>
-                            </span>
+                            <Input
+                              type="time"
+                              value={toStr(
+                                ov.get(
+                                  sesion.id,
+                                  'horaInicio',
+                                  sesion.horaInicio,
+                                ),
+                              )}
+                              onChange={(e) =>
+                                void guardarHoraInicio(sesion, e.target.value)
+                              }
+                              className="h-7 w-[6rem] text-xs"
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className="whitespace-nowrap tabular-nums"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {sesion.slotId ? (
+                            <Input
+                              type="time"
+                              value={toStr(
+                                ov.get(sesion.id, 'horaFin', sesion.horaFin),
+                              )}
+                              onChange={(e) =>
+                                void guardarHoraFin(sesion, e.target.value)
+                              }
+                              className="h-7 w-[6rem] text-xs"
+                            />
                           ) : (
                             '—'
                           )}
