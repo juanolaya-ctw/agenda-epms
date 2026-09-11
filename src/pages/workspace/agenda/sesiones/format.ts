@@ -56,3 +56,14 @@ export function diasEntre(inicio: string, fin: string): string[] {
   }
   return out
 }
+
+/** Días del rango del evento; si no hay rango, los días presentes en sesiones. */
+export function diasDelEvento(
+  inicio: string,
+  fin: string,
+  fallback: string[],
+): string[] {
+  const rango = diasEntre(inicio, fin)
+  if (rango.length > 0) return rango
+  return [...new Set(fallback.filter(Boolean))].sort()
+}

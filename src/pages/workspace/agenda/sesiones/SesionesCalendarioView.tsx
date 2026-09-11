@@ -17,7 +17,8 @@ import {
   type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
-import { diasEntre, formatDiaCorto, minutosDelDia } from './format'
+import { diasDelEvento, formatDiaCorto, minutosDelDia } from './format'
+import { filtrarSesionesVista, VistaFiltros } from './VistaFiltros'
 
 const INICIO_MIN = 7 * 60 // 07:00
 const FIN_MIN = 21 * 60 // 21:00
@@ -94,12 +95,29 @@ export function SesionesCalendarioView({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [minutos, setMinutos] = useState('')
   const [aplicando, setAplicando] = useState(false)
+  const [filtroEscenarioId, setFiltroEscenarioId] = useState<string | null>(null)
+  const [filtroDia, setFiltroDia] = useState<string | null>(null)
 
-  const dias = useMemo(() => {
-    const rango = diasEntre(eventoRango.inicio, eventoRango.fin)
-    if (rango.length > 0) return rango
-    return [...new Set(sesiones.map((s) => s.dia).filter(Boolean))].sort()
-  }, [eventoRango.inicio, eventoRango.fin, sesiones])
+  const diasOpciones = useMemo(
+    () =>
+      diasDelEvento(
+        eventoRango.inicio,
+        eventoRango.fin,
+        sesiones.map((s) => s.dia),
+      ),
+    [eventoRango.inicio, eventoRango.fin, sesiones],
+  )
+
+  const dias = useMemo(
+    () =>
+      filtroDia ? diasOpciones.filter((d) => d === filtroDia) : diasOpciones,
+    [diasOpciones, filtroDia],
+  )
+
+  const sesionesVisibles = useMemo(
+    () => filtrarSesionesVista(sesiones, filtroEscenarioId, filtroDia),
+    [sesiones, filtroEscenarioId, filtroDia],
+  )
 
   const colorPorEscenario = useMemo(() => {
     const map = new Map<string, string>()
@@ -133,21 +151,31 @@ export function SesionesCalendarioView({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant={vista === 'semana' ? 'default' : 'outline'}
-            onClick={() => setVista('semana')}
-          >
-            Semana
-          </Button>
-          <Button
-            size="sm"
-            variant={vista === 'mes' ? 'default' : 'outline'}
-            onClick={() => setVista('mes')}
-          >
-            Mes
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant={vista === 'semana' ? 'default' : 'outline'}
+              onClick={() => setVista('semana')}
+            >
+              Semana
+            </Button>
+            <Button
+              size="sm"
+              variant={vista === 'mes' ? 'default' : 'outline'}
+              onClick={() => setVista('mes')}
+            >
+              Mes
+            </Button>
+          </div>
+          <VistaFiltros
+            escenarios={escenarios}
+            dias={diasOpciones}
+            escenarioId={filtroEscenarioId}
+            dia={filtroDia}
+            onEscenarioChange={setFiltroEscenarioId}
+            onDiaChange={setFiltroDia}
+          />
         </div>
         <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
           Desplazar agenda
@@ -217,7 +245,7 @@ export function SesionesCalendarioView({
             </div>
 
             {dias.map((dia) => {
-              const delDia = sesiones.filter((s) => s.dia === dia)
+              const delDia = sesionesVisibles.filter((s) => s.dia === dia)
               return (
                 <div
                   key={dia}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Camera } from 'lucide-react'
+import { Camera, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { supabase } from '@/lib/supabase'
@@ -99,6 +99,7 @@ export function SpeakerPerfilDialog({
   const [saving, setSaving] = useState(false)
   const [fotoUrl, setFotoUrl] = useState<string | null>(speaker?.foto_url ?? null)
   const [subiendoFoto, setSubiendoFoto] = useState(false)
+  const [descargandoFoto, setDescargandoFoto] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [participaciones, setParticipaciones] = useState<ParticipacionSesion[]>(
@@ -249,6 +250,60 @@ export function SpeakerPerfilDialog({
     }
   }
 
+  function pathFotoStorage(url: string): string | null {
+    const marker = '/object/public/speaker-fotos/'
+    const index = url.indexOf(marker)
+    if (index < 0) return null
+    return decodeURIComponent(url.slice(index + marker.length))
+  }
+
+  function nombreArchivoFoto(type: string): string {
+    const ext = (type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+    const base =
+      (form.nombre || speaker?.email || 'speaker')
+        .trim()
+        .replace(/[^a-zA-Z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase() || 'speaker'
+    return `${base}.${ext}`
+  }
+
+  async function handleDescargarFoto() {
+    if (!fotoUrl) return
+    setDescargandoFoto(true)
+    try {
+      let blob: Blob
+      const path = pathFotoStorage(fotoUrl)
+      if (path) {
+        const { data, error } = await supabase.storage
+          .from('speaker-fotos')
+          .download(path)
+        if (error || !data) throw new Error(error?.message ?? 'Sin archivo')
+        blob = data
+      } else {
+        const res = await fetch(fotoUrl)
+        if (!res.ok) throw new Error('No se pudo obtener la imagen')
+        blob = await res.blob()
+      }
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = nombreArchivoFoto(blob.type)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      toast.error(
+        `No se pudo descargar la foto: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    } finally {
+      setDescargandoFoto(false)
+    }
+  }
+
   async function handleGuardar() {
     if (!form.nombre.trim() || !form.email.trim()) {
       toast.error('Nombre y email son obligatorios.')
@@ -365,9 +420,24 @@ export function SpeakerPerfilDialog({
                 className="hidden"
                 onChange={handleFotoChange}
               />
-              <p className="text-sm font-medium">
-                {form.nombre || 'Sin nombre'}
-              </p>
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="truncate text-sm font-medium">
+                  {form.nombre || 'Sin nombre'}
+                </p>
+                {fotoUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-fit"
+                    disabled={descargandoFoto}
+                    onClick={() => void handleDescargarFoto()}
+                  >
+                    <Download />
+                    {descargandoFoto ? 'Descargando…' : 'Descargar foto'}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {CAMPOS.map((campo) => (

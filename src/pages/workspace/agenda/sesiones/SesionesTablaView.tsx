@@ -58,7 +58,7 @@ import {
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { SesionFormDialog } from './SesionFormDialog'
-import { EstadoBadge, estadoDotClass, FormatoBadge } from './badges'
+import { estadoDotClass, FormatoBadge } from './badges'
 
 const SIN_TRACK = '__sin_track__'
 const toStr = (v: unknown): string => (v == null ? '' : String(v))
@@ -461,6 +461,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
         tipo: 'select',
         opciones: [...IDIOMAS_SESION],
       },
+      { campo: 'dia', etiqueta: 'Día', tipo: 'fecha' },
       {
         campo: 'escenarioNombre',
         etiqueta: 'Escenario',
@@ -783,13 +784,25 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                                   void guardarEstado(sesion, v)
                                 }
                               >
-                                <SelectTrigger className="h-7 w-fit gap-1 border-0 px-1 text-xs shadow-none hover:bg-muted/40">
-                                  <EstadoBadge
-                                    estado={estadoActual}
-                                    color={colorPorEstado.get(estadoActual)}
-                                  />
+                                <SelectTrigger
+                                  className="h-7 min-w-[140px] text-xs"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                  <SelectValue placeholder="Estado">
+                                    <span className="flex items-center gap-2">
+                                      <span
+                                        className={cn(
+                                          'inline-block size-2 shrink-0 rounded-full',
+                                          estadoDotClass(
+                                            colorPorEstado.get(estadoActual),
+                                          ),
+                                        )}
+                                      />
+                                      {estadoActual || 'Estado'}
+                                    </span>
+                                  </SelectValue>
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent position="popper" align="start">
                                   {!estados.some(
                                     (e) => e.nombre === estadoActual,
                                   ) &&

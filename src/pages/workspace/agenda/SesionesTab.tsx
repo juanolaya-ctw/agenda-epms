@@ -73,7 +73,9 @@ export function SesionesTab() {
           {subVista === 'tabla' && (
             <SesionesTablaView data={data} eventoRango={eventoRango} />
           )}
-          {subVista === 'kanban' && <SesionesKanbanView data={data} />}
+          {subVista === 'kanban' && (
+            <SesionesKanbanView data={data} eventoRango={eventoRango} />
+          )}
           {subVista === 'calendario' && (
             <SesionesCalendarioView
               data={data}

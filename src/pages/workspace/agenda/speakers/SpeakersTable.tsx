@@ -51,9 +51,9 @@ import {
 
 type SpeakersTableProps = { eventoId: string }
 
-// Foto, Nombre, Cargo, Empresa, País, Email, Teléfono, LinkedIn, Ciudad,
-// Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Acciones
-const COLS_FIJAS = 15
+// Foto, URL foto, Nombre, Cargo, Empresa, País, Email, Teléfono, LinkedIn,
+// Ciudad, Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Acciones
+const COLS_FIJAS = 16
 
 type CampoTexto = Extract<
   keyof SpeakerEditable,
@@ -248,6 +248,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">Foto</TableHead>
+                <TableHead>URL foto</TableHead>
                 <TableHead>Nombre</TableHead>
                 <TableHead>Cargo</TableHead>
                 <TableHead>Empresa</TableHead>
@@ -312,6 +313,21 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                         )}
                         <AvatarFallback>{iniciales(sp.nombre)}</AvatarFallback>
                       </Avatar>
+                    </TableCell>
+                    <TableCell className="max-w-[220px]">
+                      {sp.foto_url ? (
+                        <a
+                          href={sp.foto_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={sp.foto_url}
+                          className="block truncate text-xs text-secondary hover:underline"
+                        >
+                          {sp.foto_url}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <InlineText

@@ -19,7 +19,8 @@ import {
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { estadoDotClass, FormatoBadge } from './badges'
-import { formatDiaCorto, rangoHora } from './format'
+import { diasDelEvento, formatDiaCorto, rangoHora } from './format'
+import { filtrarSesionesVista, VistaFiltros } from './VistaFiltros'
 
 type ColumnaEstado = { nombre: string; color: EstadoColor }
 
@@ -116,13 +117,36 @@ function Columna({
   )
 }
 
-type SesionesKanbanViewProps = { data: SesionesData }
+type SesionesKanbanViewProps = {
+  data: SesionesData
+  eventoRango: { inicio: string; fin: string }
+}
 
-export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
-  const { sesiones, estados, loading, error, refetch } = data
+export function SesionesKanbanView({
+  data,
+  eventoRango,
+}: SesionesKanbanViewProps) {
+  const { sesiones, escenarios, estados, loading, error, refetch } = data
   const [guardando, setGuardando] = useState(false)
+  const [filtroEscenarioId, setFiltroEscenarioId] = useState<string | null>(null)
+  const [filtroDia, setFiltroDia] = useState<string | null>(null)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  )
+
+  const dias = useMemo(
+    () =>
+      diasDelEvento(
+        eventoRango.inicio,
+        eventoRango.fin,
+        sesiones.map((s) => s.dia),
+      ),
+    [eventoRango.inicio, eventoRango.fin, sesiones],
+  )
+
+  const sesionesVisibles = useMemo(
+    () => filtrarSesionesVista(sesiones, filtroEscenarioId, filtroDia),
+    [sesiones, filtroEscenarioId, filtroDia],
   )
 
   // Columnas desde el catálogo del evento (ordenadas por `orden`). Si el
@@ -166,20 +190,38 @@ export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-4 sm:flex-row">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="flex flex-1 flex-col gap-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-        ))}
+      <div className="flex flex-col gap-3">
+        <VistaFiltros
+          escenarios={escenarios}
+          dias={dias}
+          escenarioId={filtroEscenarioId}
+          dia={filtroDia}
+          onEscenarioChange={setFiltroEscenarioId}
+          onDiaChange={setFiltroDia}
+        />
+        <div className="flex flex-col gap-4 sm:flex-row">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex flex-1 flex-col gap-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-3">
+      <VistaFiltros
+        escenarios={escenarios}
+        dias={dias}
+        escenarioId={filtroEscenarioId}
+        dia={filtroDia}
+        onEscenarioChange={setFiltroEscenarioId}
+        onDiaChange={setFiltroDia}
+      />
       {error && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
@@ -197,7 +239,9 @@ export function SesionesKanbanView({ data }: SesionesKanbanViewProps) {
               <Columna
                 key={estado.nombre}
                 estado={estado}
-                sesiones={sesiones.filter((row) => row.estado === estado.nombre)}
+                sesiones={sesionesVisibles.filter(
+                  (row) => row.estado === estado.nombre,
+                )}
               />
             ))}
           </div>
