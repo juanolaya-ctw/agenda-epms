@@ -18,6 +18,8 @@ import {
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { diasDelEvento, formatDiaCorto, minutosDelDia } from './format'
+import { SesionFormDialog } from './SesionFormDialog'
+import { SpeakersAvatarStack } from './SpeakersAvatarStack'
 import { filtrarSesionesVista, VistaFiltros } from './VistaFiltros'
 
 const INICIO_MIN = 7 * 60 // 07:00
@@ -48,9 +50,11 @@ function horaLabel(min: number): string {
 function BloqueSesion({
   sesion,
   color,
+  onClick,
 }: {
   sesion: Sesion
   color: string
+  onClick: () => void
 }) {
   const ini = minutosDelDia(sesion.horaInicio)
   const fin = minutosDelDia(sesion.horaFin)
@@ -61,21 +65,39 @@ function BloqueSesion({
     18,
     ((Math.min(fin, FIN_MIN) - Math.max(ini, INICIO_MIN)) / PASO_MIN) * ROW_H,
   )
+  const muestraHora = alto >= 36
+  const muestraAvatares = alto >= 68
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        'absolute inset-x-1 overflow-hidden rounded-md px-1.5 py-1 text-[11px] leading-tight',
+        'absolute inset-x-1 overflow-hidden rounded-md px-1.5 py-1 text-left text-[11px] leading-tight transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         color,
       )}
       style={{ top, height: alto }}
-      title={`${sesion.titulo} · ${sesion.horaInicio}–${sesion.horaFin}`}
+      title={`${sesion.titulo} · ${sesion.horaInicio}–${sesion.horaFin} · ${sesion.speakersAsignados}/${sesion.capacidadSpeakers} speakers`}
     >
-      <p className="truncate font-medium">{sesion.titulo}</p>
-      <p className="truncate opacity-80">
-        {sesion.horaInicio}–{sesion.horaFin}
+      <p className="truncate font-medium">
+        {sesion.titulo}
+        {!muestraHora &&
+          ` · ${sesion.speakersAsignados}/${sesion.capacidadSpeakers}`}
       </p>
-    </div>
+      {muestraHora && (
+        <p className="truncate opacity-80">
+          {sesion.horaInicio}–{sesion.horaFin} · {sesion.speakersAsignados}/
+          {sesion.capacidadSpeakers}
+        </p>
+      )}
+      {muestraAvatares && (
+        <SpeakersAvatarStack
+          speakers={sesion.speakers}
+          emptyLabel={false}
+          className="mt-1"
+        />
+      )}
+    </button>
   )
 }
 
@@ -90,9 +112,20 @@ export function SesionesCalendarioView({
   eventoId,
   eventoRango,
 }: SesionesCalendarioViewProps) {
-  const { sesiones, escenarios, loading, error, refetch } = data
-  const [vista, setVista] = useState<'semana' | 'mes'>('semana')
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const {
+    sesiones,
+    escenarios,
+    tracks,
+    formatos,
+    estados,
+    loading,
+    error,
+    refetch,
+  } = data
+  const [vista] = useState<'semana' | 'mes'>('semana')
+  const [shiftDialogOpen, setShiftDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [sesionActiva, setSesionActiva] = useState<Sesion | null>(null)
   const [minutos, setMinutos] = useState('')
   const [aplicando, setAplicando] = useState(false)
   const [filtroEscenarioId, setFiltroEscenarioId] = useState<string | null>(null)
@@ -143,9 +176,14 @@ export function SesionesCalendarioView({
     toast.success(
       `Agenda desplazada ${valor > 0 ? '+' : ''}${valor} min`,
     )
-    setDialogOpen(false)
+    setShiftDialogOpen(false)
     setMinutos('')
     refetch()
+  }
+
+  function openEdit(sesion: Sesion) {
+    setSesionActiva(sesion)
+    setEditDialogOpen(true)
   }
 
   return (
@@ -155,17 +193,9 @@ export function SesionesCalendarioView({
           <div className="flex items-center gap-1">
             <Button
               size="sm"
-              variant={vista === 'semana' ? 'default' : 'outline'}
-              onClick={() => setVista('semana')}
+              variant="default"
             >
               Semana
-            </Button>
-            <Button
-              size="sm"
-              variant={vista === 'mes' ? 'default' : 'outline'}
-              onClick={() => setVista('mes')}
-            >
-              Mes
             </Button>
           </div>
           <VistaFiltros
@@ -177,7 +207,7 @@ export function SesionesCalendarioView({
             onDiaChange={setFiltroDia}
           />
         </div>
-        <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
+        <Button size="sm" variant="outline" onClick={() => setShiftDialogOpen(true)}>
           Desplazar agenda
         </Button>
       </div>
@@ -267,6 +297,7 @@ export function SesionesCalendarioView({
                         colorPorEscenario.get(sesion.escenarioId) ??
                         'bg-muted text-foreground border border-border'
                       }
+                      onClick={() => openEdit(sesion)}
                     />
                   ))}
                 </div>
@@ -276,7 +307,7 @@ export function SesionesCalendarioView({
         </div>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
         <DialogContent className="max-w-sm bg-background">
           <DialogHeader>
             <DialogTitle>Desplazar agenda</DialogTitle>
@@ -298,7 +329,7 @@ export function SesionesCalendarioView({
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
-              onClick={() => setDialogOpen(false)}
+              onClick={() => setShiftDialogOpen(false)}
               disabled={aplicando}
             >
               Cancelar
@@ -309,6 +340,19 @@ export function SesionesCalendarioView({
           </div>
         </DialogContent>
       </Dialog>
+
+      <SesionFormDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        mode="edit"
+        sesion={sesionActiva}
+        escenarios={escenarios}
+        tracks={tracks}
+        formatos={formatos}
+        estados={estados}
+        eventoRango={eventoRango}
+        onSaved={refetch}
+      />
     </div>
   )
 }

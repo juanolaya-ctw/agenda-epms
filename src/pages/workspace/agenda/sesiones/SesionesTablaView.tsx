@@ -58,6 +58,7 @@ import {
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { SesionFormDialog } from './SesionFormDialog'
+import { SpeakersAvatarStack } from './SpeakersAvatarStack'
 import { estadoDotClass, FormatoBadge } from './badges'
 
 const SIN_TRACK = '__sin_track__'
@@ -148,7 +149,7 @@ function LoadingRows() {
     <>
       {Array.from({ length: 5 }).map((_, index) => (
         <TableRow key={index}>
-          {Array.from({ length: 11 }).map((__, cell) => (
+          {Array.from({ length: 12 }).map((__, cell) => (
             <TableCell key={cell}>
               <Skeleton className="h-4 w-full" />
             </TableCell>
@@ -592,6 +593,9 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                   <SortHeader label="Hora fin" sortKey="horaFin" sort={sort} onSort={handleSort} />
                   <SortHeader label="Escenario" sortKey="escenario" sort={sort} onSort={handleSort} />
                   <SortHeader label="Capacidad" sortKey="capacidad" sort={sort} onSort={handleSort} />
+                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Speakers
+                  </TableHead>
                   <SortHeader label="Estado" sortKey="estado" sort={sort} onSort={handleSort} />
                   <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Acciones
@@ -603,7 +607,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
 
                 {sinResultados && (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={12} className="py-10 text-center text-sm text-muted-foreground">
                       Ninguna sesión coincide con los filtros.
                     </TableCell>
                   </TableRow>
@@ -771,6 +775,9 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                             asignados={sesion.speakersAsignados}
                             onSave={(n) => guardarCapacidad(sesion, n)}
                           />
+                        </TableCell>
+                        <TableCell>
+                          <SpeakersAvatarStack speakers={sesion.speakers} />
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           {(() => {

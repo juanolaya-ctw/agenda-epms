@@ -36,6 +36,7 @@ export type Sesion = {
   escenarioId: string
   escenarioNombre: string
   speakersAsignados: number
+  speakers: SesionSpeaker[]
 }
 
 export type SesionesData = {
@@ -114,7 +115,13 @@ type SesionEmbedRow = {
   capacidad_speakers: number | null
   estado: string | null
   slot: SlotEmbed | SlotEmbed[] | null
-  sesion_speakers: { id: string }[] | null
+  sesion_speakers:
+    | {
+        id: string
+        rol: string | null
+        speaker: SpeakerRow | SpeakerRow[] | null
+      }[]
+    | null
 }
 
 const SESIONES_SELECT = `
@@ -123,11 +130,14 @@ const SESIONES_SELECT = `
     id, dia, hora_inicio, hora_fin,
     escenario:escenarios!inner ( id, nombre, evento_id )
   ),
-  sesion_speakers ( id )
+  sesion_speakers (
+    id, rol,
+    speaker:speakers ( id, nombre, cargo, empresa, foto_url )
+  )
 `
 
-// Una sola query embebida trae sesiones + slot + escenario + conteo de
-// speakers; tracks/formatos/escenarios son catálogos pequeños e
+// Una sola query embebida trae sesiones + slot + escenario + speakers
+// asignados; tracks/formatos/escenarios son catálogos pequeños e
 // independientes, así que corren en paralelo (no encadenados).
 async function loadSesiones(
   eventoId: string,
@@ -187,6 +197,17 @@ async function loadSesiones(
     .map((row) => {
       const slot = one(row.slot)
       const escenario = one(slot?.escenario)
+      const speakers = (row.sesion_speakers ?? [])
+        .map((rel): SesionSpeaker | null => {
+          const speaker = one(rel.speaker)
+          if (!speaker) return null
+          return {
+            ...toSpeakerLite(speaker),
+            sesionSpeakerId: rel.id,
+            rol: rel.rol ?? 'panelista',
+          }
+        })
+        .filter((speaker): speaker is SesionSpeaker => speaker !== null)
       return {
         id: row.id,
         titulo: row.titulo ?? '',
@@ -202,9 +223,8 @@ async function loadSesiones(
         horaFin: hhmm(slot?.hora_fin),
         escenarioId: escenario?.id ?? '',
         escenarioNombre: escenario?.nombre ?? '',
-        speakersAsignados: Array.isArray(row.sesion_speakers)
-          ? row.sesion_speakers.length
-          : 0,
+        speakersAsignados: speakers.length,
+        speakers,
       }
     })
     .sort(bySlot)

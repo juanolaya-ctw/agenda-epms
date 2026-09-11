@@ -20,6 +20,7 @@ import {
 } from '@/hooks/useSesionesData'
 import { estadoDotClass, FormatoBadge } from './badges'
 import { diasDelEvento, formatDiaCorto, rangoHora } from './format'
+import { SpeakersAvatarStack } from './SpeakersAvatarStack'
 import { filtrarSesionesVista, VistaFiltros } from './VistaFiltros'
 
 type ColumnaEstado = { nombre: string; color: EstadoColor }
@@ -71,6 +72,11 @@ function SesionCard({ sesion }: { sesion: Sesion }) {
           </Badge>
         )}
       </div>
+      <SpeakersAvatarStack
+        speakers={sesion.speakers}
+        emptyLabel={false}
+        className="mt-2"
+      />
     </div>
   )
 }
