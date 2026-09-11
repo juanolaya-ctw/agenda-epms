@@ -58,7 +58,7 @@ import {
   type Sesion,
 } from '@/hooks/useSesionesData'
 import { SesionFormDialog } from './SesionFormDialog'
-import { SpeakersAvatarStack } from './SpeakersAvatarStack'
+import { SpeakersNames } from './SpeakersAvatarStack'
 import { estadoDotClass, FormatoBadge } from './badges'
 
 const SIN_TRACK = '__sin_track__'
@@ -593,7 +593,7 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                   <SortHeader label="Hora fin" sortKey="horaFin" sort={sort} onSort={handleSort} />
                   <SortHeader label="Escenario" sortKey="escenario" sort={sort} onSort={handleSort} />
                   <SortHeader label="Capacidad" sortKey="capacidad" sort={sort} onSort={handleSort} />
-                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <TableHead className="min-w-[260px] text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Speakers
                   </TableHead>
                   <SortHeader label="Estado" sortKey="estado" sort={sort} onSort={handleSort} />
@@ -776,8 +776,8 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
                             onSave={(n) => guardarCapacidad(sesion, n)}
                           />
                         </TableCell>
-                        <TableCell>
-                          <SpeakersAvatarStack speakers={sesion.speakers} />
+                        <TableCell className="min-w-[260px] max-w-[420px]">
+                          <SpeakersNames speakers={sesion.speakers} />
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           {(() => {

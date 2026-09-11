@@ -19,7 +19,7 @@ import {
 } from '@/hooks/useSesionesData'
 import { diasDelEvento, formatDiaCorto, minutosDelDia } from './format'
 import { SesionFormDialog } from './SesionFormDialog'
-import { SpeakersAvatarStack } from './SpeakersAvatarStack'
+import { SpeakerPrimaryName } from './SpeakersAvatarStack'
 import { filtrarSesionesVista, VistaFiltros } from './VistaFiltros'
 
 const INICIO_MIN = 7 * 60 // 07:00
@@ -66,7 +66,7 @@ function BloqueSesion({
     ((Math.min(fin, FIN_MIN) - Math.max(ini, INICIO_MIN)) / PASO_MIN) * ROW_H,
   )
   const muestraHora = alto >= 36
-  const muestraAvatares = alto >= 68
+  const muestraSpeaker = alto >= 54
 
   return (
     <button
@@ -90,10 +90,9 @@ function BloqueSesion({
           {sesion.capacidadSpeakers}
         </p>
       )}
-      {muestraAvatares && (
-        <SpeakersAvatarStack
+      {muestraSpeaker && (
+        <SpeakerPrimaryName
           speakers={sesion.speakers}
-          emptyLabel={false}
           className="mt-1"
         />
       )}
