@@ -168,7 +168,7 @@ export function SesionFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[880px] overflow-x-hidden overflow-y-auto bg-white p-0">
-        <div className="p-6">
+        <div className="min-w-0 p-6">
           <DialogHeader>
             <DialogTitle>
               {mode === 'edit' ? 'Editar sesión' : 'Nueva sesión'}
@@ -178,7 +178,10 @@ export function SesionFormDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
+          <form
+            onSubmit={handleSubmit}
+            className="mt-4 flex min-w-0 flex-col gap-4"
+          >
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sesion-titulo">Título *</Label>
             <Input
