@@ -13,6 +13,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
   asignarSpeaker,
   buscarSpeakers,
   cambiarRolSpeaker,
@@ -35,15 +41,24 @@ function iniciales(nombre: string): string {
 function SpeakerIdentidad({ speaker }: { speaker: SpeakerLite }) {
   const detalle = [speaker.cargo, speaker.empresa].filter(Boolean).join(' · ')
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 max-w-full items-center gap-2">
       <Avatar size="sm">
         {speaker.fotoUrl && <AvatarImage src={speaker.fotoUrl} alt={speaker.nombre} />}
         <AvatarFallback>{iniciales(speaker.nombre)}</AvatarFallback>
       </Avatar>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{speaker.nombre}</p>
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-medium">{speaker.nombre}</p>
         {detalle && (
-          <p className="truncate text-xs text-muted-foreground">{detalle}</p>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="block max-w-full truncate text-xs text-muted-foreground">
+                  {detalle}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent>{detalle}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
     </div>
@@ -172,7 +187,7 @@ export function SpeakersAsignados({
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t border-border pt-4">
+    <div className="flex w-full min-w-0 flex-col gap-2 border-t border-border pt-4">
       <div className="flex items-center justify-between">
         <Label>Speakers asignados</Label>
         <span className="text-xs text-muted-foreground">
@@ -198,7 +213,7 @@ export function SpeakersAsignados({
             {asignados.map((row) => (
               <div
                 key={row.sesionSpeakerId}
-                className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5"
+                className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-border px-2 py-1.5"
               >
                 <div className="min-w-0 flex-1">
                   <SpeakerIdentidad speaker={row} />
@@ -208,7 +223,7 @@ export function SpeakersAsignados({
                   onValueChange={(value) => handleRol(row, value)}
                   disabled={busy}
                 >
-                  <SelectTrigger className="h-7 w-32 text-xs">
+                  <SelectTrigger className="h-7 w-32 shrink-0 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -223,6 +238,7 @@ export function SpeakersAsignados({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
+                  className="shrink-0"
                   aria-label={`Quitar a ${row.nombre}`}
                   disabled={busy}
                   onClick={() => handleQuitar(row)}
