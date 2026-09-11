@@ -192,3 +192,51 @@ export function SpeakerPrimaryName({
     </TooltipProvider>
   )
 }
+
+export function SpeakersKanbanList({
+  speakers,
+  className,
+}: {
+  speakers: SesionSpeaker[]
+  className?: string
+}) {
+  if (speakers.length === 0) return null
+
+  return (
+    <TooltipProvider>
+      <div className={cn('flex min-w-0 flex-col gap-1', className)}>
+        {speakers.map((speaker) => {
+          const cargo = speaker.cargo || speaker.rol
+          const textoCompleto = [speaker.nombre, cargo, speaker.empresa]
+            .filter(Boolean)
+            .join(' · ')
+
+          return (
+            <Tooltip key={speaker.sesionSpeakerId}>
+              <TooltipTrigger asChild>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <SpeakerAvatar speaker={speaker} />
+                  <p className="min-w-0 truncate text-xs">
+                    <span className="font-medium text-foreground">
+                      {speaker.nombre}
+                    </span>
+                    {cargo && (
+                      <span className="text-muted-foreground"> · {cargo}</span>
+                    )}
+                    {speaker.empresa && (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {speaker.empresa}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{textoCompleto}</TooltipContent>
+            </Tooltip>
+          )
+        })}
+      </div>
+    </TooltipProvider>
+  )
+}

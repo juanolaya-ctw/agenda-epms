@@ -20,7 +20,7 @@ import {
 } from '@/hooks/useSesionesData'
 import { estadoDotClass, FormatoBadge } from './badges'
 import { diasDelEvento, formatDiaCorto, rangoHora } from './format'
-import { SpeakersAvatarStack } from './SpeakersAvatarStack'
+import { SpeakersKanbanList } from './SpeakersAvatarStack'
 import { filtrarSesionesVista, VistaFiltros } from './VistaFiltros'
 
 type ColumnaEstado = { nombre: string; color: EstadoColor }
@@ -72,9 +72,8 @@ function SesionCard({ sesion }: { sesion: Sesion }) {
           </Badge>
         )}
       </div>
-      <SpeakersAvatarStack
+      <SpeakersKanbanList
         speakers={sesion.speakers}
-        emptyLabel={false}
         className="mt-2"
       />
     </div>
@@ -106,7 +105,7 @@ function Columna({
       <div
         ref={setNodeRef}
         className={cn(
-          'flex min-h-40 flex-col gap-2 rounded-lg border border-dashed border-border p-2 transition-colors',
+          'flex min-h-40 max-h-[calc(100vh-18rem)] flex-col gap-2 overflow-y-auto rounded-lg border border-dashed border-border p-2 transition-colors',
           isOver && 'border-primary bg-muted/50',
         )}
       >
