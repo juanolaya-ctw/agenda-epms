@@ -17,6 +17,7 @@ export type Speaker = {
   foto_url: string | null
   bio: string | null
   fuente: string | null
+  toolkit_slug: string | null
   sesionesEnEvento: number
   eventosParticipados: string[]
 }
@@ -100,6 +101,7 @@ function mapSpeakerRow(
     foto_url: pick(r.foto_url as string | null),
     bio: pick(r.bio as string | null),
     fuente: pick(r.fuente as string | null),
+    toolkit_slug: pick(r.toolkit_slug as string | null),
     sesionesEnEvento: extras.sesionesEnEvento,
     eventosParticipados: extras.eventosParticipados,
   }
@@ -164,7 +166,7 @@ type SpeakerTablaRow = Record<string, unknown> & {
 // piezas (link_pieza_*, estado_pieza) NO se traen aquí: solo viven en el
 // modal, que hace su propio point-lookup por PK.
 const SPEAKER_COLS =
-  'id, foto_url, nombre, cargo, empresa, pais, email, fuente, ' +
+  'id, foto_url, nombre, cargo, empresa, pais, email, fuente, toolkit_slug, ' +
   'telefono, linkedin_url, ciudad, tipo_documento, numero_documento, email_secundario'
 
 // Embed a-uno para contar las sesiones del speaker EN ESTE EVENTO. Sin

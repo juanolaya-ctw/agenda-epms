@@ -203,6 +203,18 @@ serve(async (req: Request) => {
     );
   }
 
+  // Generar toolkit_slug único para la URL pública del toolkit
+  const slugBase = (speaker.nombre as string)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")  // quitar tildes
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+
+  const shortId = crypto.randomUUID().slice(0, 6);
+  speaker.toolkit_slug = `${slugBase}-${shortId}`;
+
   // ── INSERT del speaker nuevo ───────────────────────────────────────────────
   const { error: insertError } = await supabase
     .schema("epms")

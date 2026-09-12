@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Trash2, UserPlus } from 'lucide-react'
+import { Link, Pencil, Trash2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -41,7 +41,12 @@ import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { EliminarSpeakerDialog } from './EliminarSpeakerDialog'
-import { FuenteBadge, iniciales, resumenValor } from './speakerUtils'
+import {
+  FuenteBadge,
+  iniciales,
+  resumenValor,
+  toolkitUrl,
+} from './speakerUtils'
 import {
   FUENTES_SPEAKER,
   getValSpeaker,
@@ -52,8 +57,9 @@ import {
 type SpeakersTableProps = { eventoId: string }
 
 // Foto, URL foto, Nombre, Cargo, Empresa, País, Email, Teléfono, LinkedIn,
-// Ciudad, Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Acciones
-const COLS_FIJAS = 16
+// Ciudad, Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Toolkit,
+// Acciones
+const COLS_FIJAS = 17
 
 type CampoTexto = Extract<
   keyof SpeakerEditable,
@@ -208,6 +214,15 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
     setDialogOpen(true)
   }
 
+  async function copiarToolkit(slug: string) {
+    try {
+      await navigator.clipboard.writeText(toolkitUrl(slug))
+      toast.success('Link copiado')
+    } catch {
+      toast.error('No se pudo copiar el link')
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -262,6 +277,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                 <TableHead>Email secundario</TableHead>
                 <TableHead>Sesiones</TableHead>
                 <TableHead>Fuente</TableHead>
+                <TableHead>Toolkit</TableHead>
                 {propiedades.map((prop) => (
                   <TableHead key={prop.id} className="whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
@@ -418,6 +434,22 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
                     </TableCell>
                     <TableCell>
                       <FuenteBadge fuente={sp.fuente} />
+                    </TableCell>
+                    <TableCell>
+                      {sp.toolkit_slug ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Copiar link del toolkit de ${sp.nombre}`}
+                          title="Copiar link del toolkit"
+                          onClick={() => void copiarToolkit(sp.toolkit_slug!)}
+                        >
+                          <Link />
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     {propiedades.map((prop) => {
                       const v = valorActual(sp.id, prop.id)

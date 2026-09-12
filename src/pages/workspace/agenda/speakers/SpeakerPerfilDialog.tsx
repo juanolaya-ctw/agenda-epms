@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Camera, Download } from 'lucide-react'
+import { Camera, Download, Link } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { supabase } from '@/lib/supabase'
@@ -36,7 +36,7 @@ import {
 } from '@/hooks/useSpeakersData'
 import { formatDiaLargo } from '../sesiones/format'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
-import { asChecklist, iniciales } from './speakerUtils'
+import { asChecklist, iniciales, toolkitUrl } from './speakerUtils'
 
 const CAMPOS: { key: keyof SpeakerEditable; label: string; required?: boolean }[] = [
   { key: 'nombre', label: 'Nombre', required: true },
@@ -112,6 +112,9 @@ export function SpeakerPerfilDialog({
   const [nuevoItem, setNuevoItem] = useState<Record<string, string>>({})
 
   const speakerId = speaker?.id ?? null
+  const linkToolkit = speaker?.toolkit_slug
+    ? toolkitUrl(speaker.toolkit_slug)
+    : null
 
   useEffect(() => {
     if (open) {
@@ -330,6 +333,16 @@ export function SpeakerPerfilDialog({
     }
   }
 
+  async function copiarToolkit() {
+    if (!linkToolkit) return
+    try {
+      await navigator.clipboard.writeText(linkToolkit)
+      toast.success('Link copiado')
+    } catch {
+      toast.error('No se pudo copiar el link')
+    }
+  }
+
   async function persistirValor(propiedadId: string, valor: unknown) {
     if (!speakerId) return
     setValores((prev) => ({ ...prev, [propiedadId]: valor }))
@@ -473,6 +486,33 @@ export function SpeakerPerfilDialog({
 
           {/* ── Columna derecha: participación + seguimiento ──────── */}
           <div className="flex flex-col gap-4 overflow-y-auto p-6">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold">Link del toolkit</h3>
+              {linkToolkit ? (
+                <>
+                  <p className="break-all rounded-md border border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+                    {linkToolkit}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-fit"
+                    onClick={() => void copiarToolkit()}
+                  >
+                    <Link />
+                    Copiar link ↗
+                  </Button>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Pendiente de generar (speaker creado antes de esta feature).
+                </p>
+              )}
+            </div>
+
+            <div className="border-t border-border" />
+
             {mode === 'create' || !speakerId ? (
               <p className="text-sm text-muted-foreground">
                 Guarda el speaker para ver su participación y seguimiento.

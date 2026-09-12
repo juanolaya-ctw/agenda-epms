@@ -1,6 +1,12 @@
 import { Badge } from '@/components/ui/badge'
 import type { ChecklistItem, PropiedadCustom } from '@/hooks/useSpeakersData'
 
+const TOOLKIT_BASE_URL = 'https://agenda.colombiatech.co/toolkit'
+
+export function toolkitUrl(slug: string): string {
+  return `${TOOLKIT_BASE_URL}/${slug}`
+}
+
 export function asChecklist(value: unknown): ChecklistItem[] {
   if (!Array.isArray(value)) return []
   return value.filter(
