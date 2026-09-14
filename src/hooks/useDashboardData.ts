@@ -11,31 +11,55 @@ export type SesionConCupo = {
   escenarioNombre: string
 }
 
+export type SesionesPorEscenario = {
+  escenario: string
+  total: number
+}
+
 export type DashboardKpiKey =
   | 'totalSesiones'
   | 'sesionesConCupo'
   | 'requestsPendientes'
   | 'requestsEnRevision'
+  | 'speakersTotales'
+  | 'sinSesionAsignada'
+  | 'toolkitEnviado'
+  | 'publicaronFase1'
 
 export type DashboardData = {
   totalSesiones: number
   sesionesConCupo: number
   requestsPendientes: number
   requestsEnRevision: number
+  speakersTotales: number
+  sinSesionAsignada: number
+  toolkitEnviado: number
+  publicaronFase1: number
   loading: boolean
   error: string | null
   kpiErrors: Partial<Record<DashboardKpiKey, string>>
   sesionesAbiertas: SesionConCupo[]
+  sesionesPorEscenario: SesionesPorEscenario[]
+  sesionesPorEscenarioError: string | null
 }
+
+const PROP_TOOLKIT_FASE1 = 'Envio toolkit Soy Speaker'
+const PROP_PUBLICARON_F1 = 'Speakers que publicaron F1'
 
 const EMPTY: Omit<DashboardData, 'loading'> = {
   totalSesiones: 0,
   sesionesConCupo: 0,
   requestsPendientes: 0,
   requestsEnRevision: 0,
+  speakersTotales: 0,
+  sinSesionAsignada: 0,
+  toolkitEnviado: 0,
+  publicaronFase1: 0,
   error: null,
   kpiErrors: {},
   sesionesAbiertas: [],
+  sesionesPorEscenario: [],
+  sesionesPorEscenarioError: null,
 }
 
 function queryErrorMessage(error: { message: string } | null): string | null {
@@ -155,6 +179,145 @@ async function fetchAsignadosBySesion(sesionIds: string[]) {
   return { map, error: queryErrorMessage(error) }
 }
 
+function asArray<T>(value: T | T[] | null | undefined): T[] {
+  if (Array.isArray(value)) return value
+  if (value == null) return []
+  return [value]
+}
+
+function esValorTrue(valor: unknown): boolean {
+  return valor === true || valor === 'true'
+}
+
+async function countSpeakersGlobales() {
+  const { count, error } = await supabase
+    .from('speakers')
+    .select('id', { count: 'exact', head: true })
+  return { value: count ?? 0, error: queryErrorMessage(error) }
+}
+
+async function countSpeakersAsignados(eventoId: string) {
+  const { data, error } = await supabase
+    .from('sesion_speakers')
+    .select(
+      'speaker_id, sesion:sesiones!inner(slot:slots!inner(escenario:escenarios!inner(evento_id)))',
+    )
+    .eq('sesion.slot.escenario.evento_id', eventoId)
+    .limit(10000)
+
+  if (error) return { value: 0, error: queryErrorMessage(error) }
+
+  const ids = new Set<string>()
+  for (const row of data ?? []) {
+    const speakerId = row.speaker_id as string | null
+    if (speakerId) ids.add(speakerId)
+  }
+  return { value: ids.size, error: null as string | null }
+}
+
+type CheckboxCounts = {
+  toolkit: { value: number; error: string | null }
+  publicaron: { value: number; error: string | null }
+}
+
+async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts> {
+  const { data: props, error: propsError } = await supabase
+    .from('propiedades_custom')
+    .select('id, nombre')
+    .eq('evento_id', eventoId)
+    .eq('entidad', 'speaker')
+    .in('nombre', [PROP_TOOLKIT_FASE1, PROP_PUBLICARON_F1])
+
+  if (propsError) {
+    const msg = queryErrorMessage(propsError)
+    return {
+      toolkit: { value: 0, error: msg },
+      publicaron: { value: 0, error: msg },
+    }
+  }
+
+  const byNombre = new Map(
+    (props ?? []).map((row) => [row.nombre as string, row.id as string]),
+  )
+  const toolkitId = byNombre.get(PROP_TOOLKIT_FASE1)
+  const publicaronId = byNombre.get(PROP_PUBLICARON_F1)
+  const propiedadIds = [toolkitId, publicaronId].filter(
+    (id): id is string => Boolean(id),
+  )
+
+  if (propiedadIds.length === 0) {
+    return {
+      toolkit: { value: 0, error: null },
+      publicaron: { value: 0, error: null },
+    }
+  }
+
+  const { data: valores, error: valoresError } = await supabase
+    .from('valores_propiedades')
+    .select('speaker_id, propiedad_id, valor')
+    .in('propiedad_id', propiedadIds)
+    .limit(10000)
+
+  if (valoresError) {
+    const msg = queryErrorMessage(valoresError)
+    return {
+      toolkit: { value: 0, error: msg },
+      publicaron: { value: 0, error: msg },
+    }
+  }
+
+  const toolkit = new Set<string>()
+  const publicaron = new Set<string>()
+  for (const row of valores ?? []) {
+    const speakerId = row.speaker_id as string | null
+    if (!speakerId || !esValorTrue(row.valor)) continue
+    if (row.propiedad_id === toolkitId) toolkit.add(speakerId)
+    if (row.propiedad_id === publicaronId) publicaron.add(speakerId)
+  }
+
+  return {
+    toolkit: { value: toolkit.size, error: null },
+    publicaron: { value: publicaron.size, error: null },
+  }
+}
+
+type SlotConSesionesEmbed = { sesiones?: { id: string }[] | { id: string } | null }
+type EscenarioConSesionesRow = {
+  nombre: string | null
+  slots?: SlotConSesionesEmbed[] | SlotConSesionesEmbed | null
+}
+
+async function fetchSesionesPorEscenario(eventoId: string) {
+  const { data, error } = await supabase
+    .from('escenarios')
+    .select('nombre, slots!inner(sesiones!inner(id))')
+    .eq('evento_id', eventoId)
+
+  if (error) {
+    return {
+      rows: [] as SesionesPorEscenario[],
+      error: queryErrorMessage(error),
+    }
+  }
+
+  const rows = ((data ?? []) as EscenarioConSesionesRow[])
+    .map((escenario) => {
+      let total = 0
+      for (const slot of asArray(escenario.slots)) {
+        total += asArray(slot.sesiones).length
+      }
+      return { escenario: escenario.nombre ?? '', total }
+    })
+    .filter((row) => row.total > 0)
+    .sort((a, b) => {
+      const byTotal = b.total - a.total
+      if (byTotal !== 0) return byTotal
+      return a.escenario.localeCompare(b.escenario, 'es')
+    })
+
+  return { rows, error: null as string | null }
+}
+
 function construirSesionesAbiertas(
   rows: SesionRow[],
   asignadosBySesion: Map<string, number>,
@@ -205,37 +368,136 @@ async function countRequests(sesionIds: string[], estado: 'PENDIENTE' | 'EN_REVI
   return { value: count ?? 0, error: queryErrorMessage(error) }
 }
 
+function contarSesionesPorEscenario(
+  rows: SesionRow[],
+  slotsById: Map<string, { escenario_id: string; dia: string; hora_inicio: string }>,
+  escenarioNombre: Map<string, string>,
+): SesionesPorEscenario[] {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const slot = slotsById.get(row.slot_id ?? '')
+    if (!slot) continue
+    const nombre = escenarioNombre.get(slot.escenario_id)
+    if (!nombre) continue
+    counts.set(nombre, (counts.get(nombre) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([escenario, total]) => ({ escenario, total }))
+    .sort((a, b) => {
+      const byTotal = b.total - a.total
+      if (byTotal !== 0) return byTotal
+      return a.escenario.localeCompare(b.escenario, 'es')
+    })
+}
+
+function aplicarConteosIndependientes(
+  base: Omit<DashboardData, 'loading'>,
+  speakersGlobales: { value: number; error: string | null },
+  speakersAsignados: { value: number; error: string | null },
+  checkboxCounts: CheckboxCounts,
+  escenarios: { rows: SesionesPorEscenario[]; error: string | null },
+): Omit<DashboardData, 'loading'> {
+  const kpiErrors: DashboardData['kpiErrors'] = { ...base.kpiErrors }
+
+  if (checkboxCounts.toolkit.error) {
+    kpiErrors.toolkitEnviado = checkboxCounts.toolkit.error
+  }
+  if (checkboxCounts.publicaron.error) {
+    kpiErrors.publicaronFase1 = checkboxCounts.publicaron.error
+  }
+  if (speakersGlobales.error) {
+    kpiErrors.speakersTotales = speakersGlobales.error
+    kpiErrors.sinSesionAsignada = speakersGlobales.error
+  }
+  if (speakersAsignados.error) {
+    kpiErrors.sinSesionAsignada = speakersAsignados.error
+  }
+
+  const speakersTotales = speakersGlobales.error ? 0 : speakersGlobales.value
+  const sinSesionAsignada =
+    speakersAsignados.error || speakersGlobales.error
+      ? 0
+      : Math.max(0, speakersGlobales.value - speakersAsignados.value)
+
+  const firstError =
+    base.error ??
+    speakersAsignados.error ??
+    speakersGlobales.error ??
+    checkboxCounts.toolkit.error ??
+    checkboxCounts.publicaron.error ??
+    escenarios.error ??
+    null
+
+  return {
+    ...base,
+    speakersTotales,
+    sinSesionAsignada,
+    toolkitEnviado: checkboxCounts.toolkit.error ? 0 : checkboxCounts.toolkit.value,
+    publicaronFase1: checkboxCounts.publicaron.error
+      ? 0
+      : checkboxCounts.publicaron.value,
+    kpiErrors,
+    sesionesPorEscenario: escenarios.rows,
+    sesionesPorEscenarioError: escenarios.error,
+    error: firstError,
+  }
+}
+
 async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loading'>> {
-  // El catálogo de estados solo depende de eventoId → en paralelo con el grafo.
-  const [graph, estadosQueCuentan] = await Promise.all([
+  // Independientes del grafo de sesiones: conteos de speakers y checkboxes.
+  const [
+    graph,
+    estadosQueCuentan,
+    speakersGlobales,
+    speakersAsignados,
+    checkboxCounts,
+    escenarios,
+  ] = await Promise.all([
     loadEventGraph(eventoId),
     fetchEstadosQueCuentan(eventoId),
+    countSpeakersGlobales(),
+    countSpeakersAsignados(eventoId),
+    countCheckboxPorNombre(eventoId),
+    fetchSesionesPorEscenario(eventoId),
   ])
+
   if (graph.error) {
-    return {
-      ...EMPTY,
-      error: graph.error,
-      kpiErrors: {
-        totalSesiones: graph.error,
-        sesionesConCupo: graph.error,
-        requestsPendientes: graph.error,
-        requestsEnRevision: graph.error,
+    return aplicarConteosIndependientes(
+      {
+        ...EMPTY,
+        error: graph.error,
+        kpiErrors: {
+          totalSesiones: graph.error,
+          sesionesConCupo: graph.error,
+          requestsPendientes: graph.error,
+          requestsEnRevision: graph.error,
+        },
       },
-    }
+      speakersGlobales,
+      speakersAsignados,
+      checkboxCounts,
+      escenarios,
+    )
   }
 
   const sesionesRes = await fetchSesiones(graph.slotIds)
   if (sesionesRes.error) {
-    return {
-      ...EMPTY,
-      error: sesionesRes.error,
-      kpiErrors: {
-        totalSesiones: sesionesRes.error,
-        sesionesConCupo: sesionesRes.error,
-        requestsPendientes: sesionesRes.error,
-        requestsEnRevision: sesionesRes.error,
+    return aplicarConteosIndependientes(
+      {
+        ...EMPTY,
+        error: sesionesRes.error,
+        kpiErrors: {
+          totalSesiones: sesionesRes.error,
+          sesionesConCupo: sesionesRes.error,
+          requestsPendientes: sesionesRes.error,
+          requestsEnRevision: sesionesRes.error,
+        },
       },
-    }
+      speakersGlobales,
+      speakersAsignados,
+      checkboxCounts,
+      escenarios,
+    )
   }
 
   const sesiones = sesionesRes.rows
@@ -263,15 +525,39 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
   const firstError =
     asignados.error ?? pendientes.error ?? revision.error ?? null
 
-  return {
-    totalSesiones: sesiones.length,
-    sesionesConCupo: sesionesAbiertas.length,
-    requestsPendientes: pendientes.value,
-    requestsEnRevision: revision.value,
-    error: firstError,
-    kpiErrors,
-    sesionesAbiertas,
-  }
+  const escenariosFinal =
+    escenarios.error
+      ? {
+          rows: contarSesionesPorEscenario(
+            sesiones,
+            graph.slotsById,
+            graph.escenarioNombre,
+          ),
+          error: null as string | null,
+        }
+      : escenarios
+
+  return aplicarConteosIndependientes(
+    {
+      totalSesiones: sesiones.length,
+      sesionesConCupo: sesionesAbiertas.length,
+      requestsPendientes: pendientes.value,
+      requestsEnRevision: revision.value,
+      speakersTotales: 0,
+      sinSesionAsignada: 0,
+      toolkitEnviado: 0,
+      publicaronFase1: 0,
+      error: firstError,
+      kpiErrors,
+      sesionesAbiertas,
+      sesionesPorEscenario: [],
+      sesionesPorEscenarioError: null,
+    },
+    speakersGlobales,
+    speakersAsignados,
+    checkboxCounts,
+    escenariosFinal,
+  )
 }
 
 // Conteo aislado para el badge de la pestaña Requests en WorkspaceLayout.
