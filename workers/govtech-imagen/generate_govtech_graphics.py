@@ -241,28 +241,36 @@ def _fit_font_to_width(text: str, font_path: str, max_width: int, start_size: in
 def _detect_face_bbox(photo_bytes: bytes) -> tuple[int, int, int, int] | None:
     """
     Detecta la cara más grande en la foto.
-    Retorna (x, y, w, h) o None si no detecta.
+    Retorna (x, y, w, h) o None si no detecta o si OpenCV no tiene cascades.
     """
-    img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-    gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+    try:
+        img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+        gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
 
-    cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
-    face_cascade = cv2.CascadeClassifier(cascade_path)
-    faces = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
-    )
+        cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+        if not os.path.exists(cascade_path):
+            log.warning("  Haar cascade no disponible en este entorno — usando fallback")
+            return None
 
-    if len(faces) == 0:
+        face_cascade = cv2.CascadeClassifier(cascade_path)
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+        )
+
+        if len(faces) == 0:
+            return None
+
+        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+        image_h = img.size[1]
+
+        if h / image_h < FACE_MIN_HEIGHT_RATIO:
+            log.warning(f"  Rostro descartado por tamaño sospechoso ({h}/{image_h})")
+            return None
+
+        return (int(x), int(y), int(w), int(h))
+    except Exception as e:
+        log.warning(f"  Detección de rostro falló ({e}) — usando fallback")
         return None
-
-    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-    image_h = img.size[1]
-
-    if h / image_h < FACE_MIN_HEIGHT_RATIO:
-        log.warning(f"  Rostro descartado por tamaño sospechoso ({h}/{image_h})")
-        return None
-
-    return (int(x), int(y), int(w), int(h))
 
 
 # ─── Descarga de foto ──────────────────────────────────────────────────────────
