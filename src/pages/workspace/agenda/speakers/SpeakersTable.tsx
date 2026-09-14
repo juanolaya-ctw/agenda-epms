@@ -41,6 +41,7 @@ import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { EliminarSpeakerDialog } from './EliminarSpeakerDialog'
+import { ColumnOrderPopover } from './ColumnOrderPopover'
 import {
   FuenteBadge,
   iniciales,
@@ -53,13 +54,17 @@ import {
   opcionesUnicas,
   propiedadFiltroColumna,
 } from './speakerFiltros'
+import {
+  SPEAKERS_ACCIONES_ID,
+  SPEAKERS_FIXED_COLUMNS,
+  defaultSpeakersColumnOrder,
+  loadColumnOrder,
+  mergeColumnOrder,
+  propiedadIdFromColumn,
+  saveColumnOrder,
+} from './speakersColumnOrder'
 
 type SpeakersTableProps = { eventoId: string }
-
-// Foto, URL foto, Nombre, Cargo, Empresa, País, Email, Teléfono, LinkedIn,
-// Ciudad, Tipo Doc., Núm. Doc., Email secundario, Sesiones, Fuente, Toolkit,
-// Acciones
-const COLS_FIJAS = 17
 
 type CampoTexto = Extract<
   keyof SpeakerEditable,
@@ -83,6 +88,12 @@ function toStr(v: unknown): string {
   return v == null ? '' : String(v)
 }
 
+function headClassName(columnId: string): string | undefined {
+  if (columnId === 'foto') return 'w-12'
+  if (columnId === SPEAKERS_ACCIONES_ID) return 'text-right'
+  return undefined
+}
+
 export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const { speakers, propiedades, valoresPorSpeaker, loading, error, refetch } =
     useSpeakersData(eventoId)
@@ -93,6 +104,37 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
   const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
   const [filtros, setFiltros] = useState<FiltroActivo[]>([])
+  const [storedOrder, setStoredOrder] = useState<string[] | null>(
+    () => loadColumnOrder(),
+  )
+
+  const defaultOrder = useMemo(
+    () => defaultSpeakersColumnOrder(propiedades.map((p) => p.id)),
+    [propiedades],
+  )
+  const columnIds = useMemo(
+    () => mergeColumnOrder(storedOrder, defaultOrder),
+    [storedOrder, defaultOrder],
+  )
+
+  const columnasPanel = useMemo(() => {
+    const labels = new Map<string, string>(
+      SPEAKERS_FIXED_COLUMNS.map((c) => [c.id, c.label]),
+    )
+    labels.set(SPEAKERS_ACCIONES_ID, 'Acciones')
+    for (const prop of propiedades) {
+      labels.set(`prop:${prop.id}`, prop.nombre)
+    }
+    return columnIds.map((id) => ({
+      id,
+      label: labels.get(id) ?? id,
+    }))
+  }, [columnIds, propiedades])
+
+  function persistColumnOrder(ids: string[]) {
+    setStoredOrder(ids)
+    saveColumnOrder(ids)
+  }
 
   const filterColumns: FiltroColumna[] = useMemo(() => {
     const base: FiltroColumna[] = [
@@ -200,7 +242,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
     })
   }, [speakers, busqueda, filtros, valoresPorSpeaker])
 
-  const totalCols = COLS_FIJAS + propiedades.length
+  const totalCols = columnIds.length
 
   function abrirCrear() {
     setModo('create')
@@ -223,6 +265,311 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
     }
   }
 
+  function renderHead(columnId: string) {
+    const propId = propiedadIdFromColumn(columnId)
+    if (propId) {
+      const prop = propiedades.find((p) => p.id === propId)
+      if (!prop) return null
+      return (
+        <TableHead key={columnId} className="whitespace-nowrap">
+          <span className="inline-flex items-center gap-1">
+            {prop.nombre}
+            <button
+              type="button"
+              aria-label={`Editar propiedad ${prop.nombre}`}
+              onClick={() => setPropEditando(prop)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Pencil className="size-3" />
+            </button>
+          </span>
+        </TableHead>
+      )
+    }
+
+    const fixed = SPEAKERS_FIXED_COLUMNS.find((c) => c.id === columnId)
+    const label =
+      columnId === SPEAKERS_ACCIONES_ID ? 'Acciones' : (fixed?.label ?? columnId)
+    return (
+      <TableHead key={columnId} className={headClassName(columnId)}>
+        {label}
+      </TableHead>
+    )
+  }
+
+  function renderCell(columnId: string, sp: Speaker) {
+    const propId = propiedadIdFromColumn(columnId)
+    if (propId) {
+      const prop = propiedades.find((p) => p.id === propId)
+      if (!prop) return <TableCell key={columnId} />
+      const v = valorActual(sp.id, prop.id)
+      return (
+        <TableCell
+          key={columnId}
+          className="max-w-[160px] text-xs text-muted-foreground"
+        >
+          {prop.tipo === 'checkbox' ? (
+            <Checkbox
+              aria-label={prop.nombre}
+              checked={v === true || v === 'true'}
+              onCheckedChange={(checked) =>
+                void guardarValor(sp.id, prop.id, checked === true)
+              }
+            />
+          ) : prop.tipo === 'texto' ? (
+            <InlineText
+              value={toStr(v)}
+              onSave={(next) => guardarValor(sp.id, prop.id, next)}
+            />
+          ) : prop.tipo === 'fecha' ? (
+            <Input
+              type="date"
+              value={toStr(v)}
+              onChange={(e) => void guardarValor(sp.id, prop.id, e.target.value)}
+              className="h-7 text-xs"
+            />
+          ) : prop.tipo === 'select' ? (
+            <Select
+              value={toStr(v)}
+              onValueChange={(next) => void guardarValor(sp.id, prop.id, next)}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="—" />
+              </SelectTrigger>
+              <SelectContent>
+                {prop.opciones.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="truncate">{resumenValor(prop, v)}</span>
+          )}
+        </TableCell>
+      )
+    }
+
+    switch (columnId) {
+      case 'foto':
+        return (
+          <TableCell key={columnId}>
+            <button
+              type="button"
+              className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => abrirEditar(sp)}
+              aria-label={`Abrir perfil de ${sp.nombre}`}
+              title="Abrir perfil"
+            >
+              <Avatar size="sm">
+                {sp.foto_url && (
+                  <AvatarImage src={sp.foto_url} alt={sp.nombre} />
+                )}
+                <AvatarFallback>{iniciales(sp.nombre)}</AvatarFallback>
+              </Avatar>
+            </button>
+          </TableCell>
+        )
+      case 'foto_url':
+        return (
+          <TableCell key={columnId} className="max-w-[220px]">
+            {sp.foto_url ? (
+              <a
+                href={sp.foto_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={sp.foto_url}
+                className="block truncate text-xs text-secondary hover:underline"
+              >
+                {sp.foto_url}
+              </a>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )
+      case 'nombre':
+        return (
+          <TableCell key={columnId}>
+            <InlineText
+              value={campoActual(sp, 'nombre')}
+              placeholder="Sin nombre"
+              displayClassName="font-semibold"
+              onSave={(v) => guardarCampo(sp, 'nombre', v)}
+            />
+          </TableCell>
+        )
+      case 'cargo':
+        return (
+          <TableCell key={columnId} className="text-muted-foreground">
+            <InlineText
+              value={campoActual(sp, 'cargo')}
+              onSave={(v) => guardarCampo(sp, 'cargo', v)}
+            />
+          </TableCell>
+        )
+      case 'empresa':
+        return (
+          <TableCell key={columnId} className="text-muted-foreground">
+            <InlineText
+              value={campoActual(sp, 'empresa')}
+              onSave={(v) => guardarCampo(sp, 'empresa', v)}
+            />
+          </TableCell>
+        )
+      case 'pais':
+        return (
+          <TableCell key={columnId}>
+            <InlineText
+              value={campoActual(sp, 'pais')}
+              onSave={(v) => guardarCampo(sp, 'pais', v)}
+            />
+          </TableCell>
+        )
+      case 'email':
+        return (
+          <TableCell
+            key={columnId}
+            className="max-w-[200px] text-muted-foreground"
+          >
+            <InlineText
+              value={campoActual(sp, 'email')}
+              validate={(v) => EMAIL_RE.test(v)}
+              onSave={(v) => guardarCampo(sp, 'email', v)}
+            />
+          </TableCell>
+        )
+      case 'telefono':
+        return (
+          <TableCell key={columnId} className="text-muted-foreground">
+            <InlineText
+              value={campoActual(sp, 'telefono')}
+              onSave={(v) => guardarCampo(sp, 'telefono', v)}
+            />
+          </TableCell>
+        )
+      case 'linkedin':
+        return (
+          <TableCell
+            key={columnId}
+            className="max-w-[160px] text-muted-foreground"
+          >
+            <InlineText
+              value={campoActual(sp, 'linkedin_url')}
+              displayClassName="truncate text-secondary"
+              onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
+            />
+          </TableCell>
+        )
+      case 'ciudad':
+        return (
+          <TableCell key={columnId} className="text-muted-foreground">
+            <InlineText
+              value={campoActual(sp, 'ciudad')}
+              onSave={(v) => guardarCampo(sp, 'ciudad', v)}
+            />
+          </TableCell>
+        )
+      case 'tipo_documento':
+        return (
+          <TableCell key={columnId} className="text-muted-foreground">
+            <InlineText
+              value={campoActual(sp, 'tipo_documento')}
+              onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
+            />
+          </TableCell>
+        )
+      case 'numero_documento':
+        return (
+          <TableCell key={columnId} className="text-muted-foreground">
+            <InlineText
+              value={campoActual(sp, 'numero_documento')}
+              onSave={(v) => guardarCampo(sp, 'numero_documento', v)}
+            />
+          </TableCell>
+        )
+      case 'email_secundario':
+        return (
+          <TableCell
+            key={columnId}
+            className="max-w-[200px] text-muted-foreground"
+          >
+            <InlineText
+              value={campoActual(sp, 'email_secundario')}
+              validate={emailOpcional}
+              onSave={(v) => guardarCampo(sp, 'email_secundario', v)}
+            />
+          </TableCell>
+        )
+      case 'sesiones':
+        return (
+          <TableCell key={columnId}>
+            {sp.sesionesEnEvento > 0 ? (
+              <Badge variant="secondary">
+                {sp.sesionesEnEvento} sesión
+                {sp.sesionesEnEvento === 1 ? '' : 'es'}
+              </Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                Sin sesiones
+              </span>
+            )}
+          </TableCell>
+        )
+      case 'fuente':
+        return (
+          <TableCell key={columnId}>
+            <FuenteBadge fuente={sp.fuente} />
+          </TableCell>
+        )
+      case 'toolkit':
+        return (
+          <TableCell key={columnId}>
+            {sp.toolkit_slug ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Copiar link del toolkit de ${sp.nombre}`}
+                title="Copiar link del toolkit"
+                onClick={() => void copiarToolkit(sp.toolkit_slug!)}
+              >
+                <Link />
+              </Button>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )
+      case SPEAKERS_ACCIONES_ID:
+        return (
+          <TableCell key={columnId} className="text-right">
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Editar ${sp.nombre}`}
+                onClick={() => abrirEditar(sp)}
+              >
+                <Pencil />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Eliminar ${sp.nombre}`}
+                onClick={() => setSpeakerAEliminar(sp)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          </TableCell>
+        )
+      default:
+        return <TableCell key={columnId} />
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -237,6 +584,10 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
             columnas={filterColumns}
             filtros={filtros}
             onChange={setFiltros}
+          />
+          <ColumnOrderPopover
+            columns={columnasPanel}
+            onReorder={persistColumnOrder}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -261,40 +612,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         <div className="overflow-x-auto rounded-lg border border-border">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">Foto</TableHead>
-                <TableHead>URL foto</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Cargo</TableHead>
-                <TableHead>Empresa</TableHead>
-                <TableHead>País</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Teléfono</TableHead>
-                <TableHead>LinkedIn</TableHead>
-                <TableHead>Ciudad</TableHead>
-                <TableHead>Tipo Doc.</TableHead>
-                <TableHead>Núm. Doc.</TableHead>
-                <TableHead>Email secundario</TableHead>
-                <TableHead>Sesiones</TableHead>
-                <TableHead>Fuente</TableHead>
-                <TableHead>Toolkit</TableHead>
-                {propiedades.map((prop) => (
-                  <TableHead key={prop.id} className="whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1">
-                      {prop.nombre}
-                      <button
-                        type="button"
-                        aria-label={`Editar propiedad ${prop.nombre}`}
-                        onClick={() => setPropEditando(prop)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <Pencil className="size-3" />
-                      </button>
-                    </span>
-                  </TableHead>
-                ))}
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
+              <TableRow>{columnIds.map((id) => renderHead(id))}</TableRow>
             </TableHeader>
             <TableBody>
               {loading &&
@@ -322,220 +640,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
               {!loading &&
                 filtrados.map((sp) => (
                   <TableRow key={sp.id}>
-                    <TableCell>
-                      <Avatar size="sm">
-                        {sp.foto_url && (
-                          <AvatarImage src={sp.foto_url} alt={sp.nombre} />
-                        )}
-                        <AvatarFallback>{iniciales(sp.nombre)}</AvatarFallback>
-                      </Avatar>
-                    </TableCell>
-                    <TableCell className="max-w-[220px]">
-                      {sp.foto_url ? (
-                        <a
-                          href={sp.foto_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={sp.foto_url}
-                          className="block truncate text-xs text-secondary hover:underline"
-                        >
-                          {sp.foto_url}
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <InlineText
-                        value={campoActual(sp, 'nombre')}
-                        placeholder="Sin nombre"
-                        displayClassName="font-semibold"
-                        onSave={(v) => guardarCampo(sp, 'nombre', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'cargo')}
-                        onSave={(v) => guardarCampo(sp, 'cargo', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'empresa')}
-                        onSave={(v) => guardarCampo(sp, 'empresa', v)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <InlineText
-                        value={campoActual(sp, 'pais')}
-                        onSave={(v) => guardarCampo(sp, 'pais', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="max-w-[200px] text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'email')}
-                        validate={(v) => EMAIL_RE.test(v)}
-                        onSave={(v) => guardarCampo(sp, 'email', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'telefono')}
-                        onSave={(v) => guardarCampo(sp, 'telefono', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="max-w-[160px] text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'linkedin_url')}
-                        displayClassName="truncate text-secondary"
-                        onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'ciudad')}
-                        onSave={(v) => guardarCampo(sp, 'ciudad', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'tipo_documento')}
-                        onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'numero_documento')}
-                        onSave={(v) =>
-                          guardarCampo(sp, 'numero_documento', v)
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="max-w-[200px] text-muted-foreground">
-                      <InlineText
-                        value={campoActual(sp, 'email_secundario')}
-                        validate={emailOpcional}
-                        onSave={(v) =>
-                          guardarCampo(sp, 'email_secundario', v)
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {sp.sesionesEnEvento > 0 ? (
-                        <Badge variant="secondary">
-                          {sp.sesionesEnEvento} sesión
-                          {sp.sesionesEnEvento === 1 ? '' : 'es'}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          Sin sesiones
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <FuenteBadge fuente={sp.fuente} />
-                    </TableCell>
-                    <TableCell>
-                      {sp.toolkit_slug ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Copiar link del toolkit de ${sp.nombre}`}
-                          title="Copiar link del toolkit"
-                          onClick={() => void copiarToolkit(sp.toolkit_slug!)}
-                        >
-                          <Link />
-                        </Button>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    {propiedades.map((prop) => {
-                      const v = valorActual(sp.id, prop.id)
-                      return (
-                        <TableCell
-                          key={prop.id}
-                          className="max-w-[160px] text-xs text-muted-foreground"
-                        >
-                          {prop.tipo === 'checkbox' ? (
-                            <Checkbox
-                              aria-label={prop.nombre}
-                              checked={v === true || v === 'true'}
-                              onCheckedChange={(checked) =>
-                                void guardarValor(
-                                  sp.id,
-                                  prop.id,
-                                  checked === true,
-                                )
-                              }
-                            />
-                          ) : prop.tipo === 'texto' ? (
-                            <InlineText
-                              value={toStr(v)}
-                              onSave={(next) =>
-                                guardarValor(sp.id, prop.id, next)
-                              }
-                            />
-                          ) : prop.tipo === 'fecha' ? (
-                            <Input
-                              type="date"
-                              value={toStr(v)}
-                              onChange={(e) =>
-                                void guardarValor(
-                                  sp.id,
-                                  prop.id,
-                                  e.target.value,
-                                )
-                              }
-                              className="h-7 text-xs"
-                            />
-                          ) : prop.tipo === 'select' ? (
-                            <Select
-                              value={toStr(v)}
-                              onValueChange={(next) =>
-                                void guardarValor(sp.id, prop.id, next)
-                              }
-                            >
-                              <SelectTrigger className="h-7 text-xs">
-                                <SelectValue placeholder="—" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {prop.opciones.map((opt) => (
-                                  <SelectItem key={opt} value={opt}>
-                                    {opt}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="truncate">
-                              {resumenValor(prop, v)}
-                            </span>
-                          )}
-                        </TableCell>
-                      )
-                    })}
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Editar ${sp.nombre}`}
-                          onClick={() => abrirEditar(sp)}
-                        >
-                          <Pencil />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Eliminar ${sp.nombre}`}
-                          onClick={() => setSpeakerAEliminar(sp)}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </TableCell>
+                    {columnIds.map((id) => renderCell(id, sp))}
                   </TableRow>
                 ))}
             </TableBody>
