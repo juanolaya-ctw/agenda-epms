@@ -1,13 +1,12 @@
 ﻿FROM python:3.11-slim
 
-# Instalar libcairo y dependencias del sistema
 RUN apt-get update && apt-get install -y \
     libcairo2 \
     libcairo2-dev \
     pkg-config \
     python3-dev \
     libglib2.0-0 \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-dev \
     && rm -rf /var/lib/apt/lists/*
 
