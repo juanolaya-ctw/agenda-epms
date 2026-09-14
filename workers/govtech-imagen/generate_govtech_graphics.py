@@ -80,29 +80,29 @@ FONT_REGULAR_FILE = "Mosvita-Regular.otf"
 # Los valores Y del SVG son baseline — hay que restar la altura del font.
 TEXT_SOY_SPEAKER = {
     "x": 25,
-    "y_baseline": 1074,
+    "y_baseline": 1060,
     "size": 41,
-    "color": (247, 246, 241),   # #f7f6f1 crema
+    "color": (247, 246, 241),
     "font": FONT_BLACK_FILE,
     "text": "SOY SPEAKER",
 }
 TEXT_NOMBRE = {
     "x": 25,
-    "y_baseline": 1125,
+    "y_baseline": 1115,
     "size": 57,
     "color": (28, 28, 26),
     "font": FONT_BLACK_FILE,
 }
 TEXT_CARGO = {
     "x": 25,
-    "y_baseline": 1190,
+    "y_baseline": 1175,
     "size": 38,
     "color": (28, 28, 26),
     "font": FONT_REGULAR_FILE,
 }
 TEXT_EMPRESA = {
     "x": 25,
-    "y_baseline": 1238,
+    "y_baseline": 1220,
     "size": 38,
     "color": (28, 28, 26),
     "font": FONT_REGULAR_FILE,
@@ -289,6 +289,31 @@ def _download_photo(foto_url: str) -> bytes:
 
 # ─── Composición de imagen ─────────────────────────────────────────────────────
 
+def _draw_text_wrapped(draw, text, font_path, max_width, max_size, x, y_baseline, color):
+    """Dibuja texto en máximo 2 líneas si no cabe en una sola."""
+    words = text.split()
+
+    # Intentar en una línea primero
+    font = _fit_font_to_width(text, font_path, max_width, max_size)
+    bbox = font.getbbox(text)
+    if bbox[2] - bbox[0] <= max_width:
+        _draw_text_baseline(draw, text, font, x, y_baseline, color)
+        return
+
+    # Dividir en dos líneas en el punto medio más cercano a una palabra
+    mid = len(words) // 2
+    line1 = " ".join(words[:mid])
+    line2 = " ".join(words[mid:])
+
+    # Ajustar tamaño para que ambas líneas quepan
+    font = _fit_font_to_width(
+        max(line1, line2, key=len), font_path, max_width, max_size
+    )
+    line_height = font.getbbox("A")[3] + 8
+    _draw_text_baseline(draw, line1, font, x, y_baseline, color)
+    _draw_text_baseline(draw, line2, font, x, y_baseline + line_height, color)
+
+
 def _compose_speaker_image(
     photo_bytes: bytes,
     nombre: str,
@@ -413,23 +438,22 @@ def _compose_speaker_image(
                         TEXT_NOMBRE["x"], TEXT_NOMBRE["y_baseline"],
                         TEXT_NOMBRE["color"])
 
-        # Ancho máximo para cargo/empresa — limitado por el logo de GovTech (esquina inferior derecha)
+    # Ancho máximo para cargo/empresa — limitado por el logo de GovTech (esquina inferior derecha)
     max_text_w_bottom = 580
 
-    # Cargo
+    # Cargo — con wrapping automático en 2 líneas si es muy largo
     if cargo and cargo.strip():
-        font_cargo = _fit_font_to_width(cargo.strip(), font_regular_path, max_text_w_bottom, TEXT_CARGO["size"])
-        _draw_text_baseline(draw, cargo.strip(), font_cargo,
-                            TEXT_CARGO["x"], TEXT_CARGO["y_baseline"],
-                            TEXT_CARGO["color"])
+        _draw_text_wrapped(draw, cargo.strip(), font_regular_path,
+                           max_text_w_bottom, TEXT_CARGO["size"],
+                           TEXT_CARGO["x"], TEXT_CARGO["y_baseline"],
+                           TEXT_CARGO["color"])
 
-    # Empresa
+    # Empresa — con wrapping automático en 2 líneas si es muy largo
     if empresa and empresa.strip():
-        y_empresa = TEXT_EMPRESA["y_baseline"]
-        font_empresa = _fit_font_to_width(empresa.strip(), font_regular_path, max_text_w_bottom, TEXT_EMPRESA["size"])
-        _draw_text_baseline(draw, empresa.strip(), font_empresa,
-                            TEXT_EMPRESA["x"], y_empresa,
-                            TEXT_EMPRESA["color"])
+        _draw_text_wrapped(draw, empresa.strip(), font_regular_path,
+                           max_text_w_bottom, TEXT_EMPRESA["size"],
+                           TEXT_EMPRESA["x"], TEXT_EMPRESA["y_baseline"],
+                           TEXT_EMPRESA["color"])
 
     # ── Exportar PNG ───────────────────────────────────────────────────────────
     output = io.BytesIO()
