@@ -95,15 +95,15 @@ TEXT_NOMBRE = {
 }
 TEXT_CARGO = {
     "x": 25,
-    "y_baseline": 1195,
-    "size": 24,
+    "y_baseline": 1190,
+    "size": 38,
     "color": (28, 28, 26),
     "font": FONT_REGULAR_FILE,
 }
 TEXT_EMPRESA = {
     "x": 25,
-    "y_baseline": 1228,
-    "size": 24,
+    "y_baseline": 1238,
+    "size": 38,
     "color": (28, 28, 26),
     "font": FONT_REGULAR_FILE,
 }
@@ -413,17 +413,20 @@ def _compose_speaker_image(
                         TEXT_NOMBRE["x"], TEXT_NOMBRE["y_baseline"],
                         TEXT_NOMBRE["color"])
 
+        # Ancho máximo para cargo/empresa — limitado por el logo de GovTech (esquina inferior derecha)
+    max_text_w_bottom = 580
+
     # Cargo
     if cargo and cargo.strip():
-        font_cargo = _fit_font_to_width(cargo, font_regular_path, max_text_w, TEXT_CARGO["size"])
+        font_cargo = _fit_font_to_width(cargo.strip(), font_regular_path, max_text_w_bottom, TEXT_CARGO["size"])
         _draw_text_baseline(draw, cargo.strip(), font_cargo,
                             TEXT_CARGO["x"], TEXT_CARGO["y_baseline"],
                             TEXT_CARGO["color"])
 
-    # Empresa (línea siguiente al cargo)
+    # Empresa
     if empresa and empresa.strip():
-        y_empresa = TEXT_CARGO["y_baseline"] + 48 if (cargo and cargo.strip()) else TEXT_CARGO["y_baseline"]
-        font_empresa = _fit_font_to_width(empresa, font_regular_path, max_text_w, TEXT_EMPRESA["size"])
+        y_empresa = TEXT_EMPRESA["y_baseline"]
+        font_empresa = _fit_font_to_width(empresa.strip(), font_regular_path, max_text_w_bottom, TEXT_EMPRESA["size"])
         _draw_text_baseline(draw, empresa.strip(), font_empresa,
                             TEXT_EMPRESA["x"], y_empresa,
                             TEXT_EMPRESA["color"])
