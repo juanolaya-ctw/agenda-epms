@@ -88,22 +88,22 @@ TEXT_SOY_SPEAKER = {
 }
 TEXT_NOMBRE = {
     "x": 25,
-    "y_baseline": 1177,
+    "y_baseline": 1140,
     "size": 57,
-    "color": (28, 28, 26),      # #1c1c1a casi negro
+    "color": (28, 28, 26),
     "font": FONT_BLACK_FILE,
 }
 TEXT_CARGO = {
     "x": 25,
-    "y_baseline": 1232,
-    "size": 40,
+    "y_baseline": 1195,
+    "size": 24,
     "color": (28, 28, 26),
     "font": FONT_REGULAR_FILE,
 }
 TEXT_EMPRESA = {
     "x": 25,
-    "y_baseline": 1280,        # +48px del cargo (como en el SVG: tspan y="48.03")
-    "size": 40,
+    "y_baseline": 1228,
+    "size": 24,
     "color": (28, 28, 26),
     "font": FONT_REGULAR_FILE,
 }
