@@ -35,7 +35,7 @@ serve(async (req) => {
 
     let workerResp: Response;
     try {
-      workerResp = await fetch(${RAILWAY_WORKER_URL}/govtech/fase1, {
+      workerResp = await fetch(`${RAILWAY_WORKER_URL}/govtech/fase1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ speaker_id, nombre, cargo, empresa, foto_url }),
@@ -48,7 +48,7 @@ serve(async (req) => {
     if (!workerResp.ok) {
       const errorText = await workerResp.text();
       return new Response(
-        JSON.stringify({ error: Worker error :  }),
+        JSON.stringify({ error: `Worker error ${workerResp.status}: ${errorText}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
