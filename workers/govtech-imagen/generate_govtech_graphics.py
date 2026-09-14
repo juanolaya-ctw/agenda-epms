@@ -476,9 +476,12 @@ def _save_pieza_url(speaker_id: str, url: str):
     """Guarda la URL de la pieza en epms.speakers.link_pieza_fase1."""
     endpoint = f"{SUPABASE_URL}/rest/v1/speakers"
     headers = {
-        **_supabase_headers(),
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal",
+        "Accept-Profile": "epms",
+        "Content-Profile": "epms",
     }
     params = {"id": f"eq.{speaker_id}"}
     payload = {
@@ -486,7 +489,7 @@ def _save_pieza_url(speaker_id: str, url: str):
         "updated_at": datetime.utcnow().isoformat(),
     }
     resp = httpx.patch(
-        endpoint, headers={**headers, "apikey": SUPABASE_SERVICE_KEY},
+        endpoint, headers=headers,
         params=params, json=payload, timeout=30
     )
     resp.raise_for_status()
