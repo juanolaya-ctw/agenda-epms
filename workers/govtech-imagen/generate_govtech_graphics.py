@@ -88,7 +88,7 @@ TEXT_SOY_SPEAKER = {
 }
 TEXT_NOMBRE = {
     "x": 25,
-    "y_baseline": 1140,
+    "y_baseline": 1125,
     "size": 57,
     "color": (28, 28, 26),
     "font": FONT_BLACK_FILE,
