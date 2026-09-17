@@ -95,7 +95,7 @@ CREATE TABLE epms.sesiones (
     descripcion         text,           -- placeholder libre, campo solicitado por el equipo
     formato             text,           -- 'Keynote' | 'Panel' | 'Workshop' (texto libre, no FK a formatos para flexibilidad)
     track               text,
-    capacidad_speakers  integer DEFAULT 1 CHECK (capacidad_speakers BETWEEN 1 AND 4),
+    capacidad_speakers  integer DEFAULT 1 CHECK (capacidad_speakers BETWEEN 1 AND 20),
     estado              text DEFAULT 'BORRADOR',
     created_at          timestamptz DEFAULT now(),
     updated_at          timestamptz DEFAULT now()

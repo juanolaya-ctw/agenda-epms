@@ -1,6 +1,6 @@
 import { lazy, StrictMode, Suspense, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import './index.css'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext'
@@ -90,6 +90,11 @@ function RouteFallback() {
   )
 }
 
+function RedirectToEventSettings() {
+  const { id } = useParams()
+  return <Navigate to={`/workspace/${id}/settings`} replace />
+}
+
 function ProtectedRoute({
   children,
   requiredArea,
@@ -150,7 +155,7 @@ createRoot(document.getElementById('root')!).render(
               />
 
               <Route
-                path="/workspace/:id/agenda/settings"
+                path="/workspace/:id/settings"
                 element={
                   <ProtectedRoute requiredArea="Agenda">
                     <SettingsLayout />
@@ -159,6 +164,10 @@ createRoot(document.getElementById('root')!).render(
               >
                 <Route index element={<SettingsTab />} />
               </Route>
+              <Route
+                path="/workspace/:id/agenda/settings"
+                element={<RedirectToEventSettings />}
+              />
 
               <Route
                 path="/workspace/:id/agenda"

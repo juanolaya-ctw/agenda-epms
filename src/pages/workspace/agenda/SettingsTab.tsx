@@ -705,7 +705,7 @@ export function SettingsTab() {
           <ArrowLeft className="size-4" />
           Volver a {workspace?.nombre ?? 'el workspace'}
         </button>
-        <h1 className="text-2xl font-semibold">Configuración del workspace</h1>
+        <h1 className="text-2xl font-semibold">Configuración del evento</h1>
       </div>
 
       <section className="space-y-4 rounded-xl border border-border bg-white p-6">

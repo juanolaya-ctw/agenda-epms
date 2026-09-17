@@ -9,7 +9,11 @@ import {
 } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
-import { workspaceHomePath, type ViewRole } from '@/lib/workspaceRoutes'
+import {
+  eventSettingsPath,
+  workspaceHomePath,
+  type ViewRole,
+} from '@/lib/workspaceRoutes'
 import { cn } from '@/lib/utils'
 
 const ROLE_OPTIONS: { role: ViewRole; label: string }[] = [
@@ -76,11 +80,24 @@ export function Navbar() {
   const areaName = usuario?.area ?? 'EPMS'
   const isAdmin = usuario?.rol === 'admin'
 
-  const currentView = location.pathname.match(
-    /\/workspace\/[^/]+\/(agenda|sales|cs)/,
-  )?.[1] as ViewRole | undefined
+  const currentView = ((): ViewRole | undefined => {
+    const match = location.pathname.match(
+      /\/workspace\/[^/]+\/(agenda|sales|cs)/,
+    )?.[1] as ViewRole | undefined
+    if (match) return match
+    // Settings del evento es una vista de Agenda, fuera del prefijo /agenda.
+    if (/\/workspace\/[^/]+\/settings(?:\/|$)/.test(location.pathname)) {
+      return 'agenda'
+    }
+    return undefined
+  })()
   const activeRoleLabel =
     ROLE_OPTIONS.find((o) => o.role === currentView)?.label ?? 'Seleccionar vista'
+
+  // Nombre y destino salen del evento de la URL actual; si no hay :id
+  // (home/CRM), se usa el evento activo del contexto.
+  const eventoActivo =
+    workspaces.find((w) => w.id === routeWorkspaceId) ?? workspace
 
   // El atajo a "todos los eventos" solo tiene sentido dentro de un workspace.
   const enWorkspace = location.pathname.startsWith('/workspace/')
@@ -100,7 +117,7 @@ export function Navbar() {
   }
 
   function switchView(next: ViewRole) {
-    const id = workspace?.id ?? workspaces[0]?.id
+    const id = eventoActivo?.id ?? workspaces[0]?.id
     if (id) navigate(workspaceHomePath(id, next))
     else navigate('/home')
   }
@@ -143,7 +160,7 @@ export function Navbar() {
             <div className="min-w-0 leading-tight">
               <p className="truncate font-semibold">{nombre}</p>
               <p className="truncate text-sm text-muted-foreground">
-                {areaName} · {workspace?.nombre ?? 'Sin evento'}
+                {areaName} · {eventoActivo?.nombre ?? 'Sin evento'}
               </p>
             </div>
           </button>
@@ -155,7 +172,7 @@ export function Navbar() {
             type="button"
             className={cn(
               'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
-              ws.id === workspace?.id && 'font-semibold',
+              ws.id === eventoActivo?.id && 'font-semibold',
             )}
             onClick={() => selectWorkspace(ws.id)}
           >
@@ -170,18 +187,16 @@ export function Navbar() {
         >
           Ver todos los eventos
         </button>
-        {workspace && (
+        {enWorkspace && eventoActivo && (
           <>
             <div className="my-1 border-t border-border" />
             <button
               type="button"
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
-              onClick={() =>
-                navigate(`/workspace/${workspace.id}/agenda/settings`)
-              }
+              onClick={() => navigate(eventSettingsPath(eventoActivo.id))}
             >
               <Settings className="size-4 text-muted-foreground" />
-              Configurar workspace
+              Configurar evento
             </button>
           </>
         )}

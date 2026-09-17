@@ -12,6 +12,9 @@ export type EstadoSesion = {
   color: EstadoColor
 }
 
+/** Tope de speakers por sesión. Policy Labs y formatos grandes llegan a 13+. */
+export const CAPACIDAD_SPEAKERS_MAX = 20
+
 export const IDIOMAS_SESION = [
   'Español',
   'Inglés',

@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   actualizarSesion,
+  CAPACIDAD_SPEAKERS_MAX,
   crearSesion,
   IDIOMAS_SESION,
   type EstadoSesion,
@@ -89,8 +90,12 @@ function validate(form: FormState): string | null {
   if (form.horaFin <= form.horaInicio)
     return 'La hora de fin debe ser posterior a la de inicio.'
   const capacidad = Number(form.capacidadSpeakers)
-  if (!Number.isInteger(capacidad) || capacidad < 1 || capacidad > 4)
-    return 'La capacidad de speakers debe estar entre 1 y 4.'
+  if (
+    !Number.isInteger(capacidad) ||
+    capacidad < 1 ||
+    capacidad > CAPACIDAD_SPEAKERS_MAX
+  )
+    return `La capacidad de speakers debe ser un entero entre 1 y ${CAPACIDAD_SPEAKERS_MAX}.`
   return null
 }
 
@@ -325,7 +330,7 @@ export function SesionFormDialog({
                 id="sesion-capacidad"
                 type="number"
                 min={1}
-                max={4}
+                max={CAPACIDAD_SPEAKERS_MAX}
                 value={form.capacidadSpeakers}
                 onChange={(e) => set('capacidadSpeakers', e.target.value)}
               />

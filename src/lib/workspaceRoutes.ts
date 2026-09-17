@@ -13,3 +13,7 @@ export function workspaceHomePath(id: string, role: ViewRole): string {
   if (role === 'cs') return `/workspace/${id}/cs`
   return `/workspace/${id}/agenda`
 }
+
+export function eventSettingsPath(id: string): string {
+  return `/workspace/${id}/settings`
+}

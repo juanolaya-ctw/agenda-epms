@@ -50,6 +50,7 @@ import { useOptimisticOverrides } from '@/hooks/useOptimisticOverrides'
 import {
   actualizarCampoSesion,
   actualizarCampoSlot,
+  CAPACIDAD_SPEAKERS_MAX,
   eliminarSesion,
   IDIOMAS_SESION,
   reasignarEscenarioSesion,
@@ -175,13 +176,14 @@ function CapacidadCell({
   const [ok, setOk] = useState(false)
 
   const n = Number(draft)
-  const rangoInvalido = !Number.isInteger(n) || n < 1 || n > 4
+  const rangoInvalido =
+    !Number.isInteger(n) || n < 1 || n > CAPACIDAD_SPEAKERS_MAX
   const menorQueAsignados = Number.isInteger(n) && n < asignados
   const invalid = rangoInvalido || menorQueAsignados
   const msg = menorQueAsignados
     ? `Esta sesión ya tiene ${asignados} speakers asignados. La capacidad no puede ser menor a ${asignados}.`
     : rangoInvalido
-      ? 'La capacidad debe estar entre 1 y 4.'
+      ? `La capacidad debe ser un entero entre 1 y ${CAPACIDAD_SPEAKERS_MAX}.`
       : ''
 
   async function commit() {
@@ -228,7 +230,7 @@ function CapacidadCell({
       <Input
         type="number"
         min={1}
-        max={4}
+        max={CAPACIDAD_SPEAKERS_MAX}
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}

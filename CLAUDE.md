@@ -123,7 +123,8 @@ speaker nuevo (slug = nombre-normalizado + 6 chars del UUID).
 /workspace/:id/agenda/sesiones    → SesionesTab (Tabla/Kanban/Calendario)
 /workspace/:id/agenda/speakers    → SpeakersTab (tabla completa + propiedades)
 /workspace/:id/agenda/requests    → RequestsTab
-/workspace/:id/agenda/settings    → SettingsTab (sin cover ni tabs)
+/workspace/:id/settings          → SettingsTab (sin cover ni tabs)
+/workspace/:id/agenda/settings   → redirect a /workspace/:id/settings
 
 /workspace/:id/sales              → Vista Sales
 /workspace/:id/cs                 → Vista CS
