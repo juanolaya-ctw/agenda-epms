@@ -64,6 +64,7 @@ import {
   propiedadIdFromColumn,
   saveColumnOrder,
 } from './speakersColumnOrder'
+import { cn } from '@/lib/utils'
 
 type SpeakersTableProps = {
   eventoId: string
@@ -93,8 +94,32 @@ function toStr(v: unknown): string {
   return v == null ? '' : String(v)
 }
 
+/** Ancho fijo + overflow: max-w solo no basta en tablas con whitespace-nowrap. */
+const CELL_URL = 'w-[160px] max-w-[160px] overflow-hidden'
+const CELL_EMAIL = 'w-[180px] max-w-[180px] overflow-hidden'
+
+function Truncated({
+  value,
+  className,
+}: {
+  value: string
+  className?: string
+}) {
+  const text = value || '—'
+  return (
+    <span
+      className={cn('block min-w-0 truncate', className)}
+      title={value || undefined}
+    >
+      {text}
+    </span>
+  )
+}
+
 function headClassName(columnId: string): string | undefined {
   if (columnId === 'foto') return 'w-12'
+  if (columnId === 'linkedin' || columnId === 'foto_url') return CELL_URL
+  if (columnId === 'email' || columnId === 'email_secundario') return CELL_EMAIL
   if (columnId === SPEAKERS_ACCIONES_ID) return 'text-right'
   return undefined
 }
@@ -317,7 +342,7 @@ export function SpeakersTable({
       return (
         <TableCell
           key={columnId}
-          className="max-w-[160px] text-xs text-muted-foreground"
+          className="w-[160px] max-w-[160px] overflow-hidden text-xs text-muted-foreground"
         >
           {prop.tipo === 'checkbox' ? (
             <Checkbox
@@ -332,16 +357,18 @@ export function SpeakersTable({
             />
           ) : prop.tipo === 'texto' ? (
             readOnly ? (
-              <span className="truncate">{toStr(v) || '—'}</span>
+              <Truncated value={toStr(v)} />
             ) : (
-              <InlineText
-                value={toStr(v)}
-                onSave={(next) => guardarValor(sp.id, prop.id, next)}
-              />
+              <div className="min-w-0 max-w-[160px]">
+                <InlineText
+                  value={toStr(v)}
+                  onSave={(next) => guardarValor(sp.id, prop.id, next)}
+                />
+              </div>
             )
           ) : prop.tipo === 'fecha' ? (
             readOnly ? (
-              <span>{toStr(v) || '—'}</span>
+              <Truncated value={toStr(v)} />
             ) : (
               <Input
                 type="date"
@@ -352,7 +379,7 @@ export function SpeakersTable({
             )
           ) : prop.tipo === 'select' ? (
             readOnly ? (
-              <span className="truncate">{toStr(v) || '—'}</span>
+              <Truncated value={toStr(v)} />
             ) : (
               <Select
                 value={toStr(v)}
@@ -371,7 +398,7 @@ export function SpeakersTable({
               </Select>
             )
           ) : (
-            <span className="truncate">{resumenValor(prop, v)}</span>
+            <Truncated value={resumenValor(prop, v)} />
           )}
         </TableCell>
       )
@@ -399,14 +426,14 @@ export function SpeakersTable({
         )
       case 'foto_url':
         return (
-          <TableCell key={columnId} className="max-w-[220px]">
+          <TableCell key={columnId} className={CELL_URL}>
             {sp.foto_url ? (
               <a
                 href={sp.foto_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 title={sp.foto_url}
-                className="block truncate text-xs text-secondary hover:underline"
+                className="block min-w-0 truncate text-xs text-secondary hover:underline"
               >
                 {sp.foto_url}
               </a>
@@ -417,61 +444,76 @@ export function SpeakersTable({
         )
       case 'nombre':
         return (
-          <TableCell key={columnId}>
+          <TableCell key={columnId} className="max-w-[200px]">
             {readOnly ? (
               <button
                 type="button"
                 onClick={() => abrirEditar(sp)}
-                className="text-left font-semibold hover:underline"
+                className="block max-w-full truncate text-left font-semibold hover:underline"
+                title={campoActual(sp, 'nombre') || undefined}
               >
                 {campoActual(sp, 'nombre') || 'Sin nombre'}
               </button>
             ) : (
-              <InlineText
-                value={campoActual(sp, 'nombre')}
-                placeholder="Sin nombre"
-                displayClassName="font-semibold"
-                onSave={(v) => guardarCampo(sp, 'nombre', v)}
-              />
+              <div className="min-w-0 max-w-[200px]">
+                <InlineText
+                  value={campoActual(sp, 'nombre')}
+                  placeholder="Sin nombre"
+                  displayClassName="font-semibold"
+                  onSave={(v) => guardarCampo(sp, 'nombre', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'cargo':
         return (
-          <TableCell key={columnId} className="text-muted-foreground">
+          <TableCell
+            key={columnId}
+            className="max-w-[160px] overflow-hidden text-muted-foreground"
+          >
             {readOnly ? (
-              <span>{campoActual(sp, 'cargo') || '—'}</span>
+              <Truncated value={campoActual(sp, 'cargo')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'cargo')}
-                onSave={(v) => guardarCampo(sp, 'cargo', v)}
-              />
+              <div className="min-w-0 max-w-[160px]">
+                <InlineText
+                  value={campoActual(sp, 'cargo')}
+                  onSave={(v) => guardarCampo(sp, 'cargo', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'empresa':
         return (
-          <TableCell key={columnId} className="text-muted-foreground">
+          <TableCell
+            key={columnId}
+            className="max-w-[160px] overflow-hidden text-muted-foreground"
+          >
             {readOnly ? (
-              <span>{campoActual(sp, 'empresa') || '—'}</span>
+              <Truncated value={campoActual(sp, 'empresa')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'empresa')}
-                onSave={(v) => guardarCampo(sp, 'empresa', v)}
-              />
+              <div className="min-w-0 max-w-[160px]">
+                <InlineText
+                  value={campoActual(sp, 'empresa')}
+                  onSave={(v) => guardarCampo(sp, 'empresa', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'pais':
         return (
-          <TableCell key={columnId}>
+          <TableCell key={columnId} className="max-w-[120px] overflow-hidden">
             {readOnly ? (
-              <span>{campoActual(sp, 'pais') || '—'}</span>
+              <Truncated value={campoActual(sp, 'pais')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'pais')}
-                onSave={(v) => guardarCampo(sp, 'pais', v)}
-              />
+              <div className="min-w-0 max-w-[120px]">
+                <InlineText
+                  value={campoActual(sp, 'pais')}
+                  onSave={(v) => guardarCampo(sp, 'pais', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
@@ -479,29 +521,36 @@ export function SpeakersTable({
         return (
           <TableCell
             key={columnId}
-            className="max-w-[200px] text-muted-foreground"
+            className={cn(CELL_EMAIL, 'text-muted-foreground')}
           >
             {readOnly ? (
-              <span className="truncate">{campoActual(sp, 'email') || '—'}</span>
+              <Truncated value={campoActual(sp, 'email')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'email')}
-                validate={(v) => EMAIL_RE.test(v)}
-                onSave={(v) => guardarCampo(sp, 'email', v)}
-              />
+              <div className="min-w-0 max-w-[180px]">
+                <InlineText
+                  value={campoActual(sp, 'email')}
+                  validate={(v) => EMAIL_RE.test(v)}
+                  onSave={(v) => guardarCampo(sp, 'email', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'telefono':
         return (
-          <TableCell key={columnId} className="text-muted-foreground">
+          <TableCell
+            key={columnId}
+            className="max-w-[120px] overflow-hidden text-muted-foreground"
+          >
             {readOnly ? (
-              <span>{campoActual(sp, 'telefono') || '—'}</span>
+              <Truncated value={campoActual(sp, 'telefono')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'telefono')}
-                onSave={(v) => guardarCampo(sp, 'telefono', v)}
-              />
+              <div className="min-w-0 max-w-[120px]">
+                <InlineText
+                  value={campoActual(sp, 'telefono')}
+                  onSave={(v) => guardarCampo(sp, 'telefono', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
@@ -509,57 +558,75 @@ export function SpeakersTable({
         return (
           <TableCell
             key={columnId}
-            className="max-w-[160px] text-muted-foreground"
+            className={cn(CELL_URL, 'text-muted-foreground')}
           >
             {readOnly ? (
-              <span className="truncate text-secondary">
-                {campoActual(sp, 'linkedin_url') || '—'}
-              </span>
-            ) : (
-              <InlineText
+              <Truncated
                 value={campoActual(sp, 'linkedin_url')}
-                displayClassName="truncate text-secondary"
-                onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
+                className="text-secondary"
               />
+            ) : (
+              <div className="min-w-0 max-w-[160px]">
+                <InlineText
+                  value={campoActual(sp, 'linkedin_url')}
+                  displayClassName="truncate text-secondary"
+                  onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'ciudad':
         return (
-          <TableCell key={columnId} className="text-muted-foreground">
+          <TableCell
+            key={columnId}
+            className="max-w-[120px] overflow-hidden text-muted-foreground"
+          >
             {readOnly ? (
-              <span>{campoActual(sp, 'ciudad') || '—'}</span>
+              <Truncated value={campoActual(sp, 'ciudad')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'ciudad')}
-                onSave={(v) => guardarCampo(sp, 'ciudad', v)}
-              />
+              <div className="min-w-0 max-w-[120px]">
+                <InlineText
+                  value={campoActual(sp, 'ciudad')}
+                  onSave={(v) => guardarCampo(sp, 'ciudad', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'tipo_documento':
         return (
-          <TableCell key={columnId} className="text-muted-foreground">
+          <TableCell
+            key={columnId}
+            className="max-w-[100px] overflow-hidden text-muted-foreground"
+          >
             {readOnly ? (
-              <span>{campoActual(sp, 'tipo_documento') || '—'}</span>
+              <Truncated value={campoActual(sp, 'tipo_documento')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'tipo_documento')}
-                onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
-              />
+              <div className="min-w-0 max-w-[100px]">
+                <InlineText
+                  value={campoActual(sp, 'tipo_documento')}
+                  onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
       case 'numero_documento':
         return (
-          <TableCell key={columnId} className="text-muted-foreground">
+          <TableCell
+            key={columnId}
+            className="max-w-[120px] overflow-hidden text-muted-foreground"
+          >
             {readOnly ? (
-              <span>{campoActual(sp, 'numero_documento') || '—'}</span>
+              <Truncated value={campoActual(sp, 'numero_documento')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'numero_documento')}
-                onSave={(v) => guardarCampo(sp, 'numero_documento', v)}
-              />
+              <div className="min-w-0 max-w-[120px]">
+                <InlineText
+                  value={campoActual(sp, 'numero_documento')}
+                  onSave={(v) => guardarCampo(sp, 'numero_documento', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
@@ -567,18 +634,18 @@ export function SpeakersTable({
         return (
           <TableCell
             key={columnId}
-            className="max-w-[200px] text-muted-foreground"
+            className={cn(CELL_EMAIL, 'text-muted-foreground')}
           >
             {readOnly ? (
-              <span className="truncate">
-                {campoActual(sp, 'email_secundario') || '—'}
-              </span>
+              <Truncated value={campoActual(sp, 'email_secundario')} />
             ) : (
-              <InlineText
-                value={campoActual(sp, 'email_secundario')}
-                validate={emailOpcional}
-                onSave={(v) => guardarCampo(sp, 'email_secundario', v)}
-              />
+              <div className="min-w-0 max-w-[180px]">
+                <InlineText
+                  value={campoActual(sp, 'email_secundario')}
+                  validate={emailOpcional}
+                  onSave={(v) => guardarCampo(sp, 'email_secundario', v)}
+                />
+              </div>
             )}
           </TableCell>
         )
