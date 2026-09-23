@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, Pencil, Trash2, UserPlus } from 'lucide-react'
+import { Eye, Flag, Link, Pencil, Trash2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +31,7 @@ import {
   useSpeakersData,
 } from '@/hooks/useSpeakersData'
 import { InlineText } from '@/components/InlineText'
+import { ReportarRequestDialog } from '@/components/requests/ReportarRequestDialog'
 import {
   TableFilters,
   filaPasaFiltros,
@@ -64,7 +65,11 @@ import {
   saveColumnOrder,
 } from './speakersColumnOrder'
 
-type SpeakersTableProps = { eventoId: string }
+type SpeakersTableProps = {
+  eventoId: string
+  /** Vista CS / Sales: sin edición ni administración de propiedades. */
+  readOnly?: boolean
+}
 
 type CampoTexto = Extract<
   keyof SpeakerEditable,
@@ -94,7 +99,10 @@ function headClassName(columnId: string): string | undefined {
   return undefined
 }
 
-export function SpeakersTable({ eventoId }: SpeakersTableProps) {
+export function SpeakersTable({
+  eventoId,
+  readOnly = false,
+}: SpeakersTableProps) {
   const { speakers, propiedades, valoresPorSpeaker, loading, error, refetch } =
     useSpeakersData(eventoId)
   const [busqueda, setBusqueda] = useState('')
@@ -103,6 +111,7 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
   const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
+  const [speakerAReportar, setSpeakerAReportar] = useState<Speaker | null>(null)
   const [filtros, setFiltros] = useState<FiltroActivo[]>([])
   const [storedOrder, setStoredOrder] = useState<string[] | null>(
     () => loadColumnOrder(),
@@ -274,14 +283,16 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         <TableHead key={columnId} className="whitespace-nowrap">
           <span className="inline-flex items-center gap-1">
             {prop.nombre}
-            <button
-              type="button"
-              aria-label={`Editar propiedad ${prop.nombre}`}
-              onClick={() => setPropEditando(prop)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Pencil className="size-3" />
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                aria-label={`Editar propiedad ${prop.nombre}`}
+                onClick={() => setPropEditando(prop)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Pencil className="size-3" />
+              </button>
+            )}
           </span>
         </TableHead>
       )
@@ -312,38 +323,53 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
             <Checkbox
               aria-label={prop.nombre}
               checked={v === true || v === 'true'}
-              onCheckedChange={(checked) =>
-                void guardarValor(sp.id, prop.id, checked === true)
+              disabled={readOnly}
+              onCheckedChange={
+                readOnly
+                  ? undefined
+                  : (checked) => void guardarValor(sp.id, prop.id, checked === true)
               }
             />
           ) : prop.tipo === 'texto' ? (
-            <InlineText
-              value={toStr(v)}
-              onSave={(next) => guardarValor(sp.id, prop.id, next)}
-            />
+            readOnly ? (
+              <span className="truncate">{toStr(v) || '—'}</span>
+            ) : (
+              <InlineText
+                value={toStr(v)}
+                onSave={(next) => guardarValor(sp.id, prop.id, next)}
+              />
+            )
           ) : prop.tipo === 'fecha' ? (
-            <Input
-              type="date"
-              value={toStr(v)}
-              onChange={(e) => void guardarValor(sp.id, prop.id, e.target.value)}
-              className="h-7 text-xs"
-            />
+            readOnly ? (
+              <span>{toStr(v) || '—'}</span>
+            ) : (
+              <Input
+                type="date"
+                value={toStr(v)}
+                onChange={(e) => void guardarValor(sp.id, prop.id, e.target.value)}
+                className="h-7 text-xs"
+              />
+            )
           ) : prop.tipo === 'select' ? (
-            <Select
-              value={toStr(v)}
-              onValueChange={(next) => void guardarValor(sp.id, prop.id, next)}
-            >
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue placeholder="—" />
-              </SelectTrigger>
-              <SelectContent>
-                {prop.opciones.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            readOnly ? (
+              <span className="truncate">{toStr(v) || '—'}</span>
+            ) : (
+              <Select
+                value={toStr(v)}
+                onValueChange={(next) => void guardarValor(sp.id, prop.id, next)}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  {prop.opciones.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
           ) : (
             <span className="truncate">{resumenValor(prop, v)}</span>
           )}
@@ -392,39 +418,61 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
       case 'nombre':
         return (
           <TableCell key={columnId}>
-            <InlineText
-              value={campoActual(sp, 'nombre')}
-              placeholder="Sin nombre"
-              displayClassName="font-semibold"
-              onSave={(v) => guardarCampo(sp, 'nombre', v)}
-            />
+            {readOnly ? (
+              <button
+                type="button"
+                onClick={() => abrirEditar(sp)}
+                className="text-left font-semibold hover:underline"
+              >
+                {campoActual(sp, 'nombre') || 'Sin nombre'}
+              </button>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'nombre')}
+                placeholder="Sin nombre"
+                displayClassName="font-semibold"
+                onSave={(v) => guardarCampo(sp, 'nombre', v)}
+              />
+            )}
           </TableCell>
         )
       case 'cargo':
         return (
           <TableCell key={columnId} className="text-muted-foreground">
-            <InlineText
-              value={campoActual(sp, 'cargo')}
-              onSave={(v) => guardarCampo(sp, 'cargo', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'cargo') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'cargo')}
+                onSave={(v) => guardarCampo(sp, 'cargo', v)}
+              />
+            )}
           </TableCell>
         )
       case 'empresa':
         return (
           <TableCell key={columnId} className="text-muted-foreground">
-            <InlineText
-              value={campoActual(sp, 'empresa')}
-              onSave={(v) => guardarCampo(sp, 'empresa', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'empresa') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'empresa')}
+                onSave={(v) => guardarCampo(sp, 'empresa', v)}
+              />
+            )}
           </TableCell>
         )
       case 'pais':
         return (
           <TableCell key={columnId}>
-            <InlineText
-              value={campoActual(sp, 'pais')}
-              onSave={(v) => guardarCampo(sp, 'pais', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'pais') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'pais')}
+                onSave={(v) => guardarCampo(sp, 'pais', v)}
+              />
+            )}
           </TableCell>
         )
       case 'email':
@@ -433,20 +481,28 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
             key={columnId}
             className="max-w-[200px] text-muted-foreground"
           >
-            <InlineText
-              value={campoActual(sp, 'email')}
-              validate={(v) => EMAIL_RE.test(v)}
-              onSave={(v) => guardarCampo(sp, 'email', v)}
-            />
+            {readOnly ? (
+              <span className="truncate">{campoActual(sp, 'email') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'email')}
+                validate={(v) => EMAIL_RE.test(v)}
+                onSave={(v) => guardarCampo(sp, 'email', v)}
+              />
+            )}
           </TableCell>
         )
       case 'telefono':
         return (
           <TableCell key={columnId} className="text-muted-foreground">
-            <InlineText
-              value={campoActual(sp, 'telefono')}
-              onSave={(v) => guardarCampo(sp, 'telefono', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'telefono') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'telefono')}
+                onSave={(v) => guardarCampo(sp, 'telefono', v)}
+              />
+            )}
           </TableCell>
         )
       case 'linkedin':
@@ -455,38 +511,56 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
             key={columnId}
             className="max-w-[160px] text-muted-foreground"
           >
-            <InlineText
-              value={campoActual(sp, 'linkedin_url')}
-              displayClassName="truncate text-secondary"
-              onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
-            />
+            {readOnly ? (
+              <span className="truncate text-secondary">
+                {campoActual(sp, 'linkedin_url') || '—'}
+              </span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'linkedin_url')}
+                displayClassName="truncate text-secondary"
+                onSave={(v) => guardarCampo(sp, 'linkedin_url', v)}
+              />
+            )}
           </TableCell>
         )
       case 'ciudad':
         return (
           <TableCell key={columnId} className="text-muted-foreground">
-            <InlineText
-              value={campoActual(sp, 'ciudad')}
-              onSave={(v) => guardarCampo(sp, 'ciudad', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'ciudad') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'ciudad')}
+                onSave={(v) => guardarCampo(sp, 'ciudad', v)}
+              />
+            )}
           </TableCell>
         )
       case 'tipo_documento':
         return (
           <TableCell key={columnId} className="text-muted-foreground">
-            <InlineText
-              value={campoActual(sp, 'tipo_documento')}
-              onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'tipo_documento') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'tipo_documento')}
+                onSave={(v) => guardarCampo(sp, 'tipo_documento', v)}
+              />
+            )}
           </TableCell>
         )
       case 'numero_documento':
         return (
           <TableCell key={columnId} className="text-muted-foreground">
-            <InlineText
-              value={campoActual(sp, 'numero_documento')}
-              onSave={(v) => guardarCampo(sp, 'numero_documento', v)}
-            />
+            {readOnly ? (
+              <span>{campoActual(sp, 'numero_documento') || '—'}</span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'numero_documento')}
+                onSave={(v) => guardarCampo(sp, 'numero_documento', v)}
+              />
+            )}
           </TableCell>
         )
       case 'email_secundario':
@@ -495,11 +569,17 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
             key={columnId}
             className="max-w-[200px] text-muted-foreground"
           >
-            <InlineText
-              value={campoActual(sp, 'email_secundario')}
-              validate={emailOpcional}
-              onSave={(v) => guardarCampo(sp, 'email_secundario', v)}
-            />
+            {readOnly ? (
+              <span className="truncate">
+                {campoActual(sp, 'email_secundario') || '—'}
+              </span>
+            ) : (
+              <InlineText
+                value={campoActual(sp, 'email_secundario')}
+                validate={emailOpcional}
+                onSave={(v) => guardarCampo(sp, 'email_secundario', v)}
+              />
+            )}
           </TableCell>
         )
       case 'sesiones':
@@ -549,19 +629,35 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label={`Editar ${sp.nombre}`}
+                aria-label={
+                  readOnly
+                    ? `Ver perfil de ${sp.nombre}`
+                    : `Editar ${sp.nombre}`
+                }
                 onClick={() => abrirEditar(sp)}
               >
-                <Pencil />
+                {readOnly ? <Eye /> : <Pencil />}
               </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Eliminar ${sp.nombre}`}
-                onClick={() => setSpeakerAEliminar(sp)}
-              >
-                <Trash2 />
-              </Button>
+              {readOnly ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Reportar sobre ${sp.nombre}`}
+                  title="Reportar al equipo de Agenda"
+                  onClick={() => setSpeakerAReportar(sp)}
+                >
+                  <Flag />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Eliminar ${sp.nombre}`}
+                  onClick={() => setSpeakerAEliminar(sp)}
+                >
+                  <Trash2 />
+                </Button>
+              )}
             </div>
           </TableCell>
         )
@@ -591,10 +687,14 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
           />
         </div>
         <div className="flex items-center gap-2">
-          <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
-          <Button onClick={abrirCrear}>
-            <UserPlus /> Agregar speaker
-          </Button>
+          {!readOnly && (
+            <>
+              <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
+              <Button onClick={abrirCrear}>
+                <UserPlus /> Agregar speaker
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -648,12 +748,14 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         </div>
       )}
 
-      <EliminarSpeakerDialog
-        speaker={speakerAEliminar}
-        eventoId={eventoId}
-        onOpenChange={(open) => !open && setSpeakerAEliminar(null)}
-        onDeleted={refetch}
-      />
+      {!readOnly && (
+        <EliminarSpeakerDialog
+          speaker={speakerAEliminar}
+          eventoId={eventoId}
+          onOpenChange={(open) => !open && setSpeakerAEliminar(null)}
+          onDeleted={refetch}
+        />
+      )}
 
       <SpeakerPerfilDialog
         open={dialogOpen}
@@ -662,15 +764,29 @@ export function SpeakersTable({ eventoId }: SpeakersTableProps) {
         speaker={activo}
         eventoId={eventoId}
         onSaved={refetch}
+        readOnly={readOnly}
         propiedadesEvento={propiedades}
         valoresDelSpeaker={activo ? valoresPorSpeaker[activo.id] : undefined}
       />
 
-      <PropiedadEditarDialog
-        propiedad={propEditando}
-        onOpenChange={(open) => !open && setPropEditando(null)}
-        onSaved={refetch}
-      />
+      {!readOnly && (
+        <PropiedadEditarDialog
+          propiedad={propEditando}
+          onOpenChange={(open) => !open && setPropEditando(null)}
+          onSaved={refetch}
+        />
+      )}
+
+      {readOnly && (
+        <ReportarRequestDialog
+          open={speakerAReportar !== null}
+          onOpenChange={(open) => !open && setSpeakerAReportar(null)}
+          title={`Reportar sobre ${speakerAReportar?.nombre ?? 'speaker'}`}
+          origen="speaker"
+          speakerId={speakerAReportar?.id}
+          successToast="Reporte enviado al equipo de Agenda"
+        />
+      )}
     </div>
   )
 }

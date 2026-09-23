@@ -79,6 +79,8 @@ type SpeakerPerfilDialogProps = {
   speaker: Speaker | null
   eventoId: string
   onSaved: () => void
+  /** Solo consulta (CS / Sales): sin guardar ni editar. */
+  readOnly?: boolean
   /** Propiedades del evento ya cargadas por el padre (evita refetch). */
   propiedadesEvento?: PropiedadCustom[]
   /** Valores de este speaker ya cargados por el padre (evita refetch). */
@@ -92,6 +94,7 @@ export function SpeakerPerfilDialog({
   speaker,
   eventoId,
   onSaved,
+  readOnly = false,
   propiedadesEvento,
   valoresDelSpeaker,
 }: SpeakerPerfilDialogProps) {
@@ -407,10 +410,12 @@ export function SpeakerPerfilDialog({
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                disabled={!speaker || subiendoFoto}
+                disabled={readOnly || !speaker || subiendoFoto}
                 onClick={() => fileInputRef.current?.click()}
                 className="group relative shrink-0 cursor-pointer rounded-full disabled:cursor-default"
-                title={speaker ? 'Cambiar foto' : undefined}
+                title={
+                  readOnly || !speaker ? undefined : 'Cambiar foto'
+                }
               >
                 <Avatar size="lg">
                   {fotoUrl && (
@@ -420,7 +425,7 @@ export function SpeakerPerfilDialog({
                     {iniciales(form.nombre || 'NN')}
                   </AvatarFallback>
                 </Avatar>
-                {speaker && (
+                {!readOnly && speaker && (
                   <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
                     <Camera className="size-4" />
                   </span>
@@ -432,6 +437,7 @@ export function SpeakerPerfilDialog({
                 accept="image/*"
                 className="hidden"
                 onChange={handleFotoChange}
+                disabled={readOnly}
               />
               <div className="flex min-w-0 flex-col gap-1">
                 <p className="truncate text-sm font-medium">
@@ -464,6 +470,8 @@ export function SpeakerPerfilDialog({
                   className="w-full"
                   value={form[campo.key]}
                   onChange={(e) => set(campo.key, e.target.value)}
+                  readOnly={readOnly}
+                  disabled={readOnly}
                 />
               </div>
             ))}
@@ -476,12 +484,16 @@ export function SpeakerPerfilDialog({
                 rows={4}
                 value={form.bio}
                 onChange={(e) => set('bio', e.target.value)}
+                readOnly={readOnly}
+                disabled={readOnly}
               />
             </div>
 
-            <Button onClick={handleGuardar} disabled={saving}>
-              {saving ? 'Guardando…' : 'Guardar cambios'}
-            </Button>
+            {!readOnly && (
+              <Button onClick={handleGuardar} disabled={saving}>
+                {saving ? 'Guardando…' : 'Guardar cambios'}
+              </Button>
+            )}
           </div>
 
           {/* ── Columna derecha: participación + seguimiento ──────── */}
@@ -569,8 +581,12 @@ export function SpeakerPerfilDialog({
                             valores[prop.id] === true ||
                             valores[prop.id] === 'true'
                           }
-                          onCheckedChange={(checked) =>
-                            void persistirValor(prop.id, checked === true)
+                          disabled={readOnly}
+                          onCheckedChange={
+                            readOnly
+                              ? undefined
+                              : (checked) =>
+                                  void persistirValor(prop.id, checked === true)
                           }
                         />
                         {prop.nombre}
@@ -591,103 +607,125 @@ export function SpeakerPerfilDialog({
                                 <Checkbox
                                   id={cbId}
                                   checked={item.checked}
-                                  onCheckedChange={() =>
-                                    toggleItem(prop, index)
+                                  disabled={readOnly}
+                                  onCheckedChange={
+                                    readOnly
+                                      ? undefined
+                                      : () => toggleItem(prop, index)
                                   }
                                 />
                                 <label
                                   htmlFor={cbId}
-                                  className={`cursor-pointer text-xs ${
+                                  className={`text-xs ${
                                     item.checked
                                       ? 'text-muted-foreground line-through'
                                       : ''
-                                  }`}
+                                  } ${readOnly ? '' : 'cursor-pointer'}`}
                                 >
                                   {item.label}
                                 </label>
                               </div>
                             )
                           })}
-                          <div className="flex items-center gap-2">
-                            <Input
-                              value={nuevoItem[prop.id] ?? ''}
-                              onChange={(e) =>
-                                setNuevoItem((prev) => ({
-                                  ...prev,
-                                  [prop.id]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault()
-                                  agregarItem(prop)
+                          {!readOnly && (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={nuevoItem[prop.id] ?? ''}
+                                onChange={(e) =>
+                                  setNuevoItem((prev) => ({
+                                    ...prev,
+                                    [prop.id]: e.target.value,
+                                  }))
                                 }
-                              }}
-                              placeholder="Nueva tarea…"
-                              className="h-8 flex-1 text-xs"
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => agregarItem(prop)}
-                            >
-                              Añadir
-                            </Button>
-                          </div>
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    agregarItem(prop)
+                                  }
+                                }}
+                                placeholder="Nueva tarea…"
+                                className="h-8 flex-1 text-xs"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => agregarItem(prop)}
+                              >
+                                Añadir
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      {prop.tipo === 'texto' && (
-                        <Input
-                          defaultValue={String(valores[prop.id] ?? '')}
-                          onBlur={(e) =>
-                            persistirValor(prop.id, e.target.value)
-                          }
-                          className="h-8 text-xs"
-                        />
-                      )}
+                      {prop.tipo === 'texto' &&
+                        (readOnly ? (
+                          <p className="text-xs text-muted-foreground">
+                            {String(valores[prop.id] ?? '—')}
+                          </p>
+                        ) : (
+                          <Input
+                            defaultValue={String(valores[prop.id] ?? '')}
+                            onBlur={(e) =>
+                              persistirValor(prop.id, e.target.value)
+                            }
+                            className="h-8 text-xs"
+                          />
+                        ))}
 
-                      {prop.tipo === 'select' && (
-                        <Select
-                          value={String(valores[prop.id] ?? '')}
-                          onValueChange={(value) =>
-                            persistirValor(prop.id, value)
-                          }
-                        >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Selecciona…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {prop.opciones.map((opt) => (
-                              <SelectItem key={opt} value={opt}>
-                                {opt}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                      {prop.tipo === 'select' &&
+                        (readOnly ? (
+                          <p className="text-xs text-muted-foreground">
+                            {String(valores[prop.id] ?? '—')}
+                          </p>
+                        ) : (
+                          <Select
+                            value={String(valores[prop.id] ?? '')}
+                            onValueChange={(value) =>
+                              persistirValor(prop.id, value)
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Selecciona…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {prop.opciones.map((opt) => (
+                                <SelectItem key={opt} value={opt}>
+                                  {opt}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ))}
 
-                      {prop.tipo === 'fecha' && (
-                        <Input
-                          type="date"
-                          value={String(valores[prop.id] ?? '')}
-                          onChange={(e) =>
-                            persistirValor(prop.id, e.target.value)
-                          }
-                          className="h-8 text-xs"
-                        />
-                      )}
+                      {prop.tipo === 'fecha' &&
+                        (readOnly ? (
+                          <p className="text-xs text-muted-foreground">
+                            {String(valores[prop.id] ?? '—')}
+                          </p>
+                        ) : (
+                          <Input
+                            type="date"
+                            value={String(valores[prop.id] ?? '')}
+                            onChange={(e) =>
+                              persistirValor(prop.id, e.target.value)
+                            }
+                            className="h-8 text-xs"
+                          />
+                        ))}
                     </div>
                     ),
                   )}
 
-                  <div>
-                    <NuevaPropiedadDialog
-                      eventoId={eventoId}
-                      onCreada={handlePropiedadCreada}
-                    />
-                  </div>
+                  {!readOnly && (
+                    <div>
+                      <NuevaPropiedadDialog
+                        eventoId={eventoId}
+                        onCreada={handlePropiedadCreada}
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}

@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ReportarRequestDialog } from '@/components/requests/ReportarRequestDialog'
 import { cn } from '@/lib/utils'
 import {
   desplazarAgenda,
@@ -104,12 +105,15 @@ type SesionesCalendarioViewProps = {
   data: SesionesData
   eventoId: string
   eventoRango: { inicio: string; fin: string }
+  /** CS / Sales: sin desplazar agenda ni editar sesión. */
+  readOnly?: boolean
 }
 
 export function SesionesCalendarioView({
   data,
   eventoId,
   eventoRango,
+  readOnly = false,
 }: SesionesCalendarioViewProps) {
   const {
     sesiones,
@@ -125,6 +129,7 @@ export function SesionesCalendarioView({
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [sesionActiva, setSesionActiva] = useState<Sesion | null>(null)
+  const [sugerirOpen, setSugerirOpen] = useState(false)
   const [minutos, setMinutos] = useState('')
   const [aplicando, setAplicando] = useState(false)
   const [filtroEscenarioId, setFiltroEscenarioId] = useState<string | null>(null)
@@ -206,9 +211,11 @@ export function SesionesCalendarioView({
             onDiaChange={setFiltroDia}
           />
         </div>
-        <Button size="sm" variant="outline" onClick={() => setShiftDialogOpen(true)}>
-          Desplazar agenda
-        </Button>
+        {!readOnly && (
+          <Button size="sm" variant="outline" onClick={() => setShiftDialogOpen(true)}>
+            Desplazar agenda
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -306,44 +313,46 @@ export function SesionesCalendarioView({
         </div>
       )}
 
-      <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
-        <DialogContent className="max-w-sm bg-background">
-          <DialogHeader>
-            <DialogTitle>Desplazar agenda</DialogTitle>
-            <DialogDescription>
-              Mueve todos los slots del evento. Positivo adelanta, negativo
-              atrasa.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="desplazar-minutos">Minutos</Label>
-            <Input
-              id="desplazar-minutos"
-              type="number"
-              value={minutos}
-              onChange={(e) => setMinutos(e.target.value)}
-              placeholder="Ej. 15 o -30"
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShiftDialogOpen(false)}
-              disabled={aplicando}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleAplicar} disabled={aplicando}>
-              {aplicando ? 'Aplicando…' : 'Aplicar'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {!readOnly && (
+        <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
+          <DialogContent className="max-w-sm bg-background">
+            <DialogHeader>
+              <DialogTitle>Desplazar agenda</DialogTitle>
+              <DialogDescription>
+                Mueve todos los slots del evento. Positivo adelanta, negativo
+                atrasa.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="desplazar-minutos">Minutos</Label>
+              <Input
+                id="desplazar-minutos"
+                type="number"
+                value={minutos}
+                onChange={(e) => setMinutos(e.target.value)}
+                placeholder="Ej. 15 o -30"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShiftDialogOpen(false)}
+                disabled={aplicando}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={handleAplicar} disabled={aplicando}>
+                {aplicando ? 'Aplicando…' : 'Aplicar'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       <SesionFormDialog
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
-        mode="edit"
+        mode={readOnly ? 'view' : 'edit'}
         sesion={sesionActiva}
         escenarios={escenarios}
         tracks={tracks}
@@ -351,7 +360,26 @@ export function SesionesCalendarioView({
         estados={estados}
         eventoRango={eventoRango}
         onSaved={refetch}
+        onSugerirCambio={
+          readOnly
+            ? () => {
+                setEditDialogOpen(false)
+                setSugerirOpen(true)
+              }
+            : undefined
+        }
       />
+
+      {readOnly && (
+        <ReportarRequestDialog
+          open={sugerirOpen}
+          onOpenChange={setSugerirOpen}
+          title={`Sugerir cambio para ${sesionActiva?.titulo ?? 'sesión'}`}
+          origen="sesion"
+          sesionId={sesionActiva?.id}
+          successToast="Sugerencia enviada al equipo de Agenda"
+        />
+      )}
     </div>
   )
 }

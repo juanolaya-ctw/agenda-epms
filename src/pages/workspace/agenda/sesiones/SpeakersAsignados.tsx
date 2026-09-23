@@ -69,12 +69,14 @@ type SpeakersAsignadosProps = {
   sesionId: string | null
   capacidad: number
   onChanged: () => void
+  readOnly?: boolean
 }
 
 export function SpeakersAsignados({
   sesionId,
   capacidad,
   onChanged,
+  readOnly = false,
 }: SpeakersAsignadosProps) {
   const [asignados, setAsignados] = useState<SesionSpeaker[]>([])
   const [cargando, setCargando] = useState(false)
@@ -218,37 +220,46 @@ export function SpeakersAsignados({
                 <div className="min-w-0 flex-1">
                   <SpeakerIdentidad speaker={row} />
                 </div>
-                <Select
-                  value={row.rol}
-                  onValueChange={(value) => handleRol(row, value)}
-                  disabled={busy}
-                >
-                  <SelectTrigger className="h-7 w-32 shrink-0 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROLES_SPEAKER.map((rol) => (
-                      <SelectItem key={rol} value={rol}>
-                        {rol}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0"
-                  aria-label={`Quitar a ${row.nombre}`}
-                  disabled={busy}
-                  onClick={() => handleQuitar(row)}
-                >
-                  <X />
-                </Button>
+                {readOnly ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {row.rol}
+                  </span>
+                ) : (
+                  <>
+                    <Select
+                      value={row.rol}
+                      onValueChange={(value) => handleRol(row, value)}
+                      disabled={busy}
+                    >
+                      <SelectTrigger className="h-7 w-32 shrink-0 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ROLES_SPEAKER.map((rol) => (
+                          <SelectItem key={rol} value={rol}>
+                            {rol}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0"
+                      aria-label={`Quitar a ${row.nombre}`}
+                      disabled={busy}
+                      onClick={() => handleQuitar(row)}
+                    >
+                      <X />
+                    </Button>
+                  </>
+                )}
               </div>
             ))}
           </div>
 
+          {!readOnly && (
           <div className="relative">
             <Input
               value={termino}
@@ -291,6 +302,7 @@ export function SpeakersAsignados({
               </div>
             )}
           </div>
+          )}
         </>
       )}
     </div>
