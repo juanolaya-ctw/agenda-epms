@@ -561,34 +561,51 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
 }
 
 // Conteo aislado para el badge de la pestaña Requests en WorkspaceLayout.
-// Una sola query filtrada en el servidor (join embebido, usa idx_requests_sesion)
-// en vez de cargar todo el agregado del dashboard.
+// Cuenta PENDIENTE + EN_REVISION (no resueltos). Sin filtro de evento por ahora
+// — alineado con la bandeja que lista todos los requests.
+const REQUESTS_COUNT_INVALIDATE = 'epms:requests-count-invalidate'
+
+export function invalidateRequestsPendientesCount() {
+  window.dispatchEvent(new Event(REQUESTS_COUNT_INVALIDATE))
+}
+
 export function useRequestsPendientesCount(
   eventoId: string | null | undefined,
 ): number {
   const [count, setCount] = useState(0)
 
   useEffect(() => {
+    // eventoId indica que estamos en vista Agenda de un workspace;
+    // el conteo aún no filtra por evento (pocos datos reales).
     if (!eventoId) {
       setCount(0)
       return
     }
 
     let cancelled = false
-    supabase
-      .from('requests')
-      .select(
-        'id, sesion:sesiones!inner(slot:slots!inner(escenario:escenarios!inner(evento_id)))',
-        { count: 'exact', head: true },
-      )
-      .eq('estado', 'PENDIENTE')
-      .eq('sesion.slot.escenario.evento_id', eventoId)
-      .then(({ count: value }) => {
-        if (!cancelled) setCount(value ?? 0)
-      })
+
+    async function load() {
+      const { count: value, error } = await supabase
+        .from('requests')
+        .select('id', { count: 'exact', head: true })
+        .in('estado', ['PENDIENTE', 'EN_REVISION'])
+
+      if (cancelled) return
+      if (error) {
+        console.error('[useRequestsPendientesCount]', error.message)
+        setCount(0)
+        return
+      }
+      setCount(value ?? 0)
+    }
+
+    void load()
+    const onInvalidate = () => void load()
+    window.addEventListener(REQUESTS_COUNT_INVALIDATE, onInvalidate)
 
     return () => {
       cancelled = true
+      window.removeEventListener(REQUESTS_COUNT_INVALIDATE, onInvalidate)
     }
   }, [eventoId])
 
