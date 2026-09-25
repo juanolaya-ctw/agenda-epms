@@ -3,6 +3,25 @@ import { supabase } from '@/lib/supabase'
 
 export type OpcionCatalogo = { id: string; nombre: string }
 
+/** Paleta curada para bloques del calendario (coinciden con el alter SQL). */
+export const COLORES_ESCENARIO = [
+  { hex: '#0093FF', label: 'Azul' },
+  { hex: '#FFEDB5', label: 'Crema' },
+  { hex: '#EE82EE', label: 'Violeta' },
+  { hex: '#42B3F3', label: 'Celeste' },
+  { hex: '#16A34A', label: 'Verde' },
+  { hex: '#F97316', label: 'Naranja' },
+  { hex: '#0F766E', label: 'Teal' },
+  { hex: '#BE123C', label: 'Rojo' },
+] as const
+
+export const COLORES_ESCENARIO_PALETTE = COLORES_ESCENARIO.map((c) => c.hex)
+
+export type EscenarioCatalogo = OpcionCatalogo & {
+  /** Hex #RRGGBB; null → fallback por índice en la paleta. */
+  color: string | null
+}
+
 export type EstadoColor = 'gray' | 'yellow' | 'green' | 'red' | 'blue'
 
 export type EstadoSesion = {
@@ -44,7 +63,7 @@ export type Sesion = {
 
 export type SesionesData = {
   sesiones: Sesion[]
-  escenarios: OpcionCatalogo[]
+  escenarios: EscenarioCatalogo[]
   tracks: OpcionCatalogo[]
   formatos: OpcionCatalogo[]
   estados: EstadoSesion[]
@@ -82,6 +101,29 @@ function normalizarColorEstado(value: unknown): EstadoColor {
   return COLORES_ESTADO.includes(value as EstadoColor)
     ? (value as EstadoColor)
     : 'gray'
+}
+
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/
+
+export function normalizarColorEscenario(
+  value: unknown,
+  indexFallback = 0,
+): string {
+  if (typeof value === 'string' && HEX_COLOR_RE.test(value)) return value
+  return COLORES_ESCENARIO_PALETTE[
+    indexFallback % COLORES_ESCENARIO_PALETTE.length
+  ]
+}
+
+/** Texto legible sobre un fondo hex (luminancia relativa simple). */
+export function contrasteSobreHex(hex: string): '#FFFFFF' | '#1D1D1B' {
+  const raw = hex.replace('#', '')
+  if (raw.length !== 6) return '#FFFFFF'
+  const r = Number.parseInt(raw.slice(0, 2), 16)
+  const g = Number.parseInt(raw.slice(2, 4), 16)
+  const b = Number.parseInt(raw.slice(4, 6), 16)
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luma > 0.55 ? '#1D1D1B' : '#FFFFFF'
 }
 
 function hhmm(value: string | null | undefined): string {
@@ -145,35 +187,57 @@ const SESIONES_SELECT = `
 async function loadSesiones(
   eventoId: string,
 ): Promise<Omit<SesionesData, 'loading' | 'refetch'>> {
-  const [escenariosRes, tracksRes, formatosRes, estadosRes, sesionesRes] =
-    await Promise.all([
-      supabase
+  // color es columna nueva; si aún no existe el alter, caemos a id/nombre.
+  const escenariosConColor = await supabase
+    .from('escenarios')
+    .select('id, nombre, color')
+    .eq('evento_id', eventoId)
+    .order('nombre')
+
+  const escenariosSinColor = escenariosConColor.error?.message
+    ?.toLowerCase()
+    .includes('color')
+    ? await supabase
         .from('escenarios')
         .select('id, nombre')
         .eq('evento_id', eventoId)
-        .order('nombre'),
-      supabase
-        .from('tracks')
-        .select('id, nombre')
-        .eq('evento_id', eventoId)
-        .order('nombre'),
-      supabase
-        .from('formatos')
-        .select('id, nombre')
-        .eq('evento_id', eventoId)
-        .order('nombre'),
-      supabase
-        .from('estados_sesion')
-        .select('id, nombre, orden, color')
-        .eq('evento_id', eventoId)
-        .order('orden'),
-      supabase
-        .from('sesiones')
-        .select(SESIONES_SELECT)
-        .eq('slot.escenario.evento_id', eventoId),
-    ])
+        .order('nombre')
+    : null
 
-  const escenarios = (escenariosRes.data ?? []) as OpcionCatalogo[]
+  const escenariosRes = escenariosSinColor ?? escenariosConColor
+
+  const [tracksRes, formatosRes, estadosRes, sesionesRes] = await Promise.all([
+    supabase
+      .from('tracks')
+      .select('id, nombre')
+      .eq('evento_id', eventoId)
+      .order('nombre'),
+    supabase
+      .from('formatos')
+      .select('id, nombre')
+      .eq('evento_id', eventoId)
+      .order('nombre'),
+    supabase
+      .from('estados_sesion')
+      .select('id, nombre, orden, color')
+      .eq('evento_id', eventoId)
+      .order('orden'),
+    supabase
+      .from('sesiones')
+      .select(SESIONES_SELECT)
+      .eq('slot.escenario.evento_id', eventoId),
+  ])
+
+  const escenarios: EscenarioCatalogo[] = (escenariosRes.data ?? []).map(
+    (row, index) => ({
+      id: row.id as string,
+      nombre: (row.nombre as string | null) ?? '',
+      color: normalizarColorEscenario(
+        'color' in row ? (row as { color?: unknown }).color : null,
+        index,
+      ),
+    }),
+  )
   const tracks = (tracksRes.data ?? []) as OpcionCatalogo[]
   const formatos = (formatosRes.data ?? []) as OpcionCatalogo[]
   const estados: EstadoSesion[] = (estadosRes.data ?? [])
@@ -534,6 +598,20 @@ export async function desasignarSpeaker(
     .from('sesion_speakers')
     .delete()
     .eq('id', sesionSpeakerId)
+  return { error: res.error?.message ?? null }
+}
+
+export async function actualizarColorEscenario(
+  escenarioId: string,
+  color: string,
+): Promise<{ error: string | null }> {
+  if (!HEX_COLOR_RE.test(color)) {
+    return { error: 'Color inválido. Usa formato #RRGGBB.' }
+  }
+  const res = await supabase
+    .from('escenarios')
+    .update({ color })
+    .eq('id', escenarioId)
   return { error: res.error?.message ?? null }
 }
 

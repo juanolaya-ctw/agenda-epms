@@ -19,10 +19,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  actualizarColorEscenario,
   actualizarSesion,
   CAPACIDAD_SPEAKERS_MAX,
+  COLORES_ESCENARIO,
   crearSesion,
   IDIOMAS_SESION,
+  normalizarColorEscenario,
+  type EscenarioCatalogo,
   type EstadoSesion,
   type OpcionCatalogo,
   type Sesion,
@@ -39,7 +43,7 @@ type SesionFormDialogProps = {
   onOpenChange: (open: boolean) => void
   mode: 'create' | 'edit' | 'view'
   sesion: Sesion | null
-  escenarios: OpcionCatalogo[]
+  escenarios: EscenarioCatalogo[]
   tracks: OpcionCatalogo[]
   formatos: OpcionCatalogo[]
   estados: EstadoSesion[]
@@ -133,12 +137,14 @@ export function SesionFormDialog({
     initialState(sesion, eventoRango.inicio, defaultEstado),
   )
   const [saving, setSaving] = useState(false)
+  const [savingColor, setSavingColor] = useState(false)
   const isView = mode === 'view'
 
   useEffect(() => {
     if (open) {
       setForm(initialState(sesion, eventoRango.inicio, defaultEstado))
       setSaving(false)
+      setSavingColor(false)
     }
     // Reinicia solo al abrir o al cambiar de sesión, no en cada refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,12 +155,34 @@ export function SesionFormDialog({
 
   const capacidadNum = Math.max(1, Number(form.capacidadSpeakers) || 1)
 
+  const escenarioIndex = escenarios.findIndex((e) => e.id === form.escenarioId)
+  const escenarioActivo =
+    escenarioIndex >= 0 ? escenarios[escenarioIndex] : null
+  const colorEscenarioActivo = escenarioActivo
+    ? normalizarColorEscenario(
+        escenarioActivo.color,
+        Math.max(0, escenarioIndex),
+      )
+    : null
+
   const escenarioNombre =
-    escenarios.find((e) => e.id === form.escenarioId)?.nombre ??
-    sesion?.escenarioNombre ??
-    ''
+    escenarioActivo?.nombre ?? sesion?.escenarioNombre ?? ''
   const trackLabel =
     form.track === SIN_TRACK || !form.track ? 'Sin track' : form.track
+
+  async function handleColorEscenario(color: string) {
+    if (!form.escenarioId || isView) return
+    if (color === colorEscenarioActivo) return
+    setSavingColor(true)
+    const { error } = await actualizarColorEscenario(form.escenarioId, color)
+    setSavingColor(false)
+    if (error) {
+      toast.error(`No se pudo cambiar el color: ${error}`)
+      return
+    }
+    toast.success('Color del escenario actualizado')
+    onSaved()
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -314,21 +342,65 @@ export function SesionFormDialog({
 
                 <div className="flex flex-col gap-1.5">
                   <Label>Escenario *</Label>
-                  <Select
-                    value={form.escenarioId}
-                    onValueChange={(value) => set('escenarioId', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un escenario" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {escenarios.map((escenario) => (
-                        <SelectItem key={escenario.id} value={escenario.id}>
-                          {escenario.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex min-w-0 gap-2">
+                    <Select
+                      value={form.escenarioId}
+                      onValueChange={(value) => set('escenarioId', value)}
+                    >
+                      <SelectTrigger className="min-w-0 flex-1">
+                        <SelectValue placeholder="Selecciona un escenario" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {escenarios.map((escenario) => (
+                          <SelectItem key={escenario.id} value={escenario.id}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="inline-block size-2.5 shrink-0 rounded-sm"
+                                style={{
+                                  backgroundColor: normalizarColorEscenario(
+                                    escenario.color,
+                                    escenarios.findIndex(
+                                      (e) => e.id === escenario.id,
+                                    ),
+                                  ),
+                                }}
+                              />
+                              {escenario.nombre}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {form.escenarioId && (
+                      <Select
+                        value={colorEscenarioActivo ?? undefined}
+                        onValueChange={(value) =>
+                          void handleColorEscenario(value)
+                        }
+                        disabled={savingColor}
+                      >
+                        <SelectTrigger
+                          className="w-[8.5rem] shrink-0"
+                          aria-label="Color en calendario"
+                        >
+                          <SelectValue placeholder="Color" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COLORES_ESCENARIO.map(({ hex, label }) => (
+                            <SelectItem key={hex} value={hex}>
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="inline-block size-2.5 shrink-0 rounded-sm border border-border/60"
+                                  style={{ backgroundColor: hex }}
+                                />
+                                {label}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 </div>
               </div>
 

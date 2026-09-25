@@ -39,6 +39,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import type { EstadoColor } from '@/hooks/useSesionesData'
+import { COLORES_ESCENARIO_PALETTE } from '@/hooks/useSesionesData'
 import { estadoDotClass } from './sesiones/badges'
 
 type CatalogItem = { id: string; nombre: string }
@@ -505,9 +506,19 @@ export function SettingsTab() {
 
   async function addCatalog(table: CatalogTable, nombreItem: string) {
     if (!eventoId) return
+    const payload: Record<string, unknown> = {
+      evento_id: eventoId,
+      nombre: nombreItem,
+    }
+    if (table === 'escenarios') {
+      payload.color =
+        COLORES_ESCENARIO_PALETTE[
+          escenarios.length % COLORES_ESCENARIO_PALETTE.length
+        ]
+    }
     const { data, error } = await supabase
       .from(table)
-      .insert({ evento_id: eventoId, nombre: nombreItem })
+      .insert(payload)
       .select('id, nombre')
       .single()
     if (error) throw new Error(error.message)

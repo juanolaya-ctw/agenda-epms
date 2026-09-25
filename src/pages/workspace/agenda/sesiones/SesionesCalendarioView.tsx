@@ -12,9 +12,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ReportarRequestDialog } from '@/components/requests/ReportarRequestDialog'
-import { cn } from '@/lib/utils'
 import {
+  contrasteSobreHex,
   desplazarAgenda,
+  normalizarColorEscenario,
+  type EscenarioCatalogo,
   type SesionesData,
   type Sesion,
 } from '@/hooks/useSesionesData'
@@ -29,32 +31,93 @@ const PASO_MIN = 30
 const ROW_H = 40 // px por intervalo de 30 min
 const FILAS = (FIN_MIN - INICIO_MIN) / PASO_MIN
 const ALTO_TOTAL = FILAS * ROW_H
+const GAP_PX = 2
 
-const COLORES_ESCENARIO = [
-  'bg-secondary text-secondary-foreground',
-  'bg-secondary/60 text-secondary-foreground',
-  'bg-muted text-foreground border border-border',
-  'bg-secondary/30 text-foreground',
-  'bg-muted/60 text-foreground border border-border',
-]
-
-function colorEscenario(index: number): string {
-  return COLORES_ESCENARIO[index % COLORES_ESCENARIO.length]
+type LayoutBloque = {
+  sesion: Sesion
+  col: number
+  cols: number
 }
 
-function horaLabel(min: number): string {
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+/**
+ * Empaqueta sesiones solapadas en columnas (estilo Google Calendar).
+ * Con filtro a un escenario, cada bloque ocupa el 100% de la celda.
+ */
+function layoutSesionesDia(sesiones: Sesion[]): LayoutBloque[] {
+  const validas = sesiones.filter(
+    (s) =>
+      s.horaInicio &&
+      s.horaFin &&
+      minutosDelDia(s.horaFin) > minutosDelDia(s.horaInicio),
+  )
+  if (validas.length === 0) return []
+
+  const sorted = [...validas].sort((a, b) => {
+    const byStart = a.horaInicio.localeCompare(b.horaInicio)
+    if (byStart !== 0) return byStart
+    const byEnd = a.horaFin.localeCompare(b.horaFin)
+    if (byEnd !== 0) return byEnd
+    return a.id.localeCompare(b.id)
+  })
+
+  type Cluster = Sesion[]
+  const clusters: Cluster[] = []
+  let current: Cluster = []
+  let clusterEnd = -1
+
+  for (const sesion of sorted) {
+    const ini = minutosDelDia(sesion.horaInicio)
+    const fin = minutosDelDia(sesion.horaFin)
+    if (current.length === 0 || ini < clusterEnd) {
+      current.push(sesion)
+      clusterEnd = Math.max(clusterEnd, fin)
+    } else {
+      clusters.push(current)
+      current = [sesion]
+      clusterEnd = fin
+    }
+  }
+  if (current.length > 0) clusters.push(current)
+
+  const result: LayoutBloque[] = []
+
+  for (const cluster of clusters) {
+    const colEnds: number[] = []
+    const assigned: { sesion: Sesion; col: number }[] = []
+
+    for (const sesion of cluster) {
+      const ini = minutosDelDia(sesion.horaInicio)
+      const fin = minutosDelDia(sesion.horaFin)
+      let col = colEnds.findIndex((end) => end <= ini)
+      if (col === -1) {
+        col = colEnds.length
+        colEnds.push(fin)
+      } else {
+        colEnds[col] = fin
+      }
+      assigned.push({ sesion, col })
+    }
+
+    const cols = Math.max(1, colEnds.length)
+    for (const item of assigned) {
+      result.push({ sesion: item.sesion, col: item.col, cols })
+    }
+  }
+
+  return result
 }
 
 function BloqueSesion({
   sesion,
-  color,
+  colorHex,
+  col,
+  cols,
   onClick,
 }: {
   sesion: Sesion
-  color: string
+  colorHex: string
+  col: number
+  cols: number
   onClick: () => void
 }) {
   const ini = minutosDelDia(sesion.horaInicio)
@@ -68,19 +131,26 @@ function BloqueSesion({
   )
   const muestraHora = alto >= 36
   const muestraSpeaker = alto >= 54
+  const textColor = contrasteSobreHex(colorHex)
+  const leftPct = (col / cols) * 100
+  const widthPct = 100 / cols
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        'absolute inset-x-1 overflow-hidden rounded-md px-1.5 py-1 text-left text-[11px] leading-tight transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        color,
-      )}
-      style={{ top, height: alto }}
+      className="absolute overflow-hidden rounded-md px-1.5 py-1 text-left text-[11px] leading-tight transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{
+        top,
+        height: alto,
+        left: `calc(${leftPct}% + ${GAP_PX}px)`,
+        width: `calc(${widthPct}% - ${GAP_PX * 2}px)`,
+        backgroundColor: colorHex,
+        color: textColor,
+      }}
       title={`${sesion.titulo} · ${sesion.horaInicio}–${sesion.horaFin} · ${sesion.speakersAsignados}/${sesion.capacidadSpeakers} speakers`}
     >
-      <p className="truncate font-medium">
+      <p className="truncate text-[12px] font-bold leading-tight">
         {sesion.titulo}
         {!muestraHora &&
           ` · ${sesion.speakersAsignados}/${sesion.capacidadSpeakers}`}
@@ -158,9 +228,25 @@ export function SesionesCalendarioView({
 
   const colorPorEscenario = useMemo(() => {
     const map = new Map<string, string>()
-    escenarios.forEach((esc, index) => map.set(esc.id, colorEscenario(index)))
+    escenarios.forEach((esc, index) => {
+      map.set(esc.id, normalizarColorEscenario(esc.color, index))
+    })
     return map
   }, [escenarios])
+
+  const escenariosLeyenda = useMemo((): EscenarioCatalogo[] => {
+    if (!filtroEscenarioId) return escenarios
+    return escenarios.filter((e) => e.id === filtroEscenarioId)
+  }, [escenarios, filtroEscenarioId])
+
+  const layoutPorDia = useMemo(() => {
+    const map = new Map<string, LayoutBloque[]>()
+    for (const dia of dias) {
+      const delDia = sesionesVisibles.filter((s) => s.dia === dia)
+      map.set(dia, layoutSesionesDia(delDia))
+    }
+    return map
+  }, [dias, sesionesVisibles])
 
   const filas = Array.from({ length: FILAS }, (_, i) => INICIO_MIN + i * PASO_MIN)
 
@@ -224,15 +310,15 @@ export function SesionesCalendarioView({
         </p>
       )}
 
-      {escenarios.length > 0 && (
+      {escenariosLeyenda.length > 0 && (
         <div className="flex flex-wrap gap-3">
-          {escenarios.map((esc) => (
+          {escenariosLeyenda.map((esc, index) => (
             <span key={esc.id} className="flex items-center gap-1.5 text-xs">
               <span
-                className={cn(
-                  'inline-block size-3 rounded-sm',
-                  colorPorEscenario.get(esc.id),
-                )}
+                className="inline-block size-3 rounded-sm"
+                style={{
+                  backgroundColor: normalizarColorEscenario(esc.color, index),
+                }}
               />
               {esc.nombre}
             </span>
@@ -281,7 +367,7 @@ export function SesionesCalendarioView({
             </div>
 
             {dias.map((dia) => {
-              const delDia = sesionesVisibles.filter((s) => s.dia === dia)
+              const layout = layoutPorDia.get(dia) ?? []
               return (
                 <div
                   key={dia}
@@ -295,13 +381,15 @@ export function SesionesCalendarioView({
                       style={{ height: ROW_H }}
                     />
                   ))}
-                  {delDia.map((sesion) => (
+                  {layout.map(({ sesion, col, cols }) => (
                     <BloqueSesion
                       key={sesion.id}
                       sesion={sesion}
-                      color={
+                      col={col}
+                      cols={cols}
+                      colorHex={
                         colorPorEscenario.get(sesion.escenarioId) ??
-                        'bg-muted text-foreground border border-border'
+                        normalizarColorEscenario(null, 0)
                       }
                       onClick={() => openEdit(sesion)}
                     />
@@ -382,4 +470,10 @@ export function SesionesCalendarioView({
       )}
     </div>
   )
+}
+
+function horaLabel(min: number): string {
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }

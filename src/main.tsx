@@ -2,6 +2,7 @@ import { lazy, StrictMode, Suspense, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import './index.css'
+import { AppLoader } from '@/components/AppLoader'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext'
 import { Toaster } from '@/components/ui/sonner'
@@ -83,11 +84,7 @@ const CsSolicitudesTab = lazy(() =>
 )
 
 function RouteFallback() {
-  return (
-    <div className="grid min-h-screen place-content-center text-sm text-muted-foreground">
-      Cargando…
-    </div>
-  )
+  return <AppLoader />
 }
 
 function RedirectToEventSettings() {
@@ -105,11 +102,7 @@ function ProtectedRoute({
   const { usuario, loading } = useAuth()
 
   if (loading) {
-    return (
-      <div className="grid min-h-screen place-content-center text-sm text-muted-foreground">
-        Cargando…
-      </div>
-    )
+    return <AppLoader />
   }
   if (!usuario) return <Navigate to="/login" replace />
 

@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { LOGOS } from '@/assets/logos'
 import loginIllustration from '@/assets/login/login-illustration.png'
+import { AppLoader } from '@/components/AppLoader'
 import { useAuth } from '@/contexts/AuthContext'
 
 // Ilustración (patrón de rombos) exportada desde Figma y guardada como asset
@@ -17,7 +18,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  if (loading) return null
+  if (loading) return <AppLoader />
   if (usuario) return <Navigate to="/home" replace />
 
   async function onSubmit(event: FormEvent) {

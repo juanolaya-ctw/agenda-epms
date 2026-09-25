@@ -40,6 +40,7 @@ CREATE TABLE epms.escenarios (
     evento_id       uuid NOT NULL REFERENCES epms.eventos(id) ON DELETE CASCADE,
     nombre          text NOT NULL,
     capacidad_fisica integer,
+    color           text,            -- hex (#RRGGBB) para bloques del calendario
     created_at      timestamptz DEFAULT now()
 );
 
