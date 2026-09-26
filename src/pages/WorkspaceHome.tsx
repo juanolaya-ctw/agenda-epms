@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronRight, Plus, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Navbar } from '@/components/layout/Navbar'
 import { WorkspaceCard } from '@/components/layout/WorkspaceCard'
+import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { supabase } from '@/lib/supabase'
 
@@ -19,10 +20,27 @@ function colorPorNombreEstado(nombre: string): string {
   return 'gray'
 }
 
+function primerNombre(nombreCompleto: string): string {
+  const primero = nombreCompleto.trim().split(/\s+/).filter(Boolean)[0]
+  return primero || 'equipo'
+}
+
 export function WorkspaceHome() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { usuario } = useAuth()
   const { workspaces, addWorkspace } = useWorkspace()
   const [showCreateModal, setShowCreateModal] = useState(false)
+
+  useEffect(() => {
+    const state = location.state as { openCreate?: boolean } | null
+    if (state?.openCreate) {
+      setShowCreateModal(true)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.pathname, location.state, navigate])
+
+  const saludo = `Hola, ${primerNombre(usuario?.nombre ?? '')}.`
 
   return (
     <div className="min-h-screen bg-background">
@@ -31,10 +49,9 @@ export function WorkspaceHome() {
       <main className="mx-auto max-w-6xl px-8 py-10">
         <div className="mb-8 flex items-start justify-between">
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-secondary">
-              Workspaces
-            </p>
-            <h1 className="text-3xl font-semibold">Tus eventos</h1>
+            <h1 className="text-[36px] font-semibold leading-tight tracking-tight">
+              {saludo}
+            </h1>
             <p className="mt-1 font-light text-muted-foreground">
               Elige un evento para entrar a su programación, o crea un
               workspace nuevo.

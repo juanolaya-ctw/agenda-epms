@@ -1,12 +1,26 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, LogOut, Settings } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronsUpDown,
+  LogOut,
+  Plus,
+  Settings,
+} from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Input } from '@/components/ui/input'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import {
@@ -74,6 +88,8 @@ export function Navbar() {
   const { id: routeWorkspaceId } = useParams()
   const { usuario, signOut } = useAuth()
   const { workspaces, workspace, setWorkspace } = useWorkspace()
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [busquedaEvento, setBusquedaEvento] = useState('')
 
   const nombre = usuario?.nombre ?? 'EPMS'
   const initials = usuario ? iniciales(usuario.nombre) : 'EP'
@@ -99,13 +115,22 @@ export function Navbar() {
   const eventoActivo =
     workspaces.find((w) => w.id === routeWorkspaceId) ?? workspace
 
-  // El atajo a "todos los eventos" solo tiene sentido dentro de un workspace.
   const enWorkspace = location.pathname.startsWith('/workspace/')
+  const enCrm = location.pathname === '/crm' || location.pathname.startsWith('/crm/')
+  const mostrarVolverHome = enWorkspace || enCrm
+
+  const eventosFiltrados = useMemo(() => {
+    const term = busquedaEvento.trim().toLowerCase()
+    if (!term) return workspaces
+    return workspaces.filter((ws) => ws.nombre.toLowerCase().includes(term))
+  }, [workspaces, busquedaEvento])
 
   function selectWorkspace(nextId: string) {
     const next = workspaces.find((w) => w.id === nextId)
     if (!next) return
     setWorkspace(next)
+    setSwitcherOpen(false)
+    setBusquedaEvento('')
     if (routeWorkspaceId) {
       navigate(
         location.pathname.replace(
@@ -113,6 +138,11 @@ export function Navbar() {
           `/workspace/${next.id}`,
         ),
       )
+    } else if (enCrm) {
+      // En CRM el cambio de contexto no navega; solo actualiza el evento activo.
+      return
+    } else {
+      navigate(workspaceHomePath(next.id, currentView ?? 'agenda'))
     }
   }
 
@@ -123,93 +153,150 @@ export function Navbar() {
   }
 
   async function handleSignOut() {
+    setSwitcherOpen(false)
     await signOut()
     navigate('/login')
   }
 
   return (
     <header className="sticky top-0 z-50 flex h-14 items-center gap-2 border-b border-border bg-white px-4">
-      {enWorkspace && (
+      {mostrarVolverHome && (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label="Ver todos los eventos"
+                aria-label="Volver al Home"
                 onClick={() => navigate('/home')}
                 className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <ArrowLeft className="size-5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Ver todos los eventos</TooltipContent>
+            <TooltipContent>Volver al Home</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       )}
 
-      <Dropdown
-        align="start"
-        trigger={
+      <Popover
+        open={switcherOpen}
+        onOpenChange={(open) => {
+          setSwitcherOpen(open)
+          if (!open) setBusquedaEvento('')
+        }}
+      >
+        <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex min-w-0 max-w-[320px] items-center gap-3 text-left"
+            aria-label="Cambiar de evento"
+            className="flex min-w-0 max-w-[360px] items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted"
           >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-foreground text-xs font-semibold text-white">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-white">
               {initials}
             </div>
-            <div className="min-w-0 leading-tight">
-              <p className="truncate font-semibold">{nombre}</p>
-              <p className="truncate text-sm text-muted-foreground">
+            <div className="min-w-0 flex-1 leading-tight">
+              <p className="truncate text-sm font-semibold">{nombre}</p>
+              <p className="truncate text-xs text-muted-foreground">
                 {areaName} · {eventoActivo?.nombre ?? 'Sin evento'}
               </p>
             </div>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
-        }
-      >
-        {workspaces.map((ws) => (
-          <button
-            key={ws.id}
-            type="button"
-            className={cn(
-              'block w-full px-3 py-2 text-left text-sm hover:bg-muted',
-              ws.id === eventoActivo?.id && 'font-semibold',
-            )}
-            onClick={() => selectWorkspace(ws.id)}
-          >
-            {ws.nombre}
-          </button>
-        ))}
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          className="block w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-          onClick={() => navigate('/home')}
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-[280px] overflow-hidden p-0"
         >
-          Ver todos los eventos
-        </button>
-        {enWorkspace && eventoActivo && (
-          <>
-            <div className="my-1 border-t border-border" />
+          <div className="flex items-center gap-2 border-b border-border px-2">
+            <Input
+              value={busquedaEvento}
+              onChange={(e) => setBusquedaEvento(e.target.value)}
+              placeholder="Buscar evento…"
+              className="h-9 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+              autoFocus
+            />
+            <kbd className="pointer-events-none hidden shrink-0 rounded border border-border px-1.5 py-0.5 font-sans text-[10px] font-medium text-muted-foreground sm:inline">
+              Esc
+            </kbd>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto p-1">
+            {eventosFiltrados.length === 0 ? (
+              <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+                Sin eventos
+              </p>
+            ) : (
+              eventosFiltrados.map((ws) => {
+                const activo = ws.id === eventoActivo?.id
+                return (
+                  <button
+                    key={ws.id}
+                    type="button"
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted',
+                      activo && 'bg-muted',
+                    )}
+                    onClick={() => selectWorkspace(ws.id)}
+                  >
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded bg-foreground text-[9px] font-semibold text-white">
+                      {iniciales(ws.nombre)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{ws.nombre}</span>
+                    {activo && (
+                      <Check className="size-4 shrink-0 text-foreground" />
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+
+          <div className="border-t border-border p-1">
             <button
               type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
-              onClick={() => navigate(eventSettingsPath(eventoActivo.id))}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+              onClick={() => {
+                setSwitcherOpen(false)
+                navigate('/home', { state: { openCreate: true } })
+              }}
             >
-              <Settings className="size-4 text-muted-foreground" />
-              Configurar evento
+              <Plus className="size-4 text-muted-foreground" />
+              Crear Evento Workspace
             </button>
-          </>
-        )}
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-muted"
-          onClick={handleSignOut}
-        >
-          <LogOut className="size-4" />
-          Cerrar sesión
-        </button>
-      </Dropdown>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted"
+              onClick={() => {
+                setSwitcherOpen(false)
+                navigate('/home')
+              }}
+            >
+              Ver todos los eventos
+            </button>
+            {enWorkspace && eventoActivo && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                onClick={() => {
+                  setSwitcherOpen(false)
+                  navigate(eventSettingsPath(eventoActivo.id))
+                }}
+              >
+                <Settings className="size-4 text-muted-foreground" />
+                Configurar evento
+              </button>
+            )}
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-destructive hover:bg-muted"
+              onClick={() => void handleSignOut()}
+            >
+              <LogOut className="size-4" />
+              Cerrar sesión
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <div className="flex-1" />
 

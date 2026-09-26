@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Trash2, UserPlus } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { ArrowLeft, Pencil, Trash2, UserPlus } from 'lucide-react'
 import { InlineText } from '@/components/InlineText'
 import { Navbar } from '@/components/layout/Navbar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -80,6 +81,7 @@ function EventosBadges({ nombres }: { nombres: string[] }) {
 }
 
 export function CrmGlobal() {
+  const navigate = useNavigate()
   const { workspace, workspaces } = useWorkspace()
   const eventoId = workspace?.id ?? workspaces[0]?.id ?? ''
   const { speakers, propiedades, loading, error, refetch } = useSpeakersData(
@@ -162,12 +164,20 @@ export function CrmGlobal() {
     <div className="min-h-screen bg-background">
       <Navbar />
       <main className="mx-auto max-w-6xl px-8 py-10">
+        <button
+          type="button"
+          onClick={() => navigate('/home')}
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Volver al Home
+        </button>
         <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-secondary">
           CRM
         </p>
         <h1 className="text-3xl font-semibold">Directorio de speakers</h1>
         <p className="mt-1 font-light text-muted-foreground">
-          Pool global de speakers — todos los eventos
+          Pool global de speakers, todos los eventos.
         </p>
 
         <div className="mt-8 flex flex-col gap-4">
