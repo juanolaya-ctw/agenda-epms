@@ -5,6 +5,7 @@ import {
   ArrowUpDown,
   CalendarPlus,
   Check,
+  Download,
   Loader2,
   Pencil,
   Trash2,
@@ -61,6 +62,7 @@ import {
 import { SesionFormDialog } from './SesionFormDialog'
 import { SpeakersNames } from './SpeakersAvatarStack'
 import { estadoDotClass, FormatoBadge } from './badges'
+import { downloadSesionesCsv } from './exportSesionesCsv'
 
 const SIN_TRACK = '__sin_track__'
 const toStr = (v: unknown): string => (v == null ? '' : String(v))
@@ -265,9 +267,14 @@ function CapacidadCell({
 type SesionesTablaViewProps = {
   data: SesionesData
   eventoRango: { inicio: string; fin: string }
+  eventoNombre: string
 }
 
-export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps) {
+export function SesionesTablaView({
+  data,
+  eventoRango,
+  eventoNombre,
+}: SesionesTablaViewProps) {
   const {
     sesiones,
     escenarios,
@@ -560,9 +567,22 @@ export function SesionesTablaView({ data, eventoRango }: SesionesTablaViewProps)
             />
           </div>
 
-          <Button onClick={openCreate}>
-            <CalendarPlus /> Nueva sesión
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading || sesiones.length === 0}
+              onClick={() => {
+                downloadSesionesCsv(sesiones, eventoNombre)
+                toast.success('CSV exportado')
+              }}
+            >
+              <Download /> Exportar CSV
+            </Button>
+            <Button onClick={openCreate}>
+              <CalendarPlus /> Nueva sesión
+            </Button>
+          </div>
         </div>
 
         {error && (

@@ -177,7 +177,7 @@ const SESIONES_SELECT = `
   ),
   sesion_speakers (
     id, rol,
-    speaker:speakers ( id, nombre, cargo, empresa, foto_url )
+    speaker:speakers ( id, nombre, cargo, empresa, email, foto_url )
   )
 `
 
@@ -482,6 +482,7 @@ export type SpeakerLite = {
   nombre: string
   cargo: string | null
   empresa: string | null
+  email: string | null
   fotoUrl: string | null
 }
 
@@ -502,6 +503,7 @@ type SpeakerRow = {
   nombre: string | null
   cargo: string | null
   empresa: string | null
+  email: string | null
   foto_url: string | null
 }
 
@@ -511,6 +513,7 @@ function toSpeakerLite(row: SpeakerRow): SpeakerLite {
     nombre: row.nombre ?? '',
     cargo: row.cargo ?? null,
     empresa: row.empresa ?? null,
+    email: row.email ?? null,
     fotoUrl: row.foto_url ?? null,
   }
 }
@@ -520,7 +523,9 @@ export async function speakersDeSesion(
 ): Promise<{ data: SesionSpeaker[]; error: string | null }> {
   const res = await supabase
     .from('sesion_speakers')
-    .select('id, rol, speaker:speakers(id, nombre, cargo, empresa, foto_url)')
+    .select(
+      'id, rol, speaker:speakers(id, nombre, cargo, empresa, email, foto_url)',
+    )
     .eq('sesion_id', sesionId)
     .order('created_at')
 
@@ -550,7 +555,7 @@ export async function buscarSpeakers(
 
   let query = supabase
     .from('speakers')
-    .select('id, nombre, cargo, empresa, foto_url')
+    .select('id, nombre, cargo, empresa, email, foto_url')
     .order('nombre')
     .limit(limit)
 

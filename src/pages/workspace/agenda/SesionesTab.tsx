@@ -71,7 +71,11 @@ export function SesionesTab() {
           }
         >
           {subVista === 'tabla' && (
-            <SesionesTablaView data={data} eventoRango={eventoRango} />
+            <SesionesTablaView
+              data={data}
+              eventoRango={eventoRango}
+              eventoNombre={workspace?.nombre ?? 'evento'}
+            />
           )}
           {subVista === 'kanban' && (
             <SesionesKanbanView data={data} eventoRango={eventoRango} />
