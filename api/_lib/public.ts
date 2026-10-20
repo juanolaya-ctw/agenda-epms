@@ -1,4 +1,4 @@
-import { normalizarColorEscenario } from './color'
+import { normalizarColorEscenario } from './color.js'
 
 export const AGENDA_TZ = 'America/Bogota'
 
@@ -334,7 +334,7 @@ function toSesionPublica(
     fin: isoBogota(row.fecha, row.horaFin),
     escenario: {
       id: row.escenario.id,
-      nombre: row.escenario.nombre,
+      nombre: redactEmails(row.escenario.nombre) ?? '',
       color: row.escenario.color ?? normalizarColorEscenario(null, 0),
     },
     track: row.track,

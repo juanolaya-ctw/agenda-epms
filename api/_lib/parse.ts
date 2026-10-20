@@ -6,7 +6,7 @@ import {
   type EventoPublico,
   type RawSesion,
   type SpeakerInterno,
-} from './public'
+} from './public.js'
 
 function one(value: unknown): unknown {
   if (Array.isArray(value)) return value[0]

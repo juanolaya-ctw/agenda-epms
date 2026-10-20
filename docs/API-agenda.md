@@ -77,10 +77,10 @@ Caché: `Cache-Control: public, max-age=60, s-maxage=60, stale-while-revalidate=
 | `speakers[].rol` | Rol en la sesión: `keynote`, `moderador`, `host` o `panelista` |
 | `speakers[].cargo` | Cargo |
 | `speakers[].empresa` | Empresa |
-| `speakers[].foto_url` | URL de `/api/speaker-foto` si la foto está en Supabase Storage. `null` si no hay foto o si el archivo está en otro host |
+| `speakers[].foto_url` | URL de `/api/speaker-foto` si la foto está en el Storage de este proyecto. `null` si no hay foto o si el archivo está en otro host |
 | `speakers[].bio` | Bio, o `null` |
 
-No se devuelven correos, teléfonos, documentos, LinkedIn, estado interno, cupos, piezas, requests, CRM ni notas de Sales/CS. Si un texto público trae un email, se elimina. `foto_url` es `null` cuando la foto no está en Supabase Storage. Cuando sí lo está, la URL es de esta API (`/api/speaker-foto`): el objeto de Storage a veces lleva un email en el nombre y esa ruta no sale en el JSON ni en los headers. La foto solo se sirve si es jpeg, png, webp, gif o avif (`Content-Security-Policy: default-src 'none'; sandbox` y `X-Content-Type-Options: nosniff`). Se cachea con `s-maxage=86400`.
+No se devuelven correos, teléfonos, documentos, LinkedIn, estado interno, cupos, piezas, requests, CRM ni notas de Sales/CS. Si un texto público trae un email, se elimina (título, descripción, nombre del escenario, nombre, cargo, empresa y bio). `foto_url` es `null` cuando la foto no está en el Storage de este proyecto: `epms.agenda_publica` marca `tiene_foto` solo si el host de `foto_url` es el de la URL de Supabase configurada en el servidor. Cuando sí lo está, la URL es de esta API (`/api/speaker-foto`): el objeto de Storage a veces lleva un email en el nombre y esa ruta no sale en el JSON ni en los headers. La foto solo se sirve si es jpeg, png, webp, gif o avif y pesa como máximo 5 MB (`Content-Security-Policy: default-src 'none'; sandbox` y `X-Content-Type-Options: nosniff`). Se cachea con `s-maxage=86400`.
 
 `epms.agenda_publica` devuelve `escenario.color` en `null`: la columna `escenarios.color` todavía no existe en producción (`epms-alter-escenarios-color.sql`) y la función no la lee. La API pinta el color con la paleta del calendario interno, por orden de nombre del escenario dentro del evento.
 
@@ -201,11 +201,19 @@ En el proyecto de Vercel de `juanolaya-ctw` ya están `VITE_SUPABASE_URL` y `VIT
 
 ## SQL obligatorio, antes del merge
 
-Ejecutar **todo** `supabase/agenda-publica.sql` en el SQL Editor del proyecto Supabase del EPMS, **y después** mergear este PR a `main`.
+En el SQL Editor del proyecto Supabase del EPMS, en este orden, y **después** mergear este PR a `main`:
 
-Ese archivo, en orden:
+1. Correr el pre-check que está comentado en `supabase/agenda-publica.sql` y guardar el resultado:
 
-1. Crea `epms.agenda_publica` y `epms.agenda_foto_publica` como `SECURITY DEFINER`. Devuelven solo columnas públicas de sesiones `CONFIRMADA` con slot. La agenda no incluye la URL de Storage (`tiene_foto`).
-2. En el bloque marcado, hace `REVOKE ALL` de `anon` y `PUBLIC` sobre las tablas de `epms` (speakers, sesiones, requests, usuarios y el resto). `authenticated` no se toca: la app interna sigue igual.
+```sql
+SELECT grantee, table_name, privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema = 'epms'
+  AND grantee IN ('authenticated', 'PUBLIC');
+```
+
+2. Ejecutar **todo** `supabase/agenda-publica.sql`. Crea `epms.agenda_publica` y `epms.agenda_foto_publica` como `SECURITY DEFINER` (solo columnas públicas de sesiones `CONFIRMADA`; `tiene_foto` solo si el archivo está en el Storage de este proyecto). Luego hace `REVOKE ALL` de `anon` y `PUBLIC` sobre las tablas de `epms`. Al final, `ALTER DEFAULT PRIVILEGES` para que las tablas, secuencias y funciones que se creen después con ese rol no queden abiertas a `anon` ni a `PUBLIC`. `authenticated` no se toca.
+
+3. Entrar a la app con un usuario de Agenda y abrir Speakers. Si no puede leer, el pre-check mostró grants solo en `PUBLIC`. Descomentar y correr el bloque `GRANT ... TO authenticated` del mismo archivo (tablas, secuencias y funciones). No otorgar nada a `anon`.
 
 Si se mergea antes de correr el SQL, `GET /api/agenda` responde 500 hasta que el script exista. No consulta las tablas con la anon key.

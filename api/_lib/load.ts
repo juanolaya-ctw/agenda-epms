@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { rawFromRpc } from './parse'
+import { rawFromRpc } from './parse.js'
 import {
   assignEscenarioColors,
   isAllowedFotoUrl,
@@ -7,7 +7,7 @@ import {
   type AgendaFiltros,
   type EventoPublico,
   type RawSesion,
-} from './public'
+} from './public.js'
 
 export class AgendaConfigError extends Error {
   constructor(message: string) {
@@ -32,6 +32,7 @@ export async function loadPublicAgenda(filtros: AgendaFiltros): Promise<AgendaLo
   const { data, error } = await client.rpc('agenda_publica', {
     p_evento_id: filtros.eventoId,
     p_fecha: filtros.fecha,
+    p_storage_host: storageHostFromEnv(),
   })
   if (error) {
     if (isMissingRpc(error, 'agenda_publica')) {
@@ -76,6 +77,7 @@ export async function loadPublicFotoUrl(speakerId: string): Promise<string | nul
   const client = createAgendaClient()
   const { data, error } = await client.rpc('agenda_foto_publica', {
     p_speaker_id: speakerId,
+    p_storage_host: storageHostFromEnv(),
   })
   if (error) {
     if (isMissingRpc(error, 'agenda_foto_publica')) {
@@ -93,6 +95,18 @@ export async function loadPublicFotoUrl(speakerId: string): Promise<string | nul
 
 export function supabaseUrlFromEnv(): string | null {
   return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.SB_URL || null
+}
+
+/** Host de la URL configurada (con puerto si no es el default). La SQL lo usa para tiene_foto. */
+export function storageHostFromEnv(): string | null {
+  const url = supabaseUrlFromEnv()
+  if (!url) return null
+  try {
+    const host = new URL(url).host.trim().toLowerCase()
+    return host || null
+  } catch {
+    return null
+  }
 }
 
 function createAgendaClient() {

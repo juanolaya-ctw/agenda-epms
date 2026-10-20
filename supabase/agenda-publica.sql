@@ -1,9 +1,12 @@
 -- Agenda pública del EPMS.
 --
 -- ORDEN (el endpoint no debe romperse y anon no debe seguir leyendo tablas):
+--   0. Correr el SELECT comentado del pre-check (más abajo) y guardar el resultado.
 --   1. Ejecutar ESTE archivo completo en el SQL Editor de Supabase, en el
 --      proyecto del EPMS, ANTES de mergear el PR a main.
---   2. Recién después, mergear. Vercel publica GET /api/agenda.
+--   2. Entrar a la app como Agenda. Si no puede leer, correr el GRANT comentado
+--      hacia authenticated (el pre-check dice si hoy entra por PUBLIC).
+--   3. Recién después, mergear. Vercel publica GET /api/agenda.
 --
 -- Si se mergea antes, /api/agenda responde 500 hasta que este script exista.
 -- No devuelve una agenda vacía y no lee epms.speakers / epms.sesiones con la
@@ -38,9 +41,32 @@ $$;
 REVOKE ALL ON FUNCTION epms.agenda_texto_publico(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION epms.agenda_texto_publico(text) TO anon, authenticated;
 
+-- true solo si la URL es Storage de ESTE proyecto (mismo host que manda la API).
+CREATE OR REPLACE FUNCTION epms.agenda_foto_en_proyecto(p_url text, p_storage_host text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_temp
+AS $$
+  SELECT COALESCE(
+    NULLIF(lower(btrim(COALESCE(p_storage_host, ''))), '') IS NOT NULL
+    AND (
+      lower(btrim(p_url)) LIKE 'https://' || lower(btrim(p_storage_host)) || '/storage/v1/object/public/%'
+      OR lower(btrim(p_url)) LIKE 'https://' || lower(btrim(p_storage_host)) || '/storage/v1/object/sign/%'
+    ),
+    false
+  );
+$$;
+
+REVOKE ALL ON FUNCTION epms.agenda_foto_en_proyecto(text, text) FROM PUBLIC;
+
+DROP FUNCTION IF EXISTS epms.agenda_publica(uuid, date);
+DROP FUNCTION IF EXISTS epms.agenda_publica(uuid, date, text);
+
 CREATE OR REPLACE FUNCTION epms.agenda_publica(
   p_evento_id uuid DEFAULT NULL,
-  p_fecha date DEFAULT NULL
+  p_fecha date DEFAULT NULL,
+  p_storage_host text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -76,7 +102,7 @@ BEGIN
       SELECT jsonb_agg(
         jsonb_build_object(
           'id', esc.id,
-          'nombre', esc.nombre,
+          'nombre', epms.agenda_texto_publico(esc.nombre),
           'evento_id', esc.evento_id,
           'color', NULL
         )
@@ -109,7 +135,7 @@ BEGIN
           ),
           'escenario', jsonb_build_object(
             'id', esc.id,
-            'nombre', esc.nombre,
+            'nombre', epms.agenda_texto_publico(esc.nombre),
             'color', NULL
           ),
           'speakers', COALESCE((
@@ -120,9 +146,7 @@ BEGIN
               'cargo', epms.agenda_texto_publico(sp.cargo),
               'empresa', epms.agenda_texto_publico(sp.empresa),
               'bio', epms.agenda_texto_publico(sp.bio),
-              'tiene_foto', (
-                sp.foto_url ~* '^https://[^/[:space:]]+/storage/v1/object/(public|sign)/'
-              )
+              'tiene_foto', epms.agenda_foto_en_proyecto(sp.foto_url, p_storage_host)
             ))
             FROM epms.sesion_speakers ss
             JOIN epms.speakers sp ON sp.id = ss.speaker_id
@@ -145,16 +169,22 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION epms.agenda_publica(uuid, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION epms.agenda_publica(uuid, date) TO anon, authenticated;
+REVOKE ALL ON FUNCTION epms.agenda_publica(uuid, date, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION epms.agenda_publica(uuid, date, text) TO anon, authenticated;
 
-COMMENT ON FUNCTION epms.agenda_publica(uuid, date) IS
-  'Agenda pública. Solo sesiones CONFIRMADA con slot. No incluye email, teléfono, documento ni la URL de Storage.';
+COMMENT ON FUNCTION epms.agenda_publica(uuid, date, text) IS
+  'Agenda pública. Solo sesiones CONFIRMADA con slot. tiene_foto solo si el archivo está en el Storage de este proyecto.';
 
 -- La URL de Storage puede traer un email en el nombre del archivo. Esta
 -- función la devuelve solo para que /api/speaker-foto la descargue del lado
 -- del servidor. El JSON de la agenda manda tiene_foto, no esta URL.
-CREATE OR REPLACE FUNCTION epms.agenda_foto_publica(p_speaker_id uuid)
+DROP FUNCTION IF EXISTS epms.agenda_foto_publica(uuid);
+DROP FUNCTION IF EXISTS epms.agenda_foto_publica(uuid, text);
+
+CREATE OR REPLACE FUNCTION epms.agenda_foto_publica(
+  p_speaker_id uuid,
+  p_storage_host text DEFAULT NULL
+)
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -164,7 +194,7 @@ AS $$
   SELECT sp.foto_url
   FROM epms.speakers sp
   WHERE sp.id = p_speaker_id
-    AND sp.foto_url ~* '^https://[^/[:space:]]+/storage/v1/object/(public|sign)/'
+    AND epms.agenda_foto_en_proyecto(sp.foto_url, p_storage_host)
     AND EXISTS (
       SELECT 1
       FROM epms.sesion_speakers ss
@@ -180,14 +210,32 @@ AS $$
   LIMIT 1;
 $$;
 
-REVOKE ALL ON FUNCTION epms.agenda_foto_publica(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION epms.agenda_foto_publica(uuid) TO anon, authenticated;
+REVOKE ALL ON FUNCTION epms.agenda_foto_publica(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION epms.agenda_foto_publica(uuid, text) TO anon, authenticated;
 
-COMMENT ON FUNCTION epms.agenda_foto_publica(uuid) IS
-  'URL de Storage de un speaker en una sesión CONFIRMADA. Sin columnas de contacto.';
+COMMENT ON FUNCTION epms.agenda_foto_publica(uuid, text) IS
+  'URL de Storage de un speaker en una sesión CONFIRMADA, solo si el host es el de este proyecto.';
 
 -- ------------------------------------------------------------
--- 2. BLOQUE OBLIGATORIO — revocar SELECT anónimo sobre las tablas
+-- 2. Pre-check (NO se ejecuta: está comentado). Correrlo ANTES de este archivo
+-- y guardar el resultado. Si authenticated no aparece y PUBLIC sí, la app
+-- interna hoy lee por el grant de PUBLIC.
+--
+-- SELECT grantee, table_name, privilege_type
+-- FROM information_schema.role_table_grants
+-- WHERE table_schema = 'epms'
+--   AND grantee IN ('authenticated', 'PUBLIC');
+--
+-- Si después del REVOKE la app autenticada no puede leer, descomentar y correr
+-- SOLO este bloque. No descomentar nada que otorgue a anon.
+--
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA epms TO authenticated;
+-- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA epms TO authenticated;
+-- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA epms TO authenticated;
+-- ------------------------------------------------------------
+
+-- ------------------------------------------------------------
+-- 3. BLOQUE OBLIGATORIO — revocar SELECT anónimo sobre las tablas
 -- Ejecutar junto con las funciones (ya está en este archivo).
 -- authenticated conserva sus grants. anon deja de poder hacer
 -- GET /rest/v1/speakers (email, teléfono, documento) y el resto
@@ -226,7 +274,15 @@ BEGIN
 END $$;
 
 -- Las funciones de arriba siguen siendo ejecutables por anon.
-GRANT EXECUTE ON FUNCTION epms.agenda_publica(uuid, date) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION epms.agenda_foto_publica(uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION epms.agenda_publica(uuid, date, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION epms.agenda_foto_publica(uuid, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION epms.agenda_texto_publico(text) TO anon, authenticated;
+
+-- Objetos que se creen después, con el rol que corre este script, no quedan
+-- legibles ni ejecutables por anon. PUBLIC tampoco: anon es miembro de PUBLIC.
+-- No cambia los grants de lo que ya existe (eso lo hace el REVOKE de arriba).
+ALTER DEFAULT PRIVILEGES IN SCHEMA epms REVOKE ALL ON TABLES FROM anon, PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA epms REVOKE ALL ON SEQUENCES FROM anon, PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA epms REVOKE ALL ON FUNCTIONS FROM anon, PUBLIC;
 
 NOTIFY pgrst, 'reload schema';

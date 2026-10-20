@@ -1,6 +1,6 @@
-import { loadPublicAgenda, supabaseUrlFromEnv } from './_lib/load'
-import { adaptVercel } from './_lib/node'
-import { buildAgendaBody, parseAgendaQuery, toIcs, type AgendaBody } from './_lib/public'
+import { loadPublicAgenda, supabaseUrlFromEnv } from './_lib/load.js'
+import { adaptVercel } from './_lib/node.js'
+import { buildAgendaBody, parseAgendaQuery, toIcs, type AgendaBody } from './_lib/public.js'
 
 const CACHE_OK = 'public, max-age=60, s-maxage=60, stale-while-revalidate=300'
 const CACHE_NONE = 'no-store'

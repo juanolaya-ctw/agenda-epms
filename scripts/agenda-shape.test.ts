@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import handler, { handleAgenda } from '../api/agenda'
-import fotoHandler from '../api/speaker-foto'
-import { rawFromEmbed, rawFromRpc } from '../api/_lib/parse'
+import handler, { handleAgenda } from '../api/agenda.js'
+import fotoHandler, { MAX_FOTO_BYTES, readCappedBytes } from '../api/speaker-foto.js'
+import { rawFromEmbed, rawFromRpc } from '../api/_lib/parse.js'
 import {
   ahoraBogota,
   assignEscenarioColors,
@@ -11,7 +11,7 @@ import {
   parseAgendaQuery,
   toIcs,
   type RawSesion,
-} from '../api/_lib/public'
+} from '../api/_lib/public.js'
 import { readFileSync } from 'node:fs'
 
 const FORBIDDEN = [
@@ -164,7 +164,7 @@ describe('agenda pública', () => {
         hora_fin: '10:00:00',
         escenario: {
           id: 'esc-1',
-          nombre: 'Principal',
+          nombre: 'Principal ana@escenario.co',
           evento: {
             id: '2f042639-cc2d-4c06-bea3-f8316a3419c1',
             nombre: 'GovTech Summit 2026',
@@ -202,6 +202,7 @@ describe('agenda pública', () => {
     assert.equal(body.sesiones[0]?.speakers[0]?.nombre, 'Ana')
     assert.equal(body.sesiones[0]?.descripcion, null)
     assert.equal(body.sesiones[0]?.speakers[0]?.bio, 'Escribir a')
+    assert.equal(body.sesiones[0]?.escenario.nombre, 'Principal')
     assert.equal(body.sesiones[0]?.speakers[0]?.foto_url, null)
     assert.equal(JSON.stringify(body).includes('@'), false)
     assert.equal(keysDeep(body).has('email'), false)
@@ -236,6 +237,16 @@ describe('agenda pública', () => {
       assert.equal(sql.includes(column), false, column)
     }
     assert.match(sql, /tiene_foto/)
+    assert.match(sql, /agenda_foto_en_proyecto/)
+    assert.match(sql, /p_storage_host/)
+    assert.match(sql, /agenda_texto_publico\(esc\.nombre\)/)
+    assert.doesNotMatch(sql, /\^https:\/\/\[\^\/\[:space:\]\]\+/)
+    assert.match(sql, /ALTER DEFAULT PRIVILEGES IN SCHEMA epms REVOKE ALL ON TABLES FROM anon/)
+    assert.match(sql, /ALTER DEFAULT PRIVILEGES IN SCHEMA epms REVOKE ALL ON SEQUENCES FROM anon/)
+    assert.match(sql, /ALTER DEFAULT PRIVILEGES IN SCHEMA epms REVOKE ALL ON FUNCTIONS FROM anon/)
+    assert.match(sql, /information_schema\.role_table_grants/)
+    assert.match(sql, /grantee IN \('authenticated', 'PUBLIC'\)/)
+    assert.match(sql, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA epms TO authenticated/)
     assert.doesNotMatch(sql, /'foto_url', sp\.foto_url/)
   })
 
@@ -378,11 +389,14 @@ describe('agenda pública', () => {
       SB_ANON_KEY: '',
     })
     const storage = 'https://example.supabase.co/storage/v1/object/public/speaker-fotos/a.jpg'
-    const restore = mockFetch(async (url) => {
+    const restore = mockFetch(async (url, init) => {
       if (url.includes('/rest/v1/speakers') || url.includes('/rest/v1/sesiones')) {
         throw new Error(`leyó una tabla: ${url}`)
       }
       if (url.includes('/rpc/agenda_foto_publica')) {
+        const raw = init?.body
+        const parsed = typeof raw === 'string' ? (JSON.parse(raw) as { p_storage_host?: string }) : null
+        assert.equal(parsed?.p_storage_host, 'example.supabase.co')
         return new Response(JSON.stringify(storage), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -514,6 +528,70 @@ describe('agenda pública', () => {
       restore()
       previous()
     }
+  })
+
+  it('no publica una foto de más de 5 MB', async () => {
+    const previous = swapEnv({
+      SUPABASE_URL: 'https://example.supabase.co',
+      VITE_SUPABASE_URL: '',
+      SB_URL: '',
+      SUPABASE_ANON_KEY: 'sb_publishable_test',
+      VITE_SUPABASE_ANON_KEY: '',
+      SB_ANON_KEY: '',
+    })
+    const storage = 'https://example.supabase.co/storage/v1/object/public/speaker-fotos/a.jpg'
+    const restore = mockFetch(async (url) => {
+      if (url.includes('/rpc/agenda_foto_publica')) {
+        return new Response(JSON.stringify(storage), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url === storage) {
+        return new Response(new Uint8Array([0xff, 0xd8, 0xff]), {
+          status: 200,
+          headers: {
+            'content-type': 'image/jpeg',
+            'content-length': String(MAX_FOTO_BYTES + 1),
+          },
+        })
+      }
+      throw new Error(`fetch inesperado ${url}`)
+    })
+    try {
+      const sent: Uint8Array[] = []
+      let status = 0
+      await fotoHandler(
+        {
+          method: 'GET',
+          url: '/api/speaker-foto?id=7669695f-23eb-4bc6-854d-43042d127fe0',
+          headers: { host: 'agenda.colombiatech.co', 'x-forwarded-proto': 'https' },
+        },
+        nodeRes(sent, (code) => {
+          status = code
+        }),
+      )
+      assert.equal(status, 404)
+      assert.equal(Buffer.from(sent[0] ?? []).toString('utf8'), 'Foto no disponible')
+    } finally {
+      restore()
+      previous()
+    }
+  })
+
+  it('corta un stream por encima del tope', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]))
+        controller.enqueue(new Uint8Array([4, 5]))
+        controller.close()
+      },
+    })
+    const over = new Response(stream)
+    assert.equal(over.headers.get('content-length'), null)
+    assert.equal(await readCappedBytes(over, 4), null)
+    const ok = await readCappedBytes(new Response(new Uint8Array([1, 2, 3])), 4)
+    assert.deepEqual(Array.from(ok ?? []), [1, 2, 3])
   })
 })
 
