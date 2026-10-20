@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import handler, { handleAgenda } from '../api/agenda.ts'
-import { SPEAKER_PUBLIC_COLUMNS } from '../api/_lib/load.ts'
-import { rawFromEmbed, rawFromRpc } from '../api/_lib/parse.ts'
+import handler, { handleAgenda } from '../api/agenda'
+import fotoHandler from '../api/speaker-foto'
+import { rawFromEmbed, rawFromRpc } from '../api/_lib/parse'
 import {
   ahoraBogota,
   assignEscenarioColors,
@@ -11,7 +11,8 @@ import {
   parseAgendaQuery,
   toIcs,
   type RawSesion,
-} from '../api/_lib/public.ts'
+} from '../api/_lib/public'
+import { readFileSync } from 'node:fs'
 
 const FORBIDDEN = [
   'email',
@@ -70,7 +71,8 @@ function sampleRow(): RawSesion {
         rol: 'keynote',
         cargo: 'Managing Partner',
         empresa: 'Digital Nation',
-        foto_url: 'https://example.com/foto.jpg',
+        foto_url: 'https://example.supabase.co/storage/v1/object/public/speaker-fotos/a.jpg',
+        fotoEnStorage: true,
         bio: null,
       },
     ],
@@ -117,11 +119,31 @@ describe('agenda pública', () => {
       filtros: { eventoId: row.evento.id, fecha: null },
       evento: row.evento,
       assetOrigin: 'https://agenda.colombiatech.co',
+      supabaseUrl: 'https://example.supabase.co',
     })
     assert.equal(
       proxied.sesiones[0]?.speakers[0]?.foto_url,
       'https://agenda.colombiatech.co/api/speaker-foto?id=spk-1',
     )
+    const external = buildAgendaBody({
+      rows: [
+        {
+          ...row,
+          speakers: [
+            {
+              ...row.speakers[0],
+              foto_url: 'https://cdn.example/a.jpg',
+              fotoEnStorage: false,
+            },
+          ],
+        },
+      ],
+      filtros: { eventoId: null, fecha: null },
+      evento: row.evento,
+      assetOrigin: 'https://agenda.colombiatech.co',
+      supabaseUrl: 'https://example.supabase.co',
+    })
+    assert.equal(external.sesiones[0]?.speakers[0]?.foto_url, null)
     const keys = keysDeep(body)
     for (const key of FORBIDDEN) assert.equal(keys.has(key), false, key)
   })
@@ -129,7 +151,7 @@ describe('agenda pública', () => {
   it('descarta email y estado aunque vengan en la fila', () => {
     const input = {
       id: '0874dc42-1e85-4256-b119-40c737f3161a',
-      titulo: 'Sesión',
+      titulo: 'Sesión de ana@example.com',
       estado: 'CONFIRMADA',
       descripcion: '  ',
       formato: 'Panel',
@@ -157,7 +179,7 @@ describe('agenda pública', () => {
           rol: 'Panelista',
           speaker: {
             id: 'spk-1',
-            nombre: 'Ana',
+            nombre: 'Ana ana@banco.co',
             cargo: 'Directora',
             empresa: 'Banco',
             foto_url: 'https://cdn.example/speakers/ana@example.com.jpg',
@@ -176,6 +198,8 @@ describe('agenda pública', () => {
       evento: null,
     })
     assert.equal(body.sesiones[0]?.speakers[0]?.rol, 'panelista')
+    assert.equal(body.sesiones[0]?.titulo, 'Sesión de')
+    assert.equal(body.sesiones[0]?.speakers[0]?.nombre, 'Ana')
     assert.equal(body.sesiones[0]?.descripcion, null)
     assert.equal(body.sesiones[0]?.speakers[0]?.bio, 'Escribir a')
     assert.equal(body.sesiones[0]?.speakers[0]?.foto_url, null)
@@ -183,6 +207,8 @@ describe('agenda pública', () => {
     assert.equal(keysDeep(body).has('email'), false)
     assert.equal(rawFromEmbed({ ...input, estado: 'EN PROGRESO' }), null)
     assert.equal(rawFromEmbed({ ...input, estado: 'BORRADOR' }), null)
+    assert.ok(rawFromEmbed({ ...input, estado: '  confirmada  ' }))
+    assert.equal(rawFromRpc({ ...rpcPayload(embed), estado: ' CONFIRMADA ' })?.id, embed.id)
     const rpc = rawFromRpc({
       id: embed.id,
       titulo: embed.titulo,
@@ -201,11 +227,16 @@ describe('agenda pública', () => {
     assert.equal(keysDeep(rpc).has('estado'), false)
   })
 
-  it('no selecciona columnas privadas de speaker', () => {
-    const cols = SPEAKER_PUBLIC_COLUMNS.toLowerCase()
-    for (const key of ['email', 'telefono', 'documento', 'linkedin', 'fuente']) {
-      assert.equal(cols.includes(key), false, key)
+  it('el SQL no lee columnas privadas y revoca anon', () => {
+    const sql = readFileSync('supabase/agenda-publica.sql', 'utf8')
+    assert.equal(sql.includes('ydqbjyhcntszvrytdkml'), false)
+    assert.match(sql, /REVOKE ALL ON ALL TABLES IN SCHEMA epms FROM anon, PUBLIC/)
+    assert.match(sql, /upper\(btrim\(s\.estado\)\) = 'CONFIRMADA'/)
+    for (const column of ['sp.email', 'sp.telefono', 'sp.numero_documento', 'sp.linkedin_url']) {
+      assert.equal(sql.includes(column), false, column)
     }
+    assert.match(sql, /tiene_foto/)
+    assert.doesNotMatch(sql, /'foto_url', sp\.foto_url/)
   })
 
   it('rechaza una service_role key', async () => {
@@ -228,7 +259,8 @@ describe('agenda pública', () => {
       const response = await handleAgenda(new Request('https://agenda.colombiatech.co/api/agenda'))
       assert.equal(response.status, 500)
       const body = (await response.json()) as { error: string }
-      assert.match(body.error, /service_role/)
+      assert.equal(body.error, 'No se pudo cargar la agenda')
+      assert.equal(/supabase|service_role|anon key|VITE_/i.test(body.error), false)
     } finally {
       for (const key of keys) {
         if (previous[key] === undefined) delete process.env[key]
@@ -238,7 +270,7 @@ describe('agenda pública', () => {
   })
 
   it('responde OPTIONS en el adaptador Node', async () => {
-    const chunks: string[] = []
+    const chunks: (string | Uint8Array)[] = []
     let status = 0
     const headers = new Map<string, string>()
     await handler(
@@ -248,17 +280,18 @@ describe('agenda pública', () => {
           status = code
           return this
         },
-        setHeader(name: string, value: string) {
-          headers.set(name.toLowerCase(), value)
+        setHeader(name: string, value: string | number | readonly string[]) {
+          headers.set(name.toLowerCase(), String(value))
         },
-        end(body?: string) {
+        end(body?: string | Uint8Array) {
           if (body) chunks.push(body)
         },
       },
     )
     assert.equal(status, 204)
     assert.equal(headers.get('access-control-allow-origin'), '*')
-    assert.equal(chunks.length, 0)
+    const body = chunks[0]
+    assert.ok(body === undefined || (Buffer.isBuffer(body) && body.length === 0))
   })
 
   it('genera ICS con zona America/Bogota', () => {
@@ -280,4 +313,262 @@ describe('agenda pública', () => {
     assert.equal(isoBogota('2026-11-03', '10:45:00'), '2026-11-03T10:45:00-05:00')
     assert.equal(ahoraBogota(new Date('2026-10-21T05:00:00Z')), '2026-10-21T00:00:00-05:00')
   })
+
+  it('500 si falta agenda_publica y no lee tablas', async () => {
+    const previous = swapEnv({
+      SUPABASE_URL: 'https://example.supabase.co',
+      VITE_SUPABASE_URL: '',
+      SB_URL: '',
+      SUPABASE_ANON_KEY: 'sb_publishable_test',
+      VITE_SUPABASE_ANON_KEY: '',
+      SB_ANON_KEY: '',
+    })
+    const seen: string[] = []
+    const restore = mockFetch(async (url) => {
+      seen.push(url)
+      if (url.includes('/rest/v1/speakers') || url.includes('/rest/v1/sesiones') || url.includes('/rest/v1/escenarios')) {
+        throw new Error(`leyó una tabla: ${url}`)
+      }
+      if (url.includes('/rpc/agenda_publica')) {
+        return new Response(
+          JSON.stringify({
+            code: 'PGRST202',
+            message: 'Could not find the function epms.agenda_publica in the schema cache',
+          }),
+          { status: 404, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      throw new Error(`fetch inesperado ${url}`)
+    })
+    try {
+      const sent: Uint8Array[] = []
+      let status = 0
+      await handler(
+        { method: 'GET', url: '/api/agenda', headers: { host: 'agenda.colombiatech.co', 'x-forwarded-proto': 'https' } },
+        nodeRes(sent, (code) => {
+          status = code
+        }),
+      )
+      assert.equal(status, 500)
+      const body = JSON.parse(Buffer.from(sent[0] ?? []).toString('utf8')) as { error: string; sesiones?: unknown }
+      assert.equal(body.error, 'No se pudo cargar la agenda')
+      assert.equal(body.sesiones, undefined)
+      assert.equal(/schema cache|agenda_publica|supabase/i.test(body.error), false)
+      assert.ok(seen.some((url) => url.includes('/rpc/agenda_publica')))
+    } finally {
+      restore()
+      previous()
+    }
+  })
+
+  it('el adaptador Node de Vercel envía el JPEG byte a byte', async () => {
+    const jpeg = Buffer.from([
+      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x07, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9, 0x00, 0x00,
+    ])
+    assert.equal(jpeg.length, 15)
+    const utf8 = Buffer.from(jpeg.toString('utf8'))
+    assert.notEqual(utf8.length, jpeg.length)
+
+    const previous = swapEnv({
+      SUPABASE_URL: 'https://example.supabase.co',
+      VITE_SUPABASE_URL: '',
+      SB_URL: '',
+      SUPABASE_ANON_KEY: 'sb_publishable_test',
+      VITE_SUPABASE_ANON_KEY: '',
+      SB_ANON_KEY: '',
+    })
+    const storage = 'https://example.supabase.co/storage/v1/object/public/speaker-fotos/a.jpg'
+    const restore = mockFetch(async (url) => {
+      if (url.includes('/rest/v1/speakers') || url.includes('/rest/v1/sesiones')) {
+        throw new Error(`leyó una tabla: ${url}`)
+      }
+      if (url.includes('/rpc/agenda_foto_publica')) {
+        return new Response(JSON.stringify(storage), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url === storage) {
+        return new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+      }
+      throw new Error(`fetch inesperado ${url}`)
+    })
+    try {
+      const sent: Uint8Array[] = []
+      const headers = new Map<string, string>()
+      let status = 0
+      await fotoHandler(
+        {
+          method: 'GET',
+          url: '/api/speaker-foto?id=7669695f-23eb-4bc6-854d-43042d127fe0',
+          headers: { host: 'agenda.colombiatech.co', 'x-forwarded-proto': 'https' },
+        },
+        nodeRes(sent, (code) => {
+          status = code
+        }, headers),
+      )
+      assert.equal(status, 200)
+      const body = Buffer.from(sent[0] ?? [])
+      assert.ok(Buffer.isBuffer(sent[0]))
+      assert.equal(body.length, 15)
+      assert.ok(body.equals(jpeg))
+      assert.equal(headers.get('content-type'), 'image/jpeg')
+      assert.equal(headers.get('content-length'), '15')
+      assert.equal(headers.get('x-content-type-options'), 'nosniff')
+      assert.match(headers.get('content-security-policy') ?? '', /default-src 'none'/)
+      assert.match(headers.get('content-security-policy') ?? '', /sandbox/)
+    } finally {
+      restore()
+      previous()
+    }
+  })
+
+  it('rechaza image/svg+xml en el adaptador Node', async () => {
+    const previous = swapEnv({
+      SUPABASE_URL: 'https://example.supabase.co',
+      VITE_SUPABASE_URL: '',
+      SB_URL: '',
+      SUPABASE_ANON_KEY: 'sb_publishable_test',
+      VITE_SUPABASE_ANON_KEY: '',
+      SB_ANON_KEY: '',
+    })
+    const storage = 'https://example.supabase.co/storage/v1/object/public/speaker-fotos/a.svg'
+    const restore = mockFetch(async (url) => {
+      if (url.includes('/rpc/agenda_foto_publica')) {
+        return new Response(JSON.stringify(storage), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url === storage) {
+        return new Response('<svg xmlns="http://www.w3.org/2000/svg"></svg>', {
+          status: 200,
+          headers: { 'content-type': 'image/svg+xml' },
+        })
+      }
+      throw new Error(`fetch inesperado ${url}`)
+    })
+    try {
+      const sent: Uint8Array[] = []
+      let status = 0
+      await fotoHandler(
+        {
+          method: 'GET',
+          url: '/api/speaker-foto?id=7669695f-23eb-4bc6-854d-43042d127fe0',
+          headers: { host: 'agenda.colombiatech.co', 'x-forwarded-proto': 'https' },
+        },
+        nodeRes(sent, (code) => {
+          status = code
+        }),
+      )
+      assert.equal(status, 404)
+      assert.equal(Buffer.from(sent[0] ?? []).toString('utf8').includes('<svg'), false)
+    } finally {
+      restore()
+      previous()
+    }
+  })
+
+  it('500 si falta agenda_foto_publica', async () => {
+    const previous = swapEnv({
+      SUPABASE_URL: 'https://example.supabase.co',
+      VITE_SUPABASE_URL: '',
+      SB_URL: '',
+      SUPABASE_ANON_KEY: 'sb_publishable_test',
+      VITE_SUPABASE_ANON_KEY: '',
+      SB_ANON_KEY: '',
+    })
+    const restore = mockFetch(async (url) => {
+      if (url.includes('/rest/v1/speakers') || url.includes('/rest/v1/sesiones')) {
+        throw new Error(`leyó una tabla: ${url}`)
+      }
+      if (url.includes('/rpc/agenda_foto_publica')) {
+        return new Response(
+          JSON.stringify({
+            code: 'PGRST202',
+            message: 'Could not find the function epms.agenda_foto_publica in the schema cache',
+          }),
+          { status: 404, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      throw new Error(`fetch inesperado ${url}`)
+    })
+    try {
+      const sent: Uint8Array[] = []
+      let status = 0
+      await fotoHandler(
+        {
+          method: 'GET',
+          url: '/api/speaker-foto?id=7669695f-23eb-4bc6-854d-43042d127fe0',
+          headers: { host: 'agenda.colombiatech.co', 'x-forwarded-proto': 'https' },
+        },
+        nodeRes(sent, (code) => {
+          status = code
+        }),
+      )
+      assert.equal(status, 500)
+      const body = Buffer.from(sent[0] ?? []).toString('utf8')
+      assert.equal(body, 'No se pudo cargar la foto')
+      assert.equal(/schema cache|agenda_foto|supabase|VITE_/i.test(body), false)
+    } finally {
+      restore()
+      previous()
+    }
+  })
 })
+
+function rpcPayload(embed: RawSesion) {
+  return {
+    id: embed.id,
+    titulo: embed.titulo,
+    fecha: embed.fecha,
+    hora_inicio: embed.horaInicio,
+    hora_fin: embed.horaFin,
+    evento: { ...embed.evento, activo: true },
+    escenario: { id: embed.escenario.id, nombre: embed.escenario.nombre, color: null },
+    speakers: [{ ...embed.speakers[0], email: 'no@example.com', telefono: '+57' }],
+    email: 'no@example.com',
+  }
+}
+
+function nodeRes(
+  sent: Uint8Array[],
+  onStatus: (code: number) => void,
+  headers = new Map<string, string>(),
+) {
+  return {
+    status(code: number) {
+      onStatus(code)
+      return this
+    },
+    setHeader(name: string, value: string | number | readonly string[]) {
+      headers.set(name.toLowerCase(), String(value))
+    },
+    end(body?: string | Uint8Array) {
+      if (typeof body === 'string') sent.push(Buffer.from(body))
+      else if (body) sent.push(Buffer.from(body))
+    },
+  }
+}
+
+function swapEnv(next: Record<string, string>): () => void {
+  const previous = Object.fromEntries(Object.keys(next).map((key) => [key, process.env[key]]))
+  for (const [key, value] of Object.entries(next)) process.env[key] = value
+  return () => {
+    for (const key of Object.keys(next)) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
+  }
+}
+
+function mockFetch(handler: (url: string, init?: RequestInit) => Promise<Response> | Response): () => void {
+  const previous = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    return handler(url, init)
+  }) as typeof fetch
+  return () => {
+    globalThis.fetch = previous
+  }
+}

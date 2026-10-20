@@ -1,11 +1,12 @@
 import {
   estadoEsPublico,
   httpUrlOrNull,
+  isSupabaseStorageUrl,
   textOrNull,
   type EventoPublico,
   type RawSesion,
-  type SpeakerPublico,
-} from './public.ts'
+  type SpeakerInterno,
+} from './public'
 
 function one(value: unknown): unknown {
   if (Array.isArray(value)) return value[0]
@@ -36,19 +37,23 @@ function eventoFrom(value: unknown): EventoPublico | null {
   }
 }
 
-function speakerFrom(value: unknown, rol: unknown): SpeakerPublico | null {
+function speakerFrom(value: unknown, rol: unknown): SpeakerInterno | null {
   const row = record(value)
   if (!row) return null
   const id = textOrNull(row.id)
   const nombre = textOrNull(row.nombre)
   if (!id || !nombre) return null
+  const stored = httpUrlOrNull(row.foto_url)
+  const onStorage = stored !== null && isSupabaseStorageUrl(stored)
+  const flagged = row.tiene_foto === true
   return {
     id,
     nombre,
     rol: textOrNull(rol)?.toLowerCase() ?? 'panelista',
     cargo: textOrNull(row.cargo),
     empresa: textOrNull(row.empresa),
-    foto_url: httpUrlOrNull(row.foto_url),
+    foto_url: onStorage ? stored : null,
+    fotoEnStorage: onStorage || (flagged && stored === null),
     bio: textOrNull(row.bio),
   }
 }
@@ -87,7 +92,7 @@ export function rawFromEmbed(value: unknown): RawSesion | null {
           if (!link) return null
           return speakerFrom(one(link.speaker), link.rol)
         })
-        .filter((speaker): speaker is SpeakerPublico => speaker !== null)
+        .filter((speaker): speaker is SpeakerInterno => speaker !== null)
     : []
   return {
     id,
@@ -113,6 +118,7 @@ export function rawFromEmbed(value: unknown): RawSesion | null {
 export function rawFromRpc(value: unknown): RawSesion | null {
   const row = record(value)
   if (!row) return null
+  if ('estado' in row && !estadoEsPublico(row.estado)) return null
   const id = textOrNull(row.id)
   const titulo = textOrNull(row.titulo)
   const fecha = textOrNull(row.fecha)
@@ -142,7 +148,7 @@ export function rawFromRpc(value: unknown): RawSesion | null {
           if (!speaker) return null
           return speakerFrom(speaker, speaker.rol)
         })
-        .filter((speaker): speaker is SpeakerPublico => speaker !== null)
+        .filter((speaker): speaker is SpeakerInterno => speaker !== null)
     : []
   return {
     id,

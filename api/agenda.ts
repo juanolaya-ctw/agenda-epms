@@ -1,13 +1,10 @@
-import { AgendaConfigError, loadPublicAgenda } from './_lib/load.ts'
-import {
-  buildAgendaBody,
-  parseAgendaQuery,
-  toIcs,
-  type AgendaBody,
-} from './_lib/public.ts'
+import { loadPublicAgenda, supabaseUrlFromEnv } from './_lib/load'
+import { adaptVercel } from './_lib/node'
+import { buildAgendaBody, parseAgendaQuery, toIcs, type AgendaBody } from './_lib/public'
 
 const CACHE_OK = 'public, max-age=60, s-maxage=60, stale-while-revalidate=300'
 const CACHE_NONE = 'no-store'
+const PUBLIC_ERROR = 'No se pudo cargar la agenda'
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -17,28 +14,11 @@ const CORS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
 }
 
-type NodeRequest = {
-  method?: string
-  url?: string
-  headers: Headers | Record<string, string | string[] | undefined>
-}
-
-type NodeResponse = {
-  status: (code: number) => NodeResponse
-  setHeader: (name: string, value: string) => void
-  end: (body?: string) => void
-}
-
-export default async function handler(
-  req: Request | NodeRequest,
-  res?: NodeResponse,
+export default function handler(
+  req: Request | Parameters<typeof adaptVercel>[0],
+  res?: Parameters<typeof adaptVercel>[1],
 ): Promise<Response | void> {
-  const response = await handleAgenda(toWebRequest(req))
-  if (res && typeof res.status === 'function' && typeof res.end === 'function' && !isWebRequest(req)) {
-    await writeNode(res, response)
-    return
-  }
-  return response
+  return adaptVercel(req, res, handleAgenda)
 }
 
 export async function handleAgenda(request: Request): Promise<Response> {
@@ -64,6 +44,7 @@ export async function handleAgenda(request: Request): Promise<Response> {
       filtros: parsed.filtros,
       evento: loaded.evento,
       assetOrigin: new URL(request.url).origin,
+      supabaseUrl: supabaseUrlFromEnv(),
     })
     if (parsed.format === 'ics') {
       return new Response(toIcs(body), {
@@ -79,10 +60,7 @@ export async function handleAgenda(request: Request): Promise<Response> {
     return json(body, 200, CACHE_OK)
   } catch (error) {
     console.error('agenda pública', error instanceof Error ? error.message : error)
-    if (error instanceof AgendaConfigError) {
-      return json({ error: error.message }, 500, CACHE_NONE)
-    }
-    return json({ error: 'No se pudo cargar la agenda' }, 500, CACHE_NONE)
+    return json({ error: PUBLIC_ERROR }, 500, CACHE_NONE)
   }
 }
 
@@ -101,39 +79,4 @@ function json(
       'Cache-Control': cache,
     },
   })
-}
-
-function isWebRequest(value: unknown): value is Request {
-  return typeof Request !== 'undefined' && value instanceof Request
-}
-
-function toWebRequest(req: Request | NodeRequest): Request {
-  if (isWebRequest(req)) return req
-  const headers = headersFrom(req.headers)
-  const proto = headers.get('x-forwarded-proto') ?? 'https'
-  const host = headers.get('x-forwarded-host') ?? headers.get('host') ?? 'localhost'
-  const path = req.url && req.url.length > 0 ? req.url : '/api/agenda'
-  const url = path.startsWith('http') ? path : `${proto}://${host}${path}`
-  return new Request(url, { method: req.method ?? 'GET', headers })
-}
-
-function headersFrom(headers: NodeRequest['headers']): Headers {
-  if (typeof Headers !== 'undefined' && headers instanceof Headers) return headers
-  const out = new Headers()
-  for (const [key, value] of Object.entries(headers)) {
-    if (Array.isArray(value)) {
-      for (const item of value) out.append(key, item)
-    } else if (typeof value === 'string') {
-      out.set(key, value)
-    }
-  }
-  return out
-}
-
-async function writeNode(res: NodeResponse, response: Response): Promise<void> {
-  res.status(response.status)
-  response.headers.forEach((value, key) => {
-    res.setHeader(key, value)
-  })
-  res.end(await response.text())
 }

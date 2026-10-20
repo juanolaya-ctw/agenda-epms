@@ -1,4 +1,4 @@
-import { normalizarColorEscenario } from './color.ts'
+import { normalizarColorEscenario } from './color'
 
 export const AGENDA_TZ = 'America/Bogota'
 
@@ -32,6 +32,11 @@ export type SpeakerPublico = {
   empresa: string | null
   foto_url: string | null
   bio: string | null
+}
+
+export type SpeakerInterno = SpeakerPublico & {
+  /** URL de Storage, solo en el servidor. El JSON público no la copia. */
+  fotoEnStorage: boolean
 }
 
 export type EscenarioPublico = {
@@ -75,7 +80,7 @@ export type RawSesion = {
   horaFin: string
   evento: EventoPublico
   escenario: { id: string; nombre: string; color: string | null }
-  speakers: SpeakerPublico[]
+  speakers: SpeakerInterno[]
 }
 
 const UUID_RE =
@@ -189,10 +194,13 @@ export function buildAgendaBody(args: {
   now?: Date
   /** Origen público (https://agenda.colombiatech.co). Las fotos salen por /api/speaker-foto. */
   assetOrigin?: string | null
+  /** URL del proyecto. Una foto en otro host no se publica. */
+  supabaseUrl?: string | null
 }): AgendaBody {
   const sesiones = [...args.rows]
     .sort(compareSesiones)
-    .map((row) => toSesionPublica(row, args.assetOrigin))
+    .map((row) => toSesionPublica(row, args.assetOrigin, args.supabaseUrl))
+    .filter((sesion) => sesion.titulo.length > 0)
   const evento =
     args.evento ??
     (uniqueEvento(sesiones.map((sesion) => sesion.evento)) ?? null)
@@ -254,6 +262,28 @@ export function textOrNull(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
+export function isSupabaseStorageUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      /\/storage\/v1\/object\/(?:public|sign)\//.test(url.pathname + url.search)
+    )
+  } catch {
+    return false
+  }
+}
+
+export function isAllowedFotoUrl(fotoUrl: string, supabaseUrl: string): boolean {
+  try {
+    const foto = new URL(fotoUrl)
+    const base = new URL(supabaseUrl)
+    return isSupabaseStorageUrl(fotoUrl) && foto.host === base.host
+  } catch {
+    return false
+  }
+}
+
 export function httpUrlOrNull(value: unknown): string | null {
   const text = textOrNull(value)
   if (!text) return null
@@ -290,10 +320,14 @@ export function assignEscenarioColors(
   }
 }
 
-function toSesionPublica(row: RawSesion, assetOrigin?: string | null): SesionPublica {
+function toSesionPublica(
+  row: RawSesion,
+  assetOrigin?: string | null,
+  supabaseUrl?: string | null,
+): SesionPublica {
   return {
     id: row.id,
-    titulo: row.titulo,
+    titulo: redactEmails(row.titulo) ?? '',
     descripcion: redactEmails(row.descripcion),
     fecha: row.fecha,
     inicio: isoBogota(row.fecha, row.horaInicio),
@@ -307,21 +341,36 @@ function toSesionPublica(row: RawSesion, assetOrigin?: string | null): SesionPub
     formato: row.formato,
     idioma: row.idioma,
     evento: row.evento,
-    speakers: [...row.speakers].sort(compareSpeakers).map((speaker) => ({
-      id: speaker.id,
-      nombre: speaker.nombre,
-      rol: speaker.rol,
-      cargo: redactEmails(speaker.cargo),
-      empresa: redactEmails(speaker.empresa),
-      foto_url: publicFotoUrl(assetOrigin, speaker),
-      bio: redactEmails(speaker.bio),
-    })),
+    speakers: [...row.speakers]
+      .sort(compareSpeakers)
+      .flatMap((speaker) => {
+        const nombre = redactEmails(speaker.nombre)
+        if (!nombre) return []
+        return [
+          {
+            id: speaker.id,
+            nombre,
+            rol: speaker.rol,
+            cargo: redactEmails(speaker.cargo),
+            empresa: redactEmails(speaker.empresa),
+            foto_url: publicFotoUrl(assetOrigin, speaker, supabaseUrl),
+            bio: redactEmails(speaker.bio),
+          },
+        ]
+      }),
   }
 }
 
-/** El objeto en Storage a veces lleva el email en el nombre del archivo. */
-function publicFotoUrl(origin: string | null | undefined, speaker: SpeakerPublico): string | null {
-  if (!speaker.foto_url || !origin) return null
+function publicFotoUrl(
+  origin: string | null | undefined,
+  speaker: SpeakerInterno,
+  supabaseUrl?: string | null,
+): string | null {
+  if (!origin || !speaker.fotoEnStorage) return null
+  if (speaker.foto_url) {
+    if (!isSupabaseStorageUrl(speaker.foto_url)) return null
+    if (supabaseUrl && !isAllowedFotoUrl(speaker.foto_url, supabaseUrl)) return null
+  }
   const url = new URL('/api/speaker-foto', origin)
   url.searchParams.set('id', speaker.id)
   return url.toString()

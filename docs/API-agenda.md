@@ -25,7 +25,7 @@ GET https://agenda.colombiatech.co/api/speaker-foto?id=<uuid>
 
 Solo entra una sesión si se cumplen las tres condiciones:
 
-1. `sesiones.estado` es `CONFIRMADA` (sin distinguir mayúsculas, con espacios recortados).
+1. `sesiones.estado`, recortado y en mayúsculas, es `CONFIRMADA` (`upper(btrim(estado))` en `epms.agenda_publica`).
 2. Tiene slot: fecha, hora de inicio, hora de fin y escenario. Una sesión confirmada sin horario no sale.
 3. El evento del escenario está activo (`eventos.activo = true`).
 
@@ -77,16 +77,16 @@ Caché: `Cache-Control: public, max-age=60, s-maxage=60, stale-while-revalidate=
 | `speakers[].rol` | Rol en la sesión: `keynote`, `moderador`, `host` o `panelista` |
 | `speakers[].cargo` | Cargo |
 | `speakers[].empresa` | Empresa |
-| `speakers[].foto_url` | URL de esta misma API, o `null` |
+| `speakers[].foto_url` | URL de `/api/speaker-foto` si la foto está en Supabase Storage. `null` si no hay foto o si el archivo está en otro host |
 | `speakers[].bio` | Bio, o `null` |
 
-No se devuelven correos, teléfonos, documentos, LinkedIn, estado interno, cupos, piezas, requests, CRM ni notas de Sales/CS. `foto_url` no apunta al objeto de Storage: algunos archivos se guardaron con el email dentro del nombre, y el endpoint `/api/speaker-foto` entrega la imagen sin revelar esa ruta. Las fotos se cachean más tiempo (`s-maxage=86400`).
+No se devuelven correos, teléfonos, documentos, LinkedIn, estado interno, cupos, piezas, requests, CRM ni notas de Sales/CS. Si un texto público trae un email, se elimina. `foto_url` es `null` cuando la foto no está en Supabase Storage. Cuando sí lo está, la URL es de esta API (`/api/speaker-foto`): el objeto de Storage a veces lleva un email en el nombre y esa ruta no sale en el JSON ni en los headers. La foto solo se sirve si es jpeg, png, webp, gif o avif (`Content-Security-Policy: default-src 'none'; sandbox` y `X-Content-Type-Options: nosniff`). Se cachea con `s-maxage=86400`.
 
-El color del escenario usa `escenarios.color` cuando la columna existe. En producción todavía no está aplicada (`epms-alter-escenarios-color.sql`); mientras tanto el color es el de la paleta del calendario interno, por orden de nombre del escenario.
+`epms.agenda_publica` devuelve `escenario.color` en `null`: la columna `escenarios.color` todavía no existe en producción (`epms-alter-escenarios-color.sql`) y la función no la lee. La API pinta el color con la paleta del calendario interno, por orden de nombre del escenario dentro del evento.
 
 ### Ejemplo real
 
-Capturado el 2026-10-20 contra los datos de producción (handler local, mismas queries que desplegará Vercel). `GET /api/agenda` sin filtros:
+Forma del JSON. Los tres títulos de abajo son sesiones `CONFIRMADA` reales del 2026-10-20. Desde este cambio la API solo lee `epms.agenda_publica`, así que en producción responde eso después de ejecutar el SQL. `GET /api/agenda` sin filtros:
 
 ```json
 {
@@ -188,7 +188,7 @@ El ejemplo está recortado a dos sesiones. La tercera confirmada ese día de cap
 | 400 | `date`/`fecha` o `evento` con formato inválido, o `format` distinto de `json`/`ics` |
 | 404 | `evento` no existe o está inactivo. Foto de alguien que no está en una sesión pública |
 | 405 | Cualquier método que no sea `GET` u `OPTIONS` |
-| 500 | Faltan las variables de Supabase, o la base no respondió. El cuerpo no incluye detalles de SQL |
+| 500 | La función `epms.agenda_publica` no existe, faltan variables o Supabase falló. El cuerpo es `{"error":"No se pudo cargar la agenda"}` y no lista variables ni SQL. No devuelve una agenda vacía en ese caso |
 
 ## Variables de entorno
 
@@ -197,12 +197,15 @@ No hace falta crear secretos nuevos. La función lee, en este orden:
 - URL: `SUPABASE_URL`, `VITE_SUPABASE_URL`, `SB_URL`
 - Key: `SUPABASE_ANON_KEY`, `VITE_SUPABASE_ANON_KEY`, `SB_ANON_KEY`
 
-En Vercel ya están `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (el sitio las usa en el build). La anon key respeta RLS. Esta API no acepta la `service_role` key: si alguien la pone en esas variables, el endpoint responde 500 y no consulta.
+En el proyecto de Vercel de `juanolaya-ctw` ya están `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`. La API solo llama a `epms.agenda_publica` y `epms.agenda_foto_publica` (anon key, sin `service_role`). El detalle de configuración se escribe en el log del servidor, no en la respuesta.
 
-La consulta pide solo columnas públicas. `estado` se usa para filtrar y no sale en el JSON.
+## SQL obligatorio, antes del merge
 
-## SQL opcional
+Ejecutar **todo** `supabase/agenda-publica.sql` en el SQL Editor del proyecto Supabase del EPMS, **y después** mergear este PR a `main`.
 
-`supabase/agenda-publica.sql` crea `epms.agenda_publica(uuid, date)`, `SECURITY DEFINER`, con las mismas columnas públicas y el mismo filtro `CONFIRMADA`. Hay que pegarlo una vez en el SQL Editor de Supabase. Cuando la función existe, `/api/agenda` la usa (puede tardar unos minutos en notarla) y sigue respondiendo aunque `anon` pierda `SELECT` sobre las tablas. No es necesario para el primer deploy.
+Ese archivo, en orden:
 
-No hay cambios de RLS en este cambio. Conviene no abrir `SELECT` de `epms.speakers` a `anon`: esa tabla tiene email y teléfono.
+1. Crea `epms.agenda_publica` y `epms.agenda_foto_publica` como `SECURITY DEFINER`. Devuelven solo columnas públicas de sesiones `CONFIRMADA` con slot. La agenda no incluye la URL de Storage (`tiene_foto`).
+2. En el bloque marcado, hace `REVOKE ALL` de `anon` y `PUBLIC` sobre las tablas de `epms` (speakers, sesiones, requests, usuarios y el resto). `authenticated` no se toca: la app interna sigue igual.
+
+Si se mergea antes de correr el SQL, `GET /api/agenda` responde 500 hasta que el script exista. No consulta las tablas con la anon key.
