@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/agenda.ics", "destination": "/api/agenda?format=ics" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
