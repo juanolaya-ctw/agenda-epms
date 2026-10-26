@@ -359,55 +359,23 @@ async function findOrCreateSlot(
   return { id: created.data.id as string }
 }
 
-/** ¿El slot actual es exclusivo de esta sesión? Si sí, se puede mutar in-place. */
-async function slotEsExclusivoDeSesion(
-  slotId: string,
-  sesionId: string,
-): Promise<{ exclusivo: boolean; error: string | null }> {
-  if (!slotId) return { exclusivo: false, error: null }
-  const ocupantes = await supabase
-    .from('sesiones')
-    .select('id')
-    .eq('slot_id', slotId)
-  if (ocupantes.error) return { exclusivo: false, error: ocupantes.error.message }
-  const ids = (ocupantes.data ?? []).map((r) => r.id as string)
-  return {
-    exclusivo:
-      ids.length === 0 || (ids.length === 1 && ids[0] === sesionId),
-    error: null,
-  }
-}
-
 /**
  * Garantiza un slot exclusivo para la sesión con el horario pedido.
- * Si el slot actual está compartido, crea/reasigna uno propio en lugar de
- * mutar el compartido (eso movía a las demás sesiones).
+ *
+ * Nunca muta el slot actual "porque parece exclusivo": si la query de
+ * ocupantes falla o no ve a las demás sesiones, esa mutación movería a
+ * todas las enganchadas. Siempre pasa por findOrCreateSlot, que solo
+ * reutiliza un slot libre o ya propio de esta sesión; si el actual está
+ * compartido, crea uno nuevo y la sesión se desengancha sola.
  */
 async function ensureSlotExclusivo(
   sesionId: string,
-  slotIdActual: string,
+  _slotIdActual: string,
   escenarioId: string,
   dia: string,
   horaInicio: string,
   horaFin: string,
 ): Promise<{ id: string } | { error: string }> {
-  const exclusividad = await slotEsExclusivoDeSesion(slotIdActual, sesionId)
-  if (exclusividad.error) return { error: exclusividad.error }
-
-  if (exclusividad.exclusivo && slotIdActual) {
-    const upd = await supabase
-      .from('slots')
-      .update({
-        escenario_id: escenarioId,
-        dia,
-        hora_inicio: horaInicio,
-        hora_fin: horaFin,
-      })
-      .eq('id', slotIdActual)
-    if (upd.error) return { error: upd.error.message }
-    return { id: slotIdActual }
-  }
-
   return findOrCreateSlot(escenarioId, dia, horaInicio, horaFin, {
     paraSesionId: sesionId,
   })
