@@ -324,6 +324,7 @@ export function SesionesTablaView({
         s.dia,
         s.horaInicio,
         s.horaFin,
+        s.slotId,
       )
       if (e) throw new Error(e)
     })
@@ -420,10 +421,24 @@ export function SesionesTablaView({
     refetch()
   }
 
+  function horarioActual(s: Sesion) {
+    return {
+      escenarioId: s.escenarioId,
+      dia: toStr(ov.get(s.id, 'dia', s.dia)),
+      horaInicio: toStr(ov.get(s.id, 'horaInicio', s.horaInicio)),
+      horaFin: toStr(ov.get(s.id, 'horaFin', s.horaFin)),
+    }
+  }
+
   async function guardarDia(s: Sesion, v: string) {
     if (!v || v === s.dia) return
     await ov.commit(s.id, 'dia', v, s.dia, async () => {
-      const { error: e } = await actualizarCampoSlot(s.slotId, { dia: v })
+      const { error: e } = await actualizarCampoSlot(
+        s.id,
+        s.slotId,
+        horarioActual(s),
+        { dia: v },
+      )
       if (e) throw new Error(e)
     })
     refetch()
@@ -437,9 +452,12 @@ export function SesionesTablaView({
       return
     }
     await ov.commit(s.id, 'horaInicio', v, s.horaInicio, async () => {
-      const { error: e } = await actualizarCampoSlot(s.slotId, {
-        hora_inicio: v,
-      })
+      const { error: e } = await actualizarCampoSlot(
+        s.id,
+        s.slotId,
+        horarioActual(s),
+        { hora_inicio: v },
+      )
       if (e) throw new Error(e)
     })
     refetch()
@@ -453,9 +471,12 @@ export function SesionesTablaView({
       return
     }
     await ov.commit(s.id, 'horaFin', v, s.horaFin, async () => {
-      const { error: e } = await actualizarCampoSlot(s.slotId, {
-        hora_fin: v,
-      })
+      const { error: e } = await actualizarCampoSlot(
+        s.id,
+        s.slotId,
+        horarioActual(s),
+        { hora_fin: v },
+      )
       if (e) throw new Error(e)
     })
     refetch()

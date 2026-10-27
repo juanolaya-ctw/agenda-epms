@@ -305,11 +305,18 @@ async function loadSesiones(
   return { sesiones, escenarios, tracks, formatos, estados, error }
 }
 
+/**
+ * Un slot admite una sola sesión. Reutiliza un slot existente solo si está
+ * libre (o ya pertenece a `paraSesionId`); si no, crea uno nuevo.
+ * Antes se reutilizaba siempre el slot de (escenario+día+hora), y al editar
+ * ese slot se movían todas las sesiones enganchadas a la vez.
+ */
 async function findOrCreateSlot(
   escenarioId: string,
   dia: string,
   horaInicio: string,
   horaFin: string,
+  opts?: { paraSesionId?: string },
 ): Promise<{ id: string } | { error: string }> {
   const existing = await supabase
     .from('slots')
@@ -317,10 +324,31 @@ async function findOrCreateSlot(
     .eq('escenario_id', escenarioId)
     .eq('dia', dia)
     .eq('hora_inicio', horaInicio)
-    .maybeSingle()
 
   if (existing.error) return { error: existing.error.message }
-  if (existing.data) return { id: existing.data.id as string }
+
+  for (const row of existing.data ?? []) {
+    const candidateId = row.id as string
+    const ocupantes = await supabase
+      .from('sesiones')
+      .select('id')
+      .eq('slot_id', candidateId)
+    if (ocupantes.error) return { error: ocupantes.error.message }
+    const ids = (ocupantes.data ?? []).map((r) => r.id as string)
+    const libre =
+      ids.length === 0 ||
+      (opts?.paraSesionId != null &&
+        ids.length === 1 &&
+        ids[0] === opts.paraSesionId)
+    if (!libre) continue
+
+    const sync = await supabase
+      .from('slots')
+      .update({ hora_fin: horaFin })
+      .eq('id', candidateId)
+    if (sync.error) return { error: sync.error.message }
+    return { id: candidateId }
+  }
 
   const created = await supabase
     .from('slots')
@@ -335,6 +363,60 @@ async function findOrCreateSlot(
 
   if (created.error) return { error: created.error.message }
   return { id: created.data.id as string }
+}
+
+/** ¿El slot actual es exclusivo de esta sesión? Si sí, se puede mutar in-place. */
+async function slotEsExclusivoDeSesion(
+  slotId: string,
+  sesionId: string,
+): Promise<{ exclusivo: boolean; error: string | null }> {
+  if (!slotId) return { exclusivo: false, error: null }
+  const ocupantes = await supabase
+    .from('sesiones')
+    .select('id')
+    .eq('slot_id', slotId)
+  if (ocupantes.error) return { exclusivo: false, error: ocupantes.error.message }
+  const ids = (ocupantes.data ?? []).map((r) => r.id as string)
+  return {
+    exclusivo:
+      ids.length === 0 || (ids.length === 1 && ids[0] === sesionId),
+    error: null,
+  }
+}
+
+/**
+ * Garantiza un slot exclusivo para la sesión con el horario pedido.
+ * Si el slot actual está compartido, crea/reasigna uno propio en lugar de
+ * mutar el compartido (eso movía a las demás sesiones).
+ */
+async function ensureSlotExclusivo(
+  sesionId: string,
+  slotIdActual: string,
+  escenarioId: string,
+  dia: string,
+  horaInicio: string,
+  horaFin: string,
+): Promise<{ id: string } | { error: string }> {
+  const exclusividad = await slotEsExclusivoDeSesion(slotIdActual, sesionId)
+  if (exclusividad.error) return { error: exclusividad.error }
+
+  if (exclusividad.exclusivo && slotIdActual) {
+    const upd = await supabase
+      .from('slots')
+      .update({
+        escenario_id: escenarioId,
+        dia,
+        hora_inicio: horaInicio,
+        hora_fin: horaFin,
+      })
+      .eq('id', slotIdActual)
+    if (upd.error) return { error: upd.error.message }
+    return { id: slotIdActual }
+  }
+
+  return findOrCreateSlot(escenarioId, dia, horaInicio, horaFin, {
+    paraSesionId: sesionId,
+  })
 }
 
 export async function crearSesion(
@@ -368,32 +450,32 @@ export async function actualizarSesion(
   slotId: string,
   values: SesionFormValues,
 ): Promise<{ error: string | null }> {
-  const [sesionRes, slotRes] = await Promise.all([
-    supabase
-      .from('sesiones')
-      .update({
-        titulo: values.titulo,
-        descripcion: values.descripcion.trim() || null,
-        formato: values.formato || null,
-        track: values.track,
-        idioma: values.idioma,
-        modalidad: values.modalidad,
-        capacidad_speakers: values.capacidadSpeakers,
-        estado: values.estado,
-      })
-      .eq('id', sesionId),
-    supabase
-      .from('slots')
-      .update({
-        escenario_id: values.escenarioId,
-        dia: values.dia,
-        hora_inicio: values.horaInicio,
-        hora_fin: values.horaFin,
-      })
-      .eq('id', slotId),
-  ])
+  const slot = await ensureSlotExclusivo(
+    sesionId,
+    slotId,
+    values.escenarioId,
+    values.dia,
+    values.horaInicio,
+    values.horaFin,
+  )
+  if ('error' in slot) return { error: slot.error }
 
-  return { error: sesionRes.error?.message ?? slotRes.error?.message ?? null }
+  const sesionRes = await supabase
+    .from('sesiones')
+    .update({
+      titulo: values.titulo,
+      descripcion: values.descripcion.trim() || null,
+      formato: values.formato || null,
+      track: values.track,
+      idioma: values.idioma,
+      modalidad: values.modalidad,
+      capacidad_speakers: values.capacidadSpeakers,
+      estado: values.estado,
+      slot_id: slot.id,
+    })
+    .eq('id', sesionId)
+
+  return { error: sesionRes.error?.message ?? null }
 }
 
 export async function eliminarSesion(
@@ -432,16 +514,46 @@ export async function actualizarCampoSesion(
   return { error: res.error?.message ?? null }
 }
 
+/**
+ * Edición inline de día/hora. Nunca muta un slot compartido: si hace falta,
+ * desengancha la sesión a un slot propio con el horario resultante.
+ */
 export async function actualizarCampoSlot(
+  sesionId: string,
   slotId: string,
+  actual: {
+    escenarioId: string
+    dia: string
+    horaInicio: string
+    horaFin: string
+  },
   patch: { dia?: string; hora_inicio?: string; hora_fin?: string },
 ): Promise<{ error: string | null }> {
-  const res = await supabase.from('slots').update(patch).eq('id', slotId)
+  const dia = patch.dia ?? actual.dia
+  const horaInicio = patch.hora_inicio ?? actual.horaInicio
+  const horaFin = patch.hora_fin ?? actual.horaFin
+
+  const slot = await ensureSlotExclusivo(
+    sesionId,
+    slotId,
+    actual.escenarioId,
+    dia,
+    horaInicio,
+    horaFin,
+  )
+  if ('error' in slot) return { error: slot.error }
+
+  if (slot.id === slotId) return { error: null }
+
+  const res = await supabase
+    .from('sesiones')
+    .update({ slot_id: slot.id })
+    .eq('id', sesionId)
   return { error: res.error?.message ?? null }
 }
 
-// Edición inline de escenario: ¿el slot destino (escenario+día+hora) ya lo
-// ocupa OTRA sesión? (un slot admite una sola sesión).
+// Edición inline de escenario: ¿ya hay OTRA sesión en ese escenario+día+hora?
+// (aviso UX; se puede confirmar y crear un slot paralelo).
 export async function slotOcupadoPorOtraSesion(
   escenarioId: string,
   dia: string,
@@ -454,14 +566,14 @@ export async function slotOcupadoPorOtraSesion(
     .eq('escenario_id', escenarioId)
     .eq('dia', dia)
     .eq('hora_inicio', horaInicio)
-    .maybeSingle()
   if (slotRes.error) return { ocupado: false, error: slotRes.error.message }
-  if (!slotRes.data) return { ocupado: false, error: null }
+  const slotIds = (slotRes.data ?? []).map((r) => r.id as string)
+  if (slotIds.length === 0) return { ocupado: false, error: null }
 
   const sesRes = await supabase
     .from('sesiones')
     .select('id')
-    .eq('slot_id', slotRes.data.id as string)
+    .in('slot_id', slotIds)
     .neq('id', sesionIdActual)
     .limit(1)
   if (sesRes.error) return { ocupado: false, error: sesRes.error.message }
@@ -469,15 +581,23 @@ export async function slotOcupadoPorOtraSesion(
 }
 
 // Reasigna la sesión a un slot del nuevo escenario (mismo día/hora),
-// creándolo si no existe. Reutiliza findOrCreateSlot.
+// creándolo si no hay uno libre. Nunca reutiliza un slot ya ocupado.
 export async function reasignarEscenarioSesion(
   sesionId: string,
   escenarioId: string,
   dia: string,
   horaInicio: string,
   horaFin: string,
+  slotIdActual = '',
 ): Promise<{ error: string | null }> {
-  const slot = await findOrCreateSlot(escenarioId, dia, horaInicio, horaFin)
+  const slot = await ensureSlotExclusivo(
+    sesionId,
+    slotIdActual,
+    escenarioId,
+    dia,
+    horaInicio,
+    horaFin,
+  )
   if ('error' in slot) return { error: slot.error }
   const res = await supabase
     .from('sesiones')
