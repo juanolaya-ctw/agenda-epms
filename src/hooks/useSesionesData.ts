@@ -42,7 +42,7 @@ export const IDIOMAS_SESION = [
   'Alemán',
 ] as const
 
-export const MODALIDADES_SESION = ['Presencial', 'Virtual'] as const
+export const MODALIDADES_SESION = ['Presencial', 'Virtual', 'Híbrida'] as const
 
 export type Sesion = {
   id: string
