@@ -25,6 +25,7 @@ import {
   COLORES_ESCENARIO,
   crearSesion,
   IDIOMAS_SESION,
+  MODALIDADES_SESION,
   normalizarColorEscenario,
   type EscenarioCatalogo,
   type EstadoSesion,
@@ -59,6 +60,7 @@ type FormState = {
   formato: string
   track: string
   idioma: string
+  modalidad: string
   escenarioId: string
   dia: string
   horaInicio: string
@@ -78,6 +80,7 @@ function initialState(
     formato: sesion?.formato ?? '',
     track: sesion?.track ?? SIN_TRACK,
     idioma: sesion?.idioma ?? 'Español',
+    modalidad: sesion?.modalidad ?? 'Presencial',
     escenarioId: sesion?.escenarioId ?? '',
     dia: sesion?.dia || rangoInicio,
     horaInicio: sesion?.horaInicio ?? '',
@@ -199,6 +202,7 @@ export function SesionFormDialog({
       formato: form.formato,
       track: form.track === SIN_TRACK ? null : form.track,
       idioma: form.idioma,
+      modalidad: form.modalidad,
       escenarioId: form.escenarioId,
       dia: form.dia,
       horaInicio: form.horaInicio,
@@ -226,9 +230,9 @@ export function SesionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[880px] overflow-x-hidden overflow-y-auto bg-white p-0">
-        <div className="min-w-0 p-6">
-          <DialogHeader>
+      <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto bg-white p-0">
+        <div className="min-w-0 px-6">
+          <DialogHeader className="sticky top-0 z-10 bg-white pt-6 pb-2">
             <DialogTitle>
               {isView
                 ? 'Detalle de sesión'
@@ -258,6 +262,7 @@ export function SesionFormDialog({
                 <CampoVista label="Track" value={trackLabel} />
                 <CampoVista label="Idioma" value={dash(form.idioma)} />
               </div>
+              <CampoVista label="Modalidad" value={dash(form.modalidad)} />
               <CampoVista label="Día" value={dash(form.dia)} />
               <div className="grid grid-cols-2 gap-3">
                 <CampoVista label="Hora inicio" value={dash(form.horaInicio)} />
@@ -278,7 +283,7 @@ export function SesionFormDialog({
                 readOnly
               />
 
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <div className="sticky bottom-0 z-10 -mx-6 flex flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
                   variant="outline"
@@ -404,7 +409,7 @@ export function SesionFormDialog({
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
                   <Label>Track</Label>
                   <Select
@@ -438,6 +443,25 @@ export function SesionFormDialog({
                       {IDIOMAS_SESION.map((idioma) => (
                         <SelectItem key={idioma} value={idioma}>
                           {idioma}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Modalidad</Label>
+                  <Select
+                    value={form.modalidad}
+                    onValueChange={(value) => set('modalidad', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODALIDADES_SESION.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -530,7 +554,7 @@ export function SesionFormDialog({
                 onChanged={onSaved}
               />
 
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <div className="sticky bottom-0 z-10 -mx-6 flex flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
                   variant="outline"

@@ -54,6 +54,7 @@ import {
   CAPACIDAD_SPEAKERS_MAX,
   eliminarSesion,
   IDIOMAS_SESION,
+  MODALIDADES_SESION,
   reasignarEscenarioSesion,
   slotOcupadoPorOtraSesion,
   type SesionesData,
@@ -79,6 +80,7 @@ type SortKey =
   | 'formato'
   | 'track'
   | 'idioma'
+  | 'modalidad'
   | 'dia'
   | 'horaInicio'
   | 'horaFin'
@@ -98,6 +100,8 @@ function sortValue(row: Sesion, key: SortKey): string | number {
       return (row.track ?? '').toLowerCase()
     case 'idioma':
       return row.idioma.toLowerCase()
+    case 'modalidad':
+      return row.modalidad.toLowerCase()
     case 'dia':
       return `${row.dia} ${row.horaInicio}`
     case 'horaInicio':
@@ -297,6 +301,7 @@ export function SesionesTablaView({
     | 'titulo'
     | 'track'
     | 'idioma'
+    | 'modalidad'
     | 'dia'
     | 'horaInicio'
     | 'horaFin'
@@ -406,6 +411,15 @@ export function SesionesTablaView({
     refetch()
   }
 
+  async function guardarModalidad(s: Sesion, value: string) {
+    if (value === s.modalidad) return
+    await ov.commit(s.id, 'modalidad', value, s.modalidad, async () => {
+      const { error: e } = await actualizarCampoSesion(s.id, { modalidad: value })
+      if (e) throw new Error(e)
+    })
+    refetch()
+  }
+
   async function guardarDia(s: Sesion, v: string) {
     if (!v || v === s.dia) return
     await ov.commit(s.id, 'dia', v, s.dia, async () => {
@@ -470,6 +484,12 @@ export function SesionesTablaView({
         etiqueta: 'Idioma',
         tipo: 'select',
         opciones: [...IDIOMAS_SESION],
+      },
+      {
+        campo: 'modalidad',
+        etiqueta: 'Modalidad',
+        tipo: 'select',
+        opciones: [...MODALIDADES_SESION],
       },
       { campo: 'dia', etiqueta: 'Día', tipo: 'fecha' },
       {
@@ -610,6 +630,7 @@ export function SesionesTablaView({
                   <SortHeader label="Formato" sortKey="formato" sort={sort} onSort={handleSort} />
                   <SortHeader label="Track" sortKey="track" sort={sort} onSort={handleSort} />
                   <SortHeader label="Idioma" sortKey="idioma" sort={sort} onSort={handleSort} />
+                  <SortHeader label="Modalidad" sortKey="modalidad" sort={sort} onSort={handleSort} />
                   <SortHeader label="Día" sortKey="dia" sort={sort} onSort={handleSort} />
                   <SortHeader label="Hora inicio" sortKey="horaInicio" sort={sort} onSort={handleSort} />
                   <SortHeader label="Hora fin" sortKey="horaFin" sort={sort} onSort={handleSort} />
@@ -629,7 +650,7 @@ export function SesionesTablaView({
 
                 {sinResultados && (
                   <TableRow>
-                    <TableCell colSpan={12} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={13} className="py-10 text-center text-sm text-muted-foreground">
                       Ninguna sesión coincide con los filtros.
                     </TableCell>
                   </TableRow>
@@ -700,6 +721,28 @@ export function SesionesTablaView({
                               {IDIOMAS_SESION.map((idioma) => (
                                 <SelectItem key={idioma} value={idioma}>
                                   {idioma}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell
+                          className="text-muted-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Select
+                            value={toStr(
+                              ov.get(sesion.id, 'modalidad', sesion.modalidad),
+                            )}
+                            onValueChange={(v) => void guardarModalidad(sesion, v)}
+                          >
+                            <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MODALIDADES_SESION.map((m) => (
+                                <SelectItem key={m} value={m}>
+                                  {m}
                                 </SelectItem>
                               ))}
                             </SelectContent>

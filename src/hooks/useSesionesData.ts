@@ -42,6 +42,8 @@ export const IDIOMAS_SESION = [
   'Alemán',
 ] as const
 
+export const MODALIDADES_SESION = ['Presencial', 'Virtual'] as const
+
 export type Sesion = {
   id: string
   titulo: string
@@ -49,6 +51,7 @@ export type Sesion = {
   formato: string | null
   track: string | null
   idioma: string
+  modalidad: string
   capacidadSpeakers: number
   estado: string
   slotId: string
@@ -78,6 +81,7 @@ export type SesionFormValues = {
   formato: string
   track: string | null // null = "Sin track"
   idioma: string
+  modalidad: string
   escenarioId: string
   dia: string
   horaInicio: string
@@ -157,6 +161,7 @@ type SesionEmbedRow = {
   formato: string | null
   track: string | null
   idioma: string | null
+  modalidad: string | null
   capacidad_speakers: number | null
   estado: string | null
   slot: SlotEmbed | SlotEmbed[] | null
@@ -170,7 +175,7 @@ type SesionEmbedRow = {
 }
 
 const SESIONES_SELECT = `
-  id, titulo, descripcion, formato, track, idioma, capacidad_speakers, estado,
+  id, titulo, descripcion, formato, track, idioma, modalidad, capacidad_speakers, estado,
   slot:slots!inner (
     id, dia, hora_inicio, hora_fin,
     escenario:escenarios!inner ( id, nombre, evento_id )
@@ -282,6 +287,7 @@ async function loadSesiones(
         formato: row.formato ?? null,
         track: row.track ?? null,
         idioma: row.idioma ?? 'Español',
+        modalidad: row.modalidad ?? 'Presencial',
         capacidadSpeakers: row.capacidad_speakers ?? 1,
         estado: row.estado ?? 'BORRADOR',
         slotId: slot?.id ?? '',
@@ -349,6 +355,7 @@ export async function crearSesion(
     formato: values.formato || null,
     track: values.track,
     idioma: values.idioma,
+    modalidad: values.modalidad,
     capacidad_speakers: values.capacidadSpeakers,
     estado: values.estado,
   })
@@ -370,6 +377,7 @@ export async function actualizarSesion(
         formato: values.formato || null,
         track: values.track,
         idioma: values.idioma,
+        modalidad: values.modalidad,
         capacidad_speakers: values.capacidadSpeakers,
         estado: values.estado,
       })
@@ -415,6 +423,7 @@ export async function actualizarCampoSesion(
     titulo?: string
     track?: string | null
     idioma?: string
+    modalidad?: string
     capacidad_speakers?: number
     estado?: string
   },
