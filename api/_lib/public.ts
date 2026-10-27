@@ -56,6 +56,7 @@ export type SesionPublica = {
   track: string | null
   formato: string | null
   idioma: string | null
+  modalidad: string | null
   evento: EventoPublico
   speakers: SpeakerPublico[]
 }
@@ -75,6 +76,7 @@ export type RawSesion = {
   formato: string | null
   track: string | null
   idioma: string | null
+  modalidad: string | null
   fecha: string
   horaInicio: string
   horaFin: string
@@ -340,6 +342,7 @@ function toSesionPublica(
     track: row.track,
     formato: row.formato,
     idioma: row.idioma,
+    modalidad: row.modalidad,
     evento: row.evento,
     speakers: [...row.speakers]
       .sort(compareSpeakers)
@@ -419,6 +422,7 @@ function icsDescription(sesion: SesionPublica): string {
   if (sesion.formato) parts.push(`Formato: ${sesion.formato}`)
   if (sesion.track) parts.push(`Track: ${sesion.track}`)
   if (sesion.idioma) parts.push(`Idioma: ${sesion.idioma}`)
+  if (sesion.modalidad) parts.push(`Modalidad: ${sesion.modalidad}`)
   if (sesion.descripcion) parts.push(sesion.descripcion)
   if (sesion.speakers.length > 0) {
     parts.push(

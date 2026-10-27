@@ -124,6 +124,7 @@ BEGIN
           'formato', epms.agenda_texto_publico(s.formato),
           'track', epms.agenda_texto_publico(s.track),
           'idioma', epms.agenda_texto_publico(s.idioma),
+          'modalidad', epms.agenda_texto_publico(s.modalidad),
           'fecha', sl.dia,
           'hora_inicio', sl.hora_inicio,
           'hora_fin', sl.hora_fin,

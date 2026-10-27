@@ -73,6 +73,7 @@ Caché: `Cache-Control: public, max-age=60, s-maxage=60, stale-while-revalidate=
 | `formato` | Tipo (Keynote, Panel, …). `null` si no tiene |
 | `track` | Track. `null` si no tiene |
 | `idioma` | Idioma de la sesión |
+| `modalidad` | `Presencial`, `Virtual` o `Híbrida` |
 | `speakers[].nombre` | Nombre |
 | `speakers[].rol` | Rol en la sesión: `keynote`, `moderador`, `host` o `panelista` |
 | `speakers[].cargo` | Cargo |
@@ -115,6 +116,7 @@ Forma del JSON. Los tres títulos de abajo son sesiones `CONFIRMADA` reales del 
       "track": "Innovación Pública",
       "formato": "Keynote",
       "idioma": "Español",
+      "modalidad": "Presencial",
       "evento": {
         "id": "2f042639-cc2d-4c06-bea3-f8316a3419c1",
         "nombre": "GovTech Summit 2026",
@@ -148,6 +150,7 @@ Forma del JSON. Los tres títulos de abajo son sesiones `CONFIRMADA` reales del 
       "track": "GovTech",
       "formato": "Panel",
       "idioma": "Español",
+      "modalidad": "Presencial",
       "evento": {
         "id": "2f042639-cc2d-4c06-bea3-f8316a3419c1",
         "nombre": "GovTech Summit 2026",

@@ -54,6 +54,7 @@ function sampleRow(): RawSesion {
     formato: 'Keynote',
     track: null,
     idioma: 'Español',
+    modalidad: 'Híbrida',
     fecha: '2026-11-04',
     horaInicio: '11:10:00',
     horaFin: '11:30:00',
