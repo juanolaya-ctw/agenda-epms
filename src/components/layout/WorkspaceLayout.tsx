@@ -49,6 +49,7 @@ function tabsFor(id: string, role: ViewRole, requestCount: number): TabItem[] {
         to: `/workspace/${id}/agenda/requests`,
         count: requestCount,
       },
+      { label: 'Quotes', to: `/workspace/${id}/agenda/quotes` },
     ]
   }
   if (role === 'sales') {

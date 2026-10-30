@@ -47,6 +47,11 @@ const RequestsTab = lazy(() =>
     default: m.RequestsTab,
   })),
 )
+const QuotesTab = lazy(() =>
+  import('@/pages/workspace/agenda/quotes/QuotesTab').then((m) => ({
+    default: m.QuotesTab,
+  })),
+)
 const SettingsTab = lazy(() =>
   import('@/pages/workspace/agenda/SettingsTab').then((m) => ({
     default: m.SettingsTab,
@@ -174,6 +179,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="sesiones" element={<SesionesTab />} />
                 <Route path="speakers" element={<SpeakersTab />} />
                 <Route path="requests" element={<RequestsTab />} />
+                <Route path="quotes" element={<QuotesTab />} />
               </Route>
 
               <Route
