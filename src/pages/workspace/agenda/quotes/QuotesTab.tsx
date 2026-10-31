@@ -33,6 +33,15 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
   const soloLectura = be === backendSupabase && import.meta.env.VITE_QUOTES_ESCRITURA !== 'si'
   // Sesión de prueba con escritura real: solo foto, Generar pieza y Usar esta versión. El resto exige VITE_QUOTES_CIERRE=si
   const bloqueoPrueba = be === backendSupabase && import.meta.env.VITE_QUOTES_CIERRE !== 'si'
+  // Aprobacion acotada: habilita SOLO "Aprobar esta version" y "Reintentar publicacion" sin abrir edicion, revision, delegacion ni "Marcar enviada". Exige VITE_QUOTES_APROBACION=si
+  const aprobacionHabilitada = be === backendSupabase && import.meta.env.VITE_QUOTES_APROBACION === 'si'
+  const guardAprobacion = (): boolean => {
+    if (bloqueoPrueba && !aprobacionHabilitada) {
+      setMsg({ tipo: 'error', texto: 'Bloqueado en esta sesion de prueba: aprobar/publicar sigue deshabilitado.' })
+      return true
+    }
+    return false
+  }
   const guardCierre = (): boolean => {
     if (bloqueoPrueba) {
       setMsg({ tipo: 'error', texto: 'Bloqueado en esta sesión de prueba: solo foto, Generar pieza y Usar esta versión.' })
@@ -94,13 +103,13 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
     await recargar(fila.id)
   })
   const aprobar = () => correr(async () => {
-    if (guardCierre()) return
+    if (guardAprobacion()) return
     const r = await aprobarYPublicar(be.rpc, be.priv, be.pub, fila)
     setMsg(r.ok ? { tipo: 'ok', texto: 'Aprobada y publicada para el toolkit (verificada).' } : { tipo: 'error', texto: `[${r.paso}] ${r.mensaje}` })
     await recargar(fila.id)
   })
   const reintentar = () => correr(async () => {
-    if (guardCierre()) return
+    if (guardAprobacion()) return
     const c = await cargarCandidato(be.priv, fila); if (!c.ok) { setMsg({ tipo: 'error', texto: c.mensaje }); return }
     const r = await publicarAprobada(be.rpc, be.pub, fila.id, c.bytes, fila.candidato_hash as string)
     setMsg(r.ok ? { tipo: 'ok', texto: 'Publicada y verificada.' } : { tipo: 'error', texto: `[${r.paso}] ${r.mensaje}` })
@@ -173,8 +182,8 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
           </p>
           <div className="flex flex-wrap gap-2">
             {(fila.estado === 'pendiente' || fila.estado === 'necesita_revision') && <Button disabled={ocupado || soloLectura || !!L.bloqueos.length || L.vacia || !d} onClick={generar}>Generar pieza</Button>}
-            {fila.estado === 'generada' && <Button disabled={ocupado || soloLectura || bloqueoPrueba || !guardado} onClick={aprobar}>Aprobar esta versión</Button>}
-            {fila.estado === 'aprobada' && !fila.publicada && <Button disabled={ocupado || soloLectura || bloqueoPrueba} onClick={reintentar}>Reintentar publicación</Button>}
+            {fila.estado === 'generada' && <Button disabled={ocupado || soloLectura || (bloqueoPrueba && !aprobacionHabilitada) || !guardado} onClick={aprobar}>Aprobar esta versión</Button>}
+            {fila.estado === 'aprobada' && !fila.publicada && <Button disabled={ocupado || soloLectura || (bloqueoPrueba && !aprobacionHabilitada)} onClick={reintentar}>Reintentar publicación</Button>}
             <Button variant="outline" disabled={ocupado || soloLectura || bloqueoPrueba || (fila.estado !== 'generada' && fila.estado !== 'aprobada')} onClick={revision}>Necesita revisión</Button>
             <Button variant="secondary" disabled={ocupado || soloLectura || bloqueoPrueba || fila.estado !== 'aprobada' || !fila.publicada} onClick={enviada}>Marcar enviada</Button>
           </div>
