@@ -3,22 +3,36 @@ export const W = 1080, H = 1350, M = 90, BOX = 825, QP = 60, AP = 35, LH = QP * 
 export const COMILLAS = "M158.378 701.628V666.336C158.378 650.581 162.684 636.821 171.297 625.057C179.91 613.083 193.144 605.731 211 603V626.003C200.707 627.263 193.879 630.624 190.518 636.086C187.157 641.548 185.477 648.795 185.477 657.828L166.885 654.047H210.37V701.628H158.378ZM90 701.628V666.336C90 650.581 94.3064 636.821 102.919 625.057C111.532 613.083 124.766 605.731 142.622 603V626.003C132.329 627.263 125.502 630.624 122.141 636.086C118.78 641.548 117.099 648.795 117.099 657.828L98.5078 654.047H141.992V701.628H90Z"
 export type Encuadre = { zoom: number; px: number; py: number }
 export type Foto = { src: string; w: number; h: number; face?: [number, number, number, number] | null }
-export type Layout = { lines: string[]; base1: number; dy: number; label: string; img: { x: number; y: number; w: number; h: number } | null; avisos: string[]; bloqueos: string[]; vacia: boolean }
+export type Attr = { size: number; lines: string[]; y0: number; lh: number }
+export type Layout = { lines: string[]; base1: number; dy: number; label: string; attr: Attr; img: { x: number; y: number; w: number; h: number } | null; avisos: string[]; bloqueos: string[]; vacia: boolean }
 let ctx: CanvasRenderingContext2D | null = null
 function tw(t: string, px: number) {
   ctx ??= document.createElement('canvas').getContext('2d')!
   ctx.font = `700 ${px}px Mosvita`
   return ctx.measureText(t).width
 }
-function wrap(t: string) {
+function wrap(t: string, px = QP, max = BOX) {
   const out: string[] = []; let cur = ''
   for (const w of t.split(/\s+/).filter(Boolean)) {
     const x = (cur + ' ' + w).trim()
-    if (tw(x, QP) <= BOX) cur = x
+    if (tw(x, px) <= max) cur = x
     else { if (cur) out.push(cur); cur = w }
   }
   if (cur) out.push(cur)
   return out
+}
+// Atribucion: una linea a AP (diseno original, intacto) y, si no cabe, varias lineas y/o letra menor (AP_MIN) sin cambiar el texto.
+// Limites: primera linea >= debajo de la ultima linea de la quote; ultima linea <= borde inferior - margen. null = no cabe ni al minimo.
+export const AP_MIN = 28, AY = 1194, AY_MIN = BASE1 + 3 * LH + 70, AY_MAX = H - M
+export function layoutAtribucion(label: string): Attr | null {
+  if (!label) return { size: AP, lines: [label], y0: AY, lh: AP * 1.25 }
+  for (let size = AP; size >= AP_MIN; size--) {
+    const lines = wrap(label, size, W - AX - M), lh = size * 1.25
+    if (lines.some((l) => tw(l, size) > W - AX - M)) continue // una palabra sola no cabe: no se corta
+    const y0 = Math.min(AY, AY_MAX - (lines.length - 1) * lh)
+    if (y0 >= AY_MIN) return { size, lines, y0, lh }
+  }
+  return null
 }
 export function layout(quote: string, autor: string, cargo: string, foto: Foto | null, enc: Encuadre): Layout {
   const bloqueos: string[] = [], avisos: string[] = []
@@ -26,7 +40,8 @@ export function layout(quote: string, autor: string, cargo: string, foto: Foto |
   const base1 = BASE1 + 3 * LH - (Math.max(n, 1) - 1) * LH, dy = base1 - BASE1, comTop = CT + dy
   if (n && comTop < LOGOB + 40) bloqueos.push(`la quote es demasiado larga (${n} líneas) y choca con los logos`)
   const label = autor.trim() + (cargo.trim() ? ', ' + cargo.trim() : '')
-  if (tw(label, AP) > W - AX - M) bloqueos.push('nombre y cargo no caben en una línea')
+  const attr = layoutAtribucion(label)
+  if (!attr) bloqueos.push('nombre y cargo no caben en la pieza ni con la letra más pequeña legible')
   let img: Layout['img'] = null
   if (foto) {
     const k = Math.max(W / foto.w, H / foto.h) * enc.zoom, nw = foto.w * k, nh = foto.h * k
@@ -44,5 +59,5 @@ export function layout(quote: string, autor: string, cargo: string, foto: Foto |
     } else avisos.push('Revisa a ojo que el rostro quede completo y sin texto encima.')
     img = { x: -left, y: -top, w: nw, h: nh }
   }
-  return { lines, base1, dy, label, img, avisos, bloqueos, vacia: n === 0 }
+  return { lines, base1, dy, label, attr: attr ?? { size: AP, lines: [label], y0: AY, lh: AP * 1.25 }, img, avisos, bloqueos, vacia: n === 0 }
 }

@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { layout, type Foto } from './quoteLayout'
 import { QuotePieza } from './QuotePieza'
+import { mayusInicial } from './ingresoRpc'
 import type { Estado, FilaDB, QuotesBackend } from './backend'
 import { backendSupabase } from './backendSupabase'
 import { crearSimulado } from './backendSimulado'
@@ -171,7 +172,7 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
           {fila.fotos && fila.fotos.length > 0 && <div className="space-y-1.5 rounded-lg border p-2 text-sm"><Label htmlFor="fd">Foto de la charla (Drive)</Label>
             <select id="fd" className="w-full rounded border p-1" disabled={!editable} value={fila.foto_sel?.file_id ?? ''} onChange={(e) => { if (soloLectura) return; const v = e.target.value; void correr(async () => { const er = await (be.elegirFoto?.(fila.id, v) ?? Promise.resolve('Este modo no permite cambiar la foto')); if (er) setMsg({ tipo: 'error', texto: 'No se pudo cambiar la foto: ' + er }); else setMsg({ tipo: 'ok', texto: 'Foto cambiada. Hay que generar la pieza otra vez.' }); await recargar(fila.id) }) }}>{fila.fotos.map((p) => <option key={p.file_id} value={p.file_id}>{p.nombre}</option>)}</select>
             {fila.foto_sel && <p className="text-xs text-muted-foreground">Elegida por {fila.foto_sel.elegida_por === 'instinct' ? 'Instinct' : 'una persona'}: {fila.foto_sel.motivo}. Original en Drive sin cambios (archivo {fila.foto_sel.file_id}, carpeta {fila.foto_sel.folder_id}).</p>}</div>}
-          <div className="space-y-1.5"><Label htmlFor="q">Quote</Label><Textarea id="q" rows={4} disabled={!editable || bloqueoPrueba} value={fila.quote} placeholder="Escribe aquí la quote del speaker" onChange={(e) => editar({ quote: e.target.value })} onBlur={() => { if (!bloqueoPrueba) void guardar() }} /></div>
+          <div className="space-y-1.5"><Label htmlFor="q">Quote</Label><Textarea id="q" rows={4} disabled={!editable || bloqueoPrueba} value={fila.quote} placeholder="Escribe aquí la quote del speaker" onChange={(e) => editar({ quote: mayusInicial(e.target.value) })} onBlur={() => { if (!bloqueoPrueba) void guardar() }} /></div>
           <div className="space-y-1.5"><Label htmlFor="a">Nombre</Label><Input id="a" disabled value={fila.speaker} /></div>
           <div className="space-y-1.5"><Label htmlFor="c">Cargo, empresa</Label><Input id="c" disabled value={fila.cargo} /></div>
           <div className="space-y-1.5"><Label htmlFor="z">Encuadre: zoom {fila.enc.zoom.toFixed(2)} (arrastra la foto)</Label>
@@ -205,7 +206,7 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
           onPointerDown={(e) => { if (!editable || bloqueoPrueba) return; drag.current = { x: e.clientX, y: e.clientY, px: fila.enc.px, py: fila.enc.py }; e.currentTarget.setPointerCapture(e.pointerId) }}
           onPointerMove={(e) => { const g = drag.current; if (!g) return; const sc = 1080 / e.currentTarget.getBoundingClientRect().width; editar({ enc: { ...fila.enc, px: g.px + (e.clientX - g.x) * sc, py: g.py + (e.clientY - g.y) * sc } }) }}
           onPointerUp={() => { drag.current = null }}>
-          <div ref={svgBox} className={guardado ? 'hidden' : 'h-full w-full'}><QuotePieza L={L} fotoSrc={d ? fila.foto : null} /></div>
+          <div ref={svgBox} className={guardado ? 'hidden' : 'h-full w-full'}><QuotePieza L={L} fotoSrc={d ? fila.foto : null} plantilla={fila.plantilla} /></div>
           {guardado && <img src={guardado} alt="Pieza guardada" className="h-full w-full" />}
         </div>
       </div>
