@@ -3,6 +3,7 @@
 import type { FilaDB } from './backend'
 export interface IngresoQuote {
   speaker_id: string; sesion_id: string
+  plantilla?: 'v1' | 'sintesis' // 'sintesis' = parafrasis de apuntes (rotulo SINTESIS en vez de comillas); omitido = 'v1'
   original: string // texto tal como llego, no se edita
   propuesta: string // edicion propuesta (quote_propuesta)
   origen: { autor: string; canal: string; recibido_en: string; mensaje_id: string } // referencia recuperable

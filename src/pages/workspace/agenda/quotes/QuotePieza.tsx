@@ -2,7 +2,7 @@ import { COMILLAS, BASE1, LH, M, AX, QP, W, H, type Layout } from './quoteLayout
 
 const BASE = import.meta.env.BASE_URL + 'quotes-demo/'
 
-export function QuotePieza({ L, fotoSrc }: { L: Layout; fotoSrc: string | null }) {
+export function QuotePieza({ L, fotoSrc, plantilla }: { L: Layout; fotoSrc: string | null; plantilla?: string | null }) {
   const q = L.vacia ? (
     <text x={M} y={BASE1 + 3 * LH} className="ph" style={{ fontSize: QP }}>Escribe aquí la quote del speaker</text>
   ) : (
@@ -26,7 +26,9 @@ export function QuotePieza({ L, fotoSrc }: { L: Layout; fotoSrc: string | null }
       <rect y="287" width={W} height="1063" fill="url(#g)" style={{ mixBlendMode: 'multiply' }} />
       <image x="697" y="98" width="306" height="34.95" href={BASE + 'colombiatech.png'} />
       <image x="90" y="98" width="353" height={(353 * 856) / 5788} href={BASE + 'govtech.png'} />
-      <g transform={`translate(0 ${L.dy.toFixed(2)})`}><path d={COMILLAS} fill="#F3F4F6" /></g>
+      <g transform={`translate(0 ${L.dy.toFixed(2)})`}>
+        {plantilla === 'sintesis' ? <text x={M} y="660" className="a">SÍNTESIS DE SU INTERVENCIÓN</text> : <path d={COMILLAS} fill="#F3F4F6" />}
+      </g>
       {q}
       <rect x="90" y="1182.4" width="32.5" height="2.9" fill="#F3F4F6" />
       <text x={AX} y="1194" className={'a' + (L.label ? '' : ' ph')}>{L.label || 'Nombre del speaker, cargo'}</text>

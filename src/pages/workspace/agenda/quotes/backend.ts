@@ -12,6 +12,8 @@ export interface FilaDB {
   fotos?: FotoDrive[]; foto_sel?: FotoSel; foto_ref?: string
   /** ultima propuesta recibida (quote_propuesta); si difiere de la quote en uso hay una version nueva sin aplicar */
   propuesta?: string | null
+  /** epms.toolkit_quotes.plantilla_version: 'v1' (comillas, por defecto) | 'sintesis' (rotulo en lugar de comillas) */
+  plantilla?: string | null
 }
 export interface QuotesBackend {
   etiqueta: string

@@ -4,9 +4,11 @@ import type { IngresoQuote } from './ingreso'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export interface ClienteRpcDatos { rpcDatos(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: string | null }> }
 export type ResIngresoReal = { ok: true; quote_id: string } | { ok: false; paso: 'validacion' | 'rpc'; mensaje: string }
-export function argsTqIngresar(ing: IngresoQuote, fotoRef?: string | null, plantilla = 'v1'): Record<string, unknown> {
+// Solo la primera letra, solo en ingestas/ediciones nuevas; nunca se aplica al renderizar ni a filas existentes.
+export const mayusInicial = (s: string) => s.replace(/^(\s*)(\S)/u, (_, w, c) => w + c.toLocaleUpperCase('es'))
+export function argsTqIngresar(ing: IngresoQuote, fotoRef?: string | null, plantilla = ing.plantilla ?? 'v1'): Record<string, unknown> {
   return {
-    p_speaker: ing.speaker_id, p_sesion: ing.sesion_id, p_original: ing.original, p_propuesta: ing.propuesta,
+    p_speaker: ing.speaker_id, p_sesion: ing.sesion_id, p_original: ing.original, p_propuesta: mayusInicial(ing.propuesta),
     p_remitente: ing.origen.autor, p_canal: ing.origen.canal, p_recibido_en: ing.origen.recibido_en, p_mensaje_id: ing.origen.mensaje_id,
     p_foto_ref: fotoRef ?? null, p_plantilla: plantilla,
   }
@@ -19,6 +21,7 @@ export async function ingresarQuoteReal(c: ClienteRpcDatos, ing: IngresoQuote, f
   if (!ing.propuesta?.trim()) falta.push('propuesta')
   if (!o || !o.autor || !o.canal || !o.recibido_en || !o.mensaje_id) falta.push('origen (autor, canal, recibido_en, mensaje_id)')
   else if (Number.isNaN(Date.parse(o.recibido_en))) falta.push('recibido_en no es una fecha')
+  if (ing.plantilla && ing.plantilla !== 'v1' && ing.plantilla !== 'sintesis') falta.push('plantilla (v1 o sintesis)')
   if (falta.length) return { ok: false, paso: 'validacion', mensaje: 'falta o es invalido: ' + falta.join(', ') }
   const r = await c.rpcDatos('tq_ingresar', argsTqIngresar(ing, fotoRef))
   if (r.error) return { ok: false, paso: 'rpc', mensaje: r.error }

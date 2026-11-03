@@ -16,7 +16,7 @@ const EMAIL_RESPALDO = 'alex@colombiatechweek.co'
 export const backendSupabase: QuotesBackend = {
   etiqueta: 'Supabase real', simulado: false,
   async listar() {
-    const base = 'id,quote_texto,quote_propuesta,foto_ref,encuadre,estado,motivo_revision,candidato_hash,candidato_path,publicada_confirmada_en,delegada_hasta,speakers(nombre,cargo,empresa),sesiones(titulo)'
+    const base = 'id,quote_texto,quote_propuesta,plantilla_version,foto_ref,encuadre,estado,motivo_revision,candidato_hash,candidato_path,publicada_confirmada_en,delegada_hasta,speakers(nombre,cargo,empresa),sesiones(titulo)'
     // Con v10 aplicado trae las fotos ofrecidas y su seleccion; sin v10 (tablas inexistentes) sigue funcionando con la foto actual.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any[] | null, error: { message: string } | null
@@ -26,7 +26,7 @@ export const backendSupabase: QuotesBackend = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return Promise.all((data as any[]).map(async (r): Promise<FilaDB> => ({
       id: r.id, speaker: r.speakers?.nombre ?? '', cargo: [r.speakers?.cargo, r.speakers?.empresa].filter(Boolean).join(', '),
-      charla: r.sesiones?.titulo ?? '', quote: r.quote_texto, propuesta: r.quote_propuesta ?? null, estado: r.estado as Estado, motivo: r.motivo_revision ?? undefined,
+      charla: r.sesiones?.titulo ?? '', quote: r.quote_texto, propuesta: r.quote_propuesta ?? null, plantilla: r.plantilla_version ?? null, estado: r.estado as Estado, motivo: r.motivo_revision ?? undefined,
       foto: await resolverFoto(r.foto_ref), face: null, enc: r.encuadre, candidato_hash: r.candidato_hash, candidato_path: r.candidato_path, publicada: !!r.publicada_confirmada_en, delegada_hasta: r.delegada_hasta ?? null, ...mapearFotos(r.toolkit_quotes_fotos, r.toolkit_quotes_fotos_selecciones),
     })))
   },
