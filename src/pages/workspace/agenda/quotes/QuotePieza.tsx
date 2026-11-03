@@ -30,8 +30,8 @@ export function QuotePieza({ L, fotoSrc, plantilla }: { L: Layout; fotoSrc: stri
         {plantilla === 'sintesis' ? <text x={M} y="660" className="a">SÍNTESIS DE SU INTERVENCIÓN</text> : <path d={COMILLAS} fill="#F3F4F6" />}
       </g>
       {q}
-      <rect x="90" y="1182.4" width="32.5" height="2.9" fill="#F3F4F6" />
-      <text x={AX} y="1194" className={'a' + (L.label ? '' : ' ph')}>{L.label || 'Nombre del speaker, cargo'}</text>
+      <rect x="90" y={(L.attr.y0 - 11.6).toFixed(2)} width="32.5" height="2.9" fill="#F3F4F6" />
+      {(L.label ? L.attr.lines : ['Nombre del speaker, cargo']).map((l, i) => <text key={i} x={AX} y={(L.attr.y0 + i * L.attr.lh).toFixed(2)} className={'a' + (L.label ? '' : ' ph')} style={{ fontSize: L.attr.size }}>{l}</text>)}
       {L.bloqueos.length > 0 && !L.vacia && (
         <><rect width={W} height={H} fill="rgba(200,0,0,0.18)" /><text x="540" y="700" textAnchor="middle" fontSize="130" fill="#ff2d2d" fontFamily="Mosvita" fontWeight="700" transform="rotate(-25 540 700)">NO PUBLICAR</text></>
       )}
