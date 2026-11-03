@@ -2,7 +2,7 @@ import { COMILLAS, BASE1, LH, M, AX, QP, W, H, type Layout } from './quoteLayout
 
 const BASE = import.meta.env.BASE_URL + 'quotes-demo/'
 
-export function QuotePieza({ L, fotoSrc, plantilla }: { L: Layout; fotoSrc: string | null; plantilla?: string | null }) {
+export function QuotePieza({ L, fotoSrc, plantilla, logos }: { L: Layout; fotoSrc: string | null; plantilla?: string | null; logos?: 'blanco' | 'negro' }) {
   const q = L.vacia ? (
     <text x={M} y={BASE1 + 3 * LH} className="ph" style={{ fontSize: QP }}>Escribe aquí la quote del speaker</text>
   ) : (
@@ -24,8 +24,8 @@ export function QuotePieza({ L, fotoSrc, plantilla }: { L: Layout; fotoSrc: stri
         <><rect width={W} height={H} fill="#9aa0a6" /><text x="540" y="400" textAnchor="middle" fontSize="48" fill="#fff" fontFamily="Mosvita" fontWeight="700">FOTO DEL SPEAKER</text></>
       )}
       <rect y="287" width={W} height="1063" fill="url(#g)" style={{ mixBlendMode: 'multiply' }} />
-      <image x="697" y="98" width="306" height="34.95" href={BASE + 'colombiatech.png'} />
-      <image x="90" y="98" width="353" height={(353 * 856) / 5788} href={BASE + 'govtech.png'} />
+      <image x="697" y="98" width="306" height="34.95" href={BASE + (logos === 'negro' ? 'colombiatech-negro.png' : 'colombiatech.png')} />
+      <image x="90" y="98" width="353" height={(353 * 856) / 5788} href={BASE + (logos === 'negro' ? 'govtech-negro.png' : 'govtech.png')} />
       <g transform={`translate(0 ${L.dy.toFixed(2)})`}>
         {plantilla === 'sintesis' ? <text x={M} y="660" className="a">SÍNTESIS DE SU INTERVENCIÓN</text> : <path d={COMILLAS} fill="#F3F4F6" />}
       </g>
