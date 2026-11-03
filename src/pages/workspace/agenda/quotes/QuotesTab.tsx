@@ -58,7 +58,7 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
   const [, setFontsOk] = useState(false)
   const svgBox = useRef<HTMLDivElement>(null)
   const recargar = async (sel?: string) => {
-    try { const r = await be.listar(); setFilas(r); setSelId((s) => sel ?? (r.some((x) => x.id === s) ? s : r.find((x) => x.id === new URLSearchParams(window.location.search).get('quote'))?.id ?? r[0]?.id ?? '')) }
+    try { const r = await be.listar(); setFilas((prev) => r.map((x) => ({ ...x, logos: prev.find((p) => p.id === x.id)?.logos }))); setSelId((s) => sel ?? (r.some((x) => x.id === s) ? s : r.find((x) => x.id === new URLSearchParams(window.location.search).get('quote'))?.id ?? r[0]?.id ?? '')) }
     catch (e) { setMsg({ tipo: 'error', texto: 'No se pudieron cargar las quotes: ' + (e as Error).message }) }
   }
   useEffect(() => { void recargar() }, [be]) // eslint-disable-line
@@ -89,6 +89,8 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
   const local = (p: Partial<Fila>) => setFilas((fs) => fs.map((f) => (f.id === selId ? { ...f, ...p } : f)))
   // editar invalida candidato, aprobacion y publicacion (el trigger de la base hace lo mismo); se guarda al soltar/salir del campo
   const editar = (p: Partial<Fila>) => { if (bloqueoPrueba) return; local({ ...p, estado: 'pendiente', motivo: undefined, candidato_hash: null, candidato_path: null, publicada: false }) }
+  // Los logos solo cambian la pieza que se genera (no se escribe en la base): invalida el candidato local igual que una edicion.
+  const cambiarLogos = () => local({ logos: fila.logos === 'negro' ? 'blanco' : 'negro', estado: 'pendiente', motivo: undefined, candidato_hash: null, candidato_path: null, publicada: false })
   const guardar = async () => {
     if (soloLectura) return
     const e = await be.guardarContenido(fila.id, { quote: fila.quote, enc: fila.enc })
@@ -177,7 +179,8 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
           <div className="space-y-1.5"><Label htmlFor="c">Cargo, empresa</Label><Input id="c" disabled value={fila.cargo} /></div>
           <div className="space-y-1.5"><Label htmlFor="z">Encuadre: zoom {fila.enc.zoom.toFixed(2)} (arrastra la foto)</Label>
             <input id="z" type="range" min={1} max={2.5} step={0.01} disabled={!editable || bloqueoPrueba} value={fila.enc.zoom} className="w-full accent-[var(--secondary)]" onChange={(e) => editar({ enc: { ...fila.enc, zoom: +e.target.value } })} onPointerUp={() => { if (!bloqueoPrueba) void guardar() }} />
-            <Button variant="outline" size="sm" disabled={!editable || bloqueoPrueba} onClick={() => editar({ enc: { zoom: 1, px: 0, py: 0 } })}>Restablecer encuadre</Button></div>
+            <Button variant="outline" size="sm" disabled={!editable || bloqueoPrueba} onClick={() => editar({ enc: { zoom: 1, px: 0, py: 0 } })}>Restablecer encuadre</Button>
+            <Button variant="outline" size="sm" disabled={!editable || soloLectura} onClick={cambiarLogos}>Logos: {fila.logos === 'negro' ? 'negros' : 'blancos'} (cambiar)</Button></div>
           <p className={'rounded-lg p-2 text-sm ' + (L.bloqueos.length ? 'bg-red-50 text-red-900' : 'bg-muted')}>
             {L.vacia ? 'Escribe la quote: la vista previa se actualiza al teclear.' : L.bloqueos.length ? 'Necesita revisión: ' + L.bloqueos.join(', ') + '.' : `Cabe en la plantilla (${L.lines.length} ${L.lines.length === 1 ? 'línea' : 'líneas'}). ${L.avisos.join(' ')}`}
           </p>
@@ -206,7 +209,7 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
           onPointerDown={(e) => { if (!editable || bloqueoPrueba) return; drag.current = { x: e.clientX, y: e.clientY, px: fila.enc.px, py: fila.enc.py }; e.currentTarget.setPointerCapture(e.pointerId) }}
           onPointerMove={(e) => { const g = drag.current; if (!g) return; const sc = 1080 / e.currentTarget.getBoundingClientRect().width; editar({ enc: { ...fila.enc, px: g.px + (e.clientX - g.x) * sc, py: g.py + (e.clientY - g.y) * sc } }) }}
           onPointerUp={() => { drag.current = null }}>
-          <div ref={svgBox} className={guardado ? 'hidden' : 'h-full w-full'}><QuotePieza L={L} fotoSrc={d ? fila.foto : null} plantilla={fila.plantilla} /></div>
+          <div ref={svgBox} className={guardado ? 'hidden' : 'h-full w-full'}><QuotePieza L={L} fotoSrc={d ? fila.foto : null} plantilla={fila.plantilla} logos={fila.logos} /></div>
           {guardado && <img src={guardado} alt="Pieza guardada" className="h-full w-full" />}
         </div>
       </div>

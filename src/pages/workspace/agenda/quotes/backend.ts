@@ -14,6 +14,8 @@ export interface FilaDB {
   propuesta?: string | null
   /** epms.toolkit_quotes.plantilla_version: 'v1' (comillas, por defecto) | 'sintesis' (rotulo en lugar de comillas) */
   plantilla?: string | null
+  /** solo en pantalla (no se guarda en la base): version de logos de la pieza al generar; por defecto 'blanco' */
+  logos?: 'blanco' | 'negro'
 }
 export interface QuotesBackend {
   etiqueta: string
