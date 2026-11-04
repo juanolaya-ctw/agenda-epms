@@ -18,6 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import {
   asignarSpeaker,
   buscarSpeakers,
@@ -38,10 +39,23 @@ function iniciales(nombre: string): string {
     .join('')
 }
 
-function SpeakerIdentidad({ speaker }: { speaker: SpeakerLite }) {
+function SpeakerIdentidad({
+  speaker,
+  onClick,
+}: {
+  speaker: SpeakerLite
+  onClick?: () => void
+}) {
   const detalle = [speaker.cargo, speaker.empresa].filter(Boolean).join(' · ')
+  const Raiz = onClick ? 'button' : 'div'
   return (
-    <div className="flex min-w-0 max-w-full items-center gap-2">
+    <Raiz
+      {...(onClick ? { type: 'button' as const, onClick } : {})}
+      className={cn(
+        'flex min-w-0 max-w-full items-center gap-2 text-left',
+        onClick && 'cursor-pointer hover:underline',
+      )}
+    >
       <Avatar size="sm">
         {speaker.fotoUrl && <AvatarImage src={speaker.fotoUrl} alt={speaker.nombre} />}
         <AvatarFallback>{iniciales(speaker.nombre)}</AvatarFallback>
@@ -61,7 +75,7 @@ function SpeakerIdentidad({ speaker }: { speaker: SpeakerLite }) {
           </TooltipProvider>
         )}
       </div>
-    </div>
+    </Raiz>
   )
 }
 
@@ -70,6 +84,7 @@ type SpeakersAsignadosProps = {
   capacidad: number
   onChanged: () => void
   readOnly?: boolean
+  onVerSpeaker?: (speaker: SpeakerLite) => void
 }
 
 export function SpeakersAsignados({
@@ -77,6 +92,7 @@ export function SpeakersAsignados({
   capacidad,
   onChanged,
   readOnly = false,
+  onVerSpeaker,
 }: SpeakersAsignadosProps) {
   const [asignados, setAsignados] = useState<SesionSpeaker[]>([])
   const [cargando, setCargando] = useState(false)
@@ -218,7 +234,10 @@ export function SpeakersAsignados({
                 className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-border px-2 py-1.5"
               >
                 <div className="min-w-0 flex-1">
-                  <SpeakerIdentidad speaker={row} />
+                  <SpeakerIdentidad
+                    speaker={row}
+                    onClick={onVerSpeaker && (() => onVerSpeaker(row))}
+                  />
                 </div>
                 {readOnly ? (
                   <span className="shrink-0 text-xs text-muted-foreground">

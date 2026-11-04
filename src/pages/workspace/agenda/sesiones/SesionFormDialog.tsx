@@ -34,6 +34,10 @@ import {
   type SesionFormValues,
 } from '@/hooks/useSesionesData'
 import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { SpeakerPerfilDialog } from '../speakers/SpeakerPerfilDialog'
+import type { Speaker } from '@/hooks/useSpeakersData'
+import type { SpeakerLite } from '@/hooks/useSesionesData'
 import { SpeakersAsignados } from './SpeakersAsignados'
 import { estadoDotClass } from './badges'
 
@@ -142,6 +146,30 @@ export function SesionFormDialog({
   const [saving, setSaving] = useState(false)
   const [savingColor, setSavingColor] = useState(false)
   const isView = mode === 'view'
+  const { workspace } = useWorkspace()
+  const [speakerPerfil, setSpeakerPerfil] = useState<Speaker | null>(null)
+  // El perfil completo lo trae SpeakerPerfilDialog por id; aquí solo los datos básicos.
+  const verSpeaker = (s: SpeakerLite) =>
+    setSpeakerPerfil({
+      id: s.id,
+      nombre: s.nombre,
+      cargo: s.cargo,
+      empresa: s.empresa,
+      email: s.email,
+      foto_url: s.fotoUrl,
+      pais: null,
+      ciudad: null,
+      telefono: null,
+      linkedin_url: null,
+      tipo_documento: null,
+      numero_documento: null,
+      email_secundario: null,
+      bio: null,
+      fuente: null,
+      toolkit_slug: null,
+      sesionesEnEvento: 0,
+      eventosParticipados: [],
+    })
 
   useEffect(() => {
     if (open) {
@@ -229,6 +257,7 @@ export function SesionFormDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[832px] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto bg-white p-0">
         <div className="min-w-0 px-6">
@@ -281,6 +310,7 @@ export function SesionFormDialog({
                 capacidad={capacidadNum}
                 onChanged={onSaved}
                 readOnly
+                onVerSpeaker={verSpeaker}
               />
 
               <div className="sticky bottom-0 z-10 -mx-6 flex flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-row sm:justify-end">
@@ -552,6 +582,7 @@ export function SesionFormDialog({
                 sesionId={sesion?.id ?? null}
                 capacidad={capacidadNum}
                 onChanged={onSaved}
+                onVerSpeaker={verSpeaker}
               />
 
               <div className="sticky bottom-0 z-10 -mx-6 flex flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-row sm:justify-end">
@@ -571,5 +602,15 @@ export function SesionFormDialog({
         </div>
       </DialogContent>
     </Dialog>
+    <SpeakerPerfilDialog
+      open={speakerPerfil !== null}
+      onOpenChange={(o) => !o && setSpeakerPerfil(null)}
+      mode="edit"
+      speaker={speakerPerfil}
+      eventoId={workspace?.id ?? ''}
+      onSaved={onSaved}
+      readOnly={isView}
+    />
+    </>
   )
 }
