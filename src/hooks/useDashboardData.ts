@@ -22,6 +22,7 @@ export type DashboardKpiKey =
   | 'requestsPendientes'
   | 'requestsEnRevision'
   | 'speakersTotales'
+  | 'speakersEnSesion'
   | 'sinSesionAsignada'
   | 'toolkitEnviado'
   | 'publicaronFase1'
@@ -33,6 +34,7 @@ export type DashboardData = {
   requestsPendientes: number
   requestsEnRevision: number
   speakersTotales: number
+  speakersEnSesion: number
   sinSesionAsignada: number
   toolkitEnviado: number
   publicaronFase1: number
@@ -55,6 +57,7 @@ const EMPTY: Omit<DashboardData, 'loading'> = {
   requestsPendientes: 0,
   requestsEnRevision: 0,
   speakersTotales: 0,
+  speakersEnSesion: 0,
   sinSesionAsignada: 0,
   toolkitEnviado: 0,
   publicaronFase1: 0,
@@ -427,6 +430,8 @@ function aplicarConteosIndependientes(
   if (speakersAsignados.error) {
     kpiErrors.sinSesionAsignada = speakersAsignados.error
   }
+  const errorEnSesion = speakersAsignados.error ?? speakersGlobales.error
+  if (errorEnSesion) kpiErrors.speakersEnSesion = errorEnSesion
 
   const speakersTotales = speakersGlobales.error ? 0 : speakersGlobales.value
   const sinSesionAsignada =
@@ -447,6 +452,7 @@ function aplicarConteosIndependientes(
   return {
     ...base,
     speakersTotales,
+    speakersEnSesion: errorEnSesion ? 0 : speakersAsignados.value,
     sinSesionAsignada,
     toolkitEnviado: checkboxCounts.toolkit.error ? 0 : checkboxCounts.toolkit.value,
     publicaronFase1: checkboxCounts.publicaron.error
@@ -561,6 +567,7 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
       requestsPendientes: pendientes.value,
       requestsEnRevision: revision.value,
       speakersTotales: 0,
+      speakersEnSesion: 0,
       sinSesionAsignada: 0,
       toolkitEnviado: 0,
       publicaronFase1: 0,

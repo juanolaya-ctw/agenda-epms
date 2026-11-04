@@ -22,7 +22,7 @@ const KPIS: Kpi[] = [
 ]
 
 const SPEAKER_KPIS: Kpi[] = [
-  { key: 'speakersTotales', label: 'Speakers totales' },
+  { key: 'speakersEnSesion', label: 'Speakers en sesión', conTotal: true },
   { key: 'sinSesionAsignada', label: 'Sin sesión asignada' },
   { key: 'toolkitEnviado', label: 'Toolkit enviado', conTotal: true },
   { key: 'publicaronFase1', label: 'Publicaron Fase 1', conTotal: true },

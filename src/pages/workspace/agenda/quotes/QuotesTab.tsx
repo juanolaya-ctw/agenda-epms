@@ -53,6 +53,7 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
   const [filas, setFilas] = useState<Fila[]>([])
   const [selId, setSelId] = useState('')
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [diaSel, setDiaSel] = useState<string | null>(null) // null = automatico: hoy si hay quotes de hoy, si no todos
   const [ocupado, setOcupado] = useState(false)
   const [guardado, setGuardado] = useState<string | null>(null)
   const [, setFontsOk] = useState(false)
@@ -143,6 +144,12 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
     const r = await be.rpc.rpc('tq_enviada', { p_id: fila.id })
     setMsg(r.error ? { tipo: 'error', texto: 'No se pudo marcar enviada: ' + r.error } : null); await recargar(fila.id)
   })
+  const iso = (d: Date) => d.toLocaleDateString('en-CA')
+  const hoy = iso(new Date()); const ayer = iso(new Date(Date.now() - 864e5))
+  const dias = [...new Set(filas.map((f) => f.dia).filter((x): x is string => !!x))].sort()
+  const diaEf = diaSel ?? (dias.includes(hoy) ? hoy : 'todos')
+  const visibles = diaEf === 'todos' ? filas : filas.filter((f) => f.dia === diaEf)
+  const etiquetaDia = (d: string) => { const [, m, dd] = d.split('-'); return `${+dd} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+m - 1]}${d === hoy ? ' (hoy)' : d === ayer ? ' (ayer)' : ''}` }
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
   return (
     <div className="space-y-4 p-6">
@@ -153,10 +160,13 @@ export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
       {soloLectura && <p className="rounded-lg bg-yellow-50 p-2 text-sm text-yellow-900">Modo solo lectura: los botones de generar, aprobar, publicar y enviar están desactivados.</p>}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)_minmax(0,432px)]">
         <div className="rounded-xl border">
+          <div className="flex flex-wrap gap-2 border-b p-2">
+            {['todos', ...dias].map((d) => <Button key={d} size="sm" variant={diaEf === d ? 'default' : 'outline'} onClick={() => setDiaSel(d)}>{d === 'todos' ? 'Todos' : etiquetaDia(d)}</Button>)}
+          </div>
           <Table>
             <TableHeader><TableRow><TableHead>Speaker</TableHead><TableHead>Charla</TableHead><TableHead>Estado</TableHead></TableRow></TableHeader>
             <TableBody>
-              {filas.map((f) => (
+              {visibles.map((f) => (
                 <TableRow key={f.id} data-state={f.id === selId ? 'selected' : undefined} className="cursor-pointer" onClick={() => setSelId(f.id)}>
                   <TableCell className="font-medium">{f.speaker}</TableCell>
                   <TableCell className="text-muted-foreground">{f.charla}</TableCell>

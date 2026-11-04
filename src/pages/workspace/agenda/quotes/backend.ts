@@ -8,6 +8,8 @@ export interface FilaDB {
   foto: string; face: [number, number, number, number] | null; enc: Encuadre
   candidato_hash: string | null; candidato_path: string | null; publicada: boolean
   delegada_hasta?: string | null
+  /** dia de la sesion (YYYY-MM-DD), para filtrar la lista */
+  dia?: string | null
   ingreso?: { speaker_id: string; sesion_id: string; original: string; origen: IngresoQuote['origen'] }
   fotos?: FotoDrive[]; foto_sel?: FotoSel; foto_ref?: string
   /** ultima propuesta recibida (quote_propuesta); si difiere de la quote en uso hay una version nueva sin aplicar */
