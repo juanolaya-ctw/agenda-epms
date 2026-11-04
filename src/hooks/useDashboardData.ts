@@ -212,14 +212,14 @@ async function countSpeakersAsignados(eventoId: string) {
     .eq('sesion.slot.escenario.evento_id', eventoId)
     .limit(10000)
 
-  if (error) return { value: 0, error: queryErrorMessage(error) }
+  if (error) return { value: 0, ids: new Set<string>(), error: queryErrorMessage(error) }
 
   const ids = new Set<string>()
   for (const row of data ?? []) {
     const speakerId = row.speaker_id as string | null
     if (speakerId) ids.add(speakerId)
   }
-  return { value: ids.size, error: null as string | null }
+  return { value: ids.size, ids, error: null as string | null }
 }
 
 type CheckboxCounts = {
@@ -228,7 +228,17 @@ type CheckboxCounts = {
   fotos: { value: number; error: string | null }
 }
 
-async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts> {
+// Solo cuenta speakers asignados a alguna sesión del evento, para que numerador y
+// denominador (speakersEnSesion) salgan del mismo conjunto.
+async function countCheckboxPorNombre(
+  eventoId: string,
+  asignadosP: ReturnType<typeof countSpeakersAsignados>,
+): Promise<CheckboxCounts> {
+  const asignados = await asignadosP
+  if (asignados.error) {
+    const e = { value: 0, error: asignados.error }
+    return { toolkit: e, publicaron: e, fotos: e }
+  }
   const { data: props, error: propsError } = await supabase
     .from('propiedades_custom')
     .select('id, nombre')
@@ -283,7 +293,7 @@ async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts>
   const fotos = new Set<string>()
   for (const row of valores ?? []) {
     const speakerId = row.speaker_id as string | null
-    if (!speakerId || !esValorTrue(row.valor)) continue
+    if (!speakerId || !asignados.ids.has(speakerId) || !esValorTrue(row.valor)) continue
     if (row.propiedad_id === toolkitId) toolkit.add(speakerId)
     if (row.propiedad_id === publicaronId) publicaron.add(speakerId)
     if (row.propiedad_id === fotosId) fotos.add(speakerId)
@@ -467,6 +477,7 @@ function aplicarConteosIndependientes(
 }
 
 async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loading'>> {
+  const asignadosP = countSpeakersAsignados(eventoId)
   // Independientes del grafo de sesiones: conteos de speakers y checkboxes.
   const [
     graph,
@@ -479,8 +490,8 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
     loadEventGraph(eventoId),
     fetchEstadosQueCuentan(eventoId),
     countSpeakersGlobales(),
-    countSpeakersAsignados(eventoId),
-    countCheckboxPorNombre(eventoId),
+    asignadosP,
+    countCheckboxPorNombre(eventoId, asignadosP),
     fetchSesionesPorEscenario(eventoId),
   ])
 
@@ -661,16 +672,19 @@ export function useDashboardData(eventoId: string | null | undefined): Dashboard
     // Tiempo real: cualquier checkbox marcado/desmarcado recarga los conteos
     // (sin skeleton). Requiere epms.valores_propiedades en supabase_realtime.
     let timer: ReturnType<typeof setTimeout> | undefined
+    const alCambiar = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => void recargar(), 500) // agrupa ráfagas de cambios
+    }
     const channel = supabase
       .channel(`dashboard-valores-${eventoId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'epms', table: 'valores_propiedades' },
-        () => {
-          clearTimeout(timer)
-          timer = setTimeout(() => void recargar(), 500) // agrupa ráfagas de clics
-        },
+        alCambiar,
       )
+      .on('postgres_changes', { event: '*', schema: 'epms', table: 'sesion_speakers' }, alCambiar)
+      .on('postgres_changes', { event: '*', schema: 'epms', table: 'speakers' }, alCambiar)
       .subscribe()
 
     return () => {

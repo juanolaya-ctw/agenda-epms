@@ -143,7 +143,13 @@ export function DashboardTab() {
             key={kpi.key}
             label={kpi.label}
             value={data[kpi.key]}
-            total={kpi.conTotal ? data.speakersTotales : undefined}
+            total={
+              !kpi.conTotal
+                ? undefined
+                : kpi.key === 'speakersEnSesion'
+                  ? data.speakersTotales // pool global
+                  : data.speakersEnSesion // avance sobre los confirmados en sesión
+            }
             error={data.kpiErrors[kpi.key]}
           />
         ))}
