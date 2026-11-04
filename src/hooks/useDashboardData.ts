@@ -25,6 +25,7 @@ export type DashboardKpiKey =
   | 'sinSesionAsignada'
   | 'toolkitEnviado'
   | 'publicaronFase1'
+  | 'fotosEnviadas'
 
 export type DashboardData = {
   totalSesiones: number
@@ -35,6 +36,7 @@ export type DashboardData = {
   sinSesionAsignada: number
   toolkitEnviado: number
   publicaronFase1: number
+  fotosEnviadas: number
   loading: boolean
   error: string | null
   kpiErrors: Partial<Record<DashboardKpiKey, string>>
@@ -45,6 +47,7 @@ export type DashboardData = {
 
 const PROP_TOOLKIT_FASE1 = 'Envio toolkit Soy Speaker'
 const PROP_PUBLICARON_F1 = 'Speakers que publicaron F1'
+const PROP_ENVIO_FOTOS = 'Envio Fotos'
 
 const EMPTY: Omit<DashboardData, 'loading'> = {
   totalSesiones: 0,
@@ -55,6 +58,7 @@ const EMPTY: Omit<DashboardData, 'loading'> = {
   sinSesionAsignada: 0,
   toolkitEnviado: 0,
   publicaronFase1: 0,
+  fotosEnviadas: 0,
   error: null,
   kpiErrors: {},
   sesionesAbiertas: [],
@@ -218,6 +222,7 @@ async function countSpeakersAsignados(eventoId: string) {
 type CheckboxCounts = {
   toolkit: { value: number; error: string | null }
   publicaron: { value: number; error: string | null }
+  fotos: { value: number; error: string | null }
 }
 
 async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts> {
@@ -226,13 +231,14 @@ async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts>
     .select('id, nombre')
     .eq('evento_id', eventoId)
     .eq('entidad', 'speaker')
-    .in('nombre', [PROP_TOOLKIT_FASE1, PROP_PUBLICARON_F1])
+    .in('nombre', [PROP_TOOLKIT_FASE1, PROP_PUBLICARON_F1, PROP_ENVIO_FOTOS])
 
   if (propsError) {
     const msg = queryErrorMessage(propsError)
     return {
       toolkit: { value: 0, error: msg },
       publicaron: { value: 0, error: msg },
+      fotos: { value: 0, error: msg },
     }
   }
 
@@ -241,7 +247,8 @@ async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts>
   )
   const toolkitId = byNombre.get(PROP_TOOLKIT_FASE1)
   const publicaronId = byNombre.get(PROP_PUBLICARON_F1)
-  const propiedadIds = [toolkitId, publicaronId].filter(
+  const fotosId = byNombre.get(PROP_ENVIO_FOTOS)
+  const propiedadIds = [toolkitId, publicaronId, fotosId].filter(
     (id): id is string => Boolean(id),
   )
 
@@ -249,6 +256,7 @@ async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts>
     return {
       toolkit: { value: 0, error: null },
       publicaron: { value: 0, error: null },
+      fotos: { value: 0, error: null },
     }
   }
 
@@ -263,21 +271,25 @@ async function countCheckboxPorNombre(eventoId: string): Promise<CheckboxCounts>
     return {
       toolkit: { value: 0, error: msg },
       publicaron: { value: 0, error: msg },
+      fotos: { value: 0, error: msg },
     }
   }
 
   const toolkit = new Set<string>()
   const publicaron = new Set<string>()
+  const fotos = new Set<string>()
   for (const row of valores ?? []) {
     const speakerId = row.speaker_id as string | null
     if (!speakerId || !esValorTrue(row.valor)) continue
     if (row.propiedad_id === toolkitId) toolkit.add(speakerId)
     if (row.propiedad_id === publicaronId) publicaron.add(speakerId)
+    if (row.propiedad_id === fotosId) fotos.add(speakerId)
   }
 
   return {
     toolkit: { value: toolkit.size, error: null },
     publicaron: { value: publicaron.size, error: null },
+    fotos: { value: fotos.size, error: null },
   }
 }
 
@@ -405,6 +417,9 @@ function aplicarConteosIndependientes(
   if (checkboxCounts.publicaron.error) {
     kpiErrors.publicaronFase1 = checkboxCounts.publicaron.error
   }
+  if (checkboxCounts.fotos.error) {
+    kpiErrors.fotosEnviadas = checkboxCounts.fotos.error
+  }
   if (speakersGlobales.error) {
     kpiErrors.speakersTotales = speakersGlobales.error
     kpiErrors.sinSesionAsignada = speakersGlobales.error
@@ -425,6 +440,7 @@ function aplicarConteosIndependientes(
     speakersGlobales.error ??
     checkboxCounts.toolkit.error ??
     checkboxCounts.publicaron.error ??
+    checkboxCounts.fotos.error ??
     escenarios.error ??
     null
 
@@ -436,6 +452,7 @@ function aplicarConteosIndependientes(
     publicaronFase1: checkboxCounts.publicaron.error
       ? 0
       : checkboxCounts.publicaron.value,
+    fotosEnviadas: checkboxCounts.fotos.error ? 0 : checkboxCounts.fotos.value,
     kpiErrors,
     sesionesPorEscenario: escenarios.rows,
     sesionesPorEscenarioError: escenarios.error,
@@ -547,6 +564,7 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
       sinSesionAsignada: 0,
       toolkitEnviado: 0,
       publicaronFase1: 0,
+      fotosEnviadas: 0,
       error: firstError,
       kpiErrors,
       sesionesAbiertas,
@@ -627,12 +645,31 @@ export function useDashboardData(eventoId: string | null | undefined): Dashboard
     let cancelled = false
     setState((prev) => ({ ...prev, loading: true, error: null, kpiErrors: {} }))
 
-    loadDashboard(eventoId).then((next) => {
-      if (!cancelled) setState({ ...next, loading: false })
-    })
+    const recargar = () =>
+      loadDashboard(eventoId).then((next) => {
+        if (!cancelled) setState({ ...next, loading: false })
+      })
+    void recargar()
+
+    // Tiempo real: cualquier checkbox marcado/desmarcado recarga los conteos
+    // (sin skeleton). Requiere epms.valores_propiedades en supabase_realtime.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const channel = supabase
+      .channel(`dashboard-valores-${eventoId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'epms', table: 'valores_propiedades' },
+        () => {
+          clearTimeout(timer)
+          timer = setTimeout(() => void recargar(), 500) // agrupa ráfagas de clics
+        },
+      )
+      .subscribe()
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
+      void supabase.removeChannel(channel)
     }
   }, [eventoId])
 

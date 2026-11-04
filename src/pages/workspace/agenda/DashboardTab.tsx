@@ -7,6 +7,7 @@ type Kpi = {
   key: DashboardKpiKey
   label: string
   accentWhenPositive?: boolean
+  conTotal?: boolean
 }
 
 const KPIS: Kpi[] = [
@@ -23,8 +24,9 @@ const KPIS: Kpi[] = [
 const SPEAKER_KPIS: Kpi[] = [
   { key: 'speakersTotales', label: 'Speakers totales' },
   { key: 'sinSesionAsignada', label: 'Sin sesión asignada' },
-  { key: 'toolkitEnviado', label: 'Toolkit enviado' },
-  { key: 'publicaronFase1', label: 'Publicaron Fase 1' },
+  { key: 'toolkitEnviado', label: 'Toolkit enviado', conTotal: true },
+  { key: 'publicaronFase1', label: 'Publicaron Fase 1', conTotal: true },
+  { key: 'fotosEnviadas', label: 'Fotos enviadas', conTotal: true },
 ]
 
 function formatHora(hora: string): string {
@@ -74,10 +76,12 @@ function KpiCard({
 function MetricCard({
   label,
   value,
+  total,
   error,
 }: {
   label: string
   value: number
+  total?: number
   error?: string
 }) {
   return (
@@ -85,7 +89,14 @@ function MetricCard({
       {error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : (
-        <p className="text-4xl font-semibold text-foreground">{value}</p>
+        <p className="text-4xl font-bold text-foreground">
+          {value}
+          {total !== undefined && (
+            <span className="text-2xl font-light text-muted-foreground">
+              /{total}
+            </span>
+          )}
+        </p>
       )}
       <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         {label}
@@ -126,12 +137,13 @@ export function DashboardTab() {
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
         {SPEAKER_KPIS.map((kpi) => (
           <MetricCard
             key={kpi.key}
             label={kpi.label}
             value={data[kpi.key]}
+            total={kpi.conTotal ? data.speakersTotales : undefined}
             error={data.kpiErrors[kpi.key]}
           />
         ))}
