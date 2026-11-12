@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ESTADO_ALTA_NUEVA,
+  buildEventoSpeakerEstadoPatch,
+  type ActualizarEstadoEventoSpeakerOpts,
   type EventoSpeakerEstado,
   isEventoSpeakerEstado,
 } from '@/lib/eventoSpeakerEstado'
@@ -447,25 +449,34 @@ export async function asociarSpeakerAEvento(
   return { created: true }
 }
 
+export type ActualizarEstadoResultado =
+  | { ok: true }
+  | { ok: false; reason: 'sin_membresia' }
+
 export async function actualizarEstadoEventoSpeaker(
   eventoId: string,
   speakerId: string,
   estado: EventoSpeakerEstado,
-  estadoMotivo?: string | null,
-): Promise<void> {
+  opts?: ActualizarEstadoEventoSpeakerOpts,
+): Promise<ActualizarEstadoResultado> {
   if (!isUuid(eventoId) || !isUuid(speakerId)) {
     throw new Error('eventoId y speakerId deben ser UUID')
   }
-  const { error } = await supabase
+  const patch = {
+    ...buildEventoSpeakerEstadoPatch(estado, opts),
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
     .from('evento_speakers')
-    .update({
-      estado,
-      estado_motivo: estadoMotivo ?? null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(patch)
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
+    .select('speaker_id')
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    return { ok: false, reason: 'sin_membresia' }
+  }
+  return { ok: true }
 }
 
 export type DesasociarResultado =

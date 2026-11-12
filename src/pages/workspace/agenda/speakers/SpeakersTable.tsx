@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Eye, Flag, Link, Pencil, Trash2, UserPlus } from 'lucide-react'
+import { Eye, Flag, Link, Pencil, Trash2, UserMinus, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -47,6 +47,7 @@ import {
   type FiltroColumna,
 } from '@/components/table-filters/TableFilters'
 import { AsociarSpeakerDialog } from './AsociarSpeakerDialog'
+import { DesasociarSpeakerDialog } from './DesasociarSpeakerDialog'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
@@ -145,6 +146,9 @@ export function SpeakersTable({
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
   const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
+  const [speakerADesasociar, setSpeakerADesasociar] = useState<Speaker | null>(
+    null,
+  )
   const [speakerAReportar, setSpeakerAReportar] = useState<Speaker | null>(null)
   const [filtros, setFiltros] = useState<FiltroActivo[]>([])
   const [storedOrder, setStoredOrder] = useState<string[] | null>(
@@ -501,11 +505,17 @@ export function SpeakersTable({
                   if (!isEventoSpeakerEstado(v)) return
                   void (async () => {
                     try {
-                      await actualizarEstadoEventoSpeaker(
+                      const result = await actualizarEstadoEventoSpeaker(
                         eventoId,
                         sp.id,
                         v as EventoSpeakerEstado,
                       )
+                      if (!result.ok) {
+                        toast.error(
+                          'No se pudo actualizar: el speaker no está asociado a este evento.',
+                        )
+                        return
+                      }
                       refetch()
                     } catch (err) {
                       toast.error(
@@ -784,14 +794,26 @@ export function SpeakersTable({
                   <Flag />
                 </Button>
               ) : (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Eliminar ${sp.nombre}`}
-                  onClick={() => setSpeakerAEliminar(sp)}
-                >
-                  <Trash2 />
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Quitar ${sp.nombre} del evento`}
+                    title="Quitar del evento (conserva seguimiento)"
+                    onClick={() => setSpeakerADesasociar(sp)}
+                  >
+                    <UserMinus />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Eliminar ${sp.nombre} del CRM global`}
+                    title="Eliminar del CRM global"
+                    onClick={() => setSpeakerAEliminar(sp)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </>
               )}
             </div>
           </TableCell>
@@ -890,6 +912,16 @@ export function SpeakersTable({
           eventoId={eventoId}
           onOpenChange={(open) => !open && setSpeakerAEliminar(null)}
           onDeleted={refetch}
+        />
+      )}
+
+      {!readOnly && (
+        <DesasociarSpeakerDialog
+          open={!!speakerADesasociar}
+          speaker={speakerADesasociar}
+          eventoId={eventoId}
+          onOpenChange={(open) => !open && setSpeakerADesasociar(null)}
+          onDone={refetch}
         />
       )}
 

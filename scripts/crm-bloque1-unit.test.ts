@@ -7,6 +7,7 @@ import { describe, it } from 'node:test'
 import {
   ESTADO_ALTA_NUEVA,
   ESTADO_LEGACY,
+  buildEventoSpeakerEstadoPatch,
   isEventoSpeakerEstado,
 } from '../src/lib/eventoSpeakerEstado'
 import {
@@ -32,5 +33,27 @@ describe('bloque1 estado', () => {
     assert.equal(ESTADO_LEGACY, 'SIN_CLASIFICAR')
     assert.equal(ESTADO_ALTA_NUEVA, 'PENDIENTE_CONTACTAR')
     assert.ok(isEventoSpeakerEstado('CONFIRMADO'))
+  })
+
+  it('patch conserva estado_motivo si no se pide', () => {
+    const patch = buildEventoSpeakerEstadoPatch('CONTACTADO')
+    assert.deepEqual(patch, { estado: 'CONTACTADO' })
+    assert.equal('estado_motivo' in patch, false)
+
+    const patchOptsVacios = buildEventoSpeakerEstadoPatch('CONTACTADO', {})
+    assert.equal('estado_motivo' in patchOptsVacios, false)
+  })
+
+  it('patch borra o setea estado_motivo solo si es explícito', () => {
+    assert.deepEqual(
+      buildEventoSpeakerEstadoPatch('DESCARTADO', { estadoMotivo: null }),
+      { estado: 'DESCARTADO', estado_motivo: null },
+    )
+    assert.deepEqual(
+      buildEventoSpeakerEstadoPatch('DESCARTADO', {
+        estadoMotivo: 'fuera de alcance',
+      }),
+      { estado: 'DESCARTADO', estado_motivo: 'fuera de alcance' },
+    )
   })
 })
