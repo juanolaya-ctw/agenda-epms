@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { isUuid } from '@/lib/isUuid'
 import { supabase } from '@/lib/supabase'
 
 export type Speaker = {
@@ -169,22 +170,35 @@ const SPEAKER_COLS =
   'id, foto_url, nombre, cargo, empresa, pais, email, fuente, toolkit_slug, ' +
   'telefono, linkedin_url, ciudad, tipo_documento, numero_documento, email_secundario'
 
-// Embed a-uno para contar las sesiones del speaker EN ESTE EVENTO. Sin
-// !inner en la raíz: los speakers con cero sesiones siguen apareciendo.
+// Solo speakers con al menos una sesión en ESTE evento (!inner + filtro).
+// El directorio global sigue en loadSpeakersGlobal / CRM.
 const SPEAKERS_TABLA_SELECT = `
   ${SPEAKER_COLS},
-  sesion_speakers (
-    sesion:sesiones (
-      slot:slots (
-        escenario:escenarios ( evento_id )
+  sesion_speakers!inner (
+    sesion:sesiones!inner (
+      slot:slots!inner (
+        escenario:escenarios!inner ( evento_id )
       )
     )
   )
 `
 
 async function loadSpeakers(eventoId: string): Promise<LoadResult> {
+  if (!isUuid(eventoId)) {
+    return {
+      speakers: [],
+      propiedades: [],
+      valoresPorSpeaker: {},
+      error: 'El workspace no tiene un id de evento válido (UUID).',
+    }
+  }
+
   const [spRes, pv] = await Promise.all([
-    supabase.from('speakers').select(SPEAKERS_TABLA_SELECT).order('nombre'),
+    supabase
+      .from('speakers')
+      .select(SPEAKERS_TABLA_SELECT)
+      .eq('sesion_speakers.sesion.slot.escenario.evento_id', eventoId)
+      .order('nombre'),
     loadPropiedadesYValores(eventoId),
   ])
 
@@ -197,8 +211,8 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     }
   }
 
-  const speakers: Speaker[] = ((spRes.data ?? []) as SpeakerTablaRow[]).map(
-    (r) => {
+  const speakers: Speaker[] = ((spRes.data ?? []) as SpeakerTablaRow[])
+    .map((r) => {
       const rels = Array.isArray(r.sesion_speakers) ? r.sesion_speakers : []
       let sesionesEnEvento = 0
       for (const rel of rels) {
@@ -211,8 +225,8 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
         sesionesEnEvento,
         eventosParticipados: [],
       })
-    },
-  )
+    })
+    .filter((sp) => sp.sesionesEnEvento > 0)
 
   return {
     speakers,
@@ -511,6 +525,14 @@ export function useSpeakersData(
   useEffect(() => {
     if (!global && !eventoId) {
       setState({ ...EMPTY_STATE, loading: false })
+      return
+    }
+    if (!global && !isUuid(eventoId)) {
+      setState({
+        ...EMPTY_STATE,
+        loading: false,
+        error: 'El workspace no tiene un id de evento válido (UUID).',
+      })
       return
     }
     let cancelled = false

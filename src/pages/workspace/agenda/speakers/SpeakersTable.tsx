@@ -773,7 +773,7 @@ export function SpeakersTable({
 
       {!loading && speakers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
-          No hay speakers registrados aún.
+          No hay speakers asignados a sesiones de este evento.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
