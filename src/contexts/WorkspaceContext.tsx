@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { supabase } from '@/lib/supabase'
+import { isUuid } from '@/lib/isUuid'
 
 export type Workspace = {
   id: string
@@ -71,9 +72,10 @@ type WorkspaceContextValue = {
   workspaces: Workspace[]
   workspace: Workspace | null
   setWorkspace: (workspace: Workspace | null) => void
-  addWorkspace: (input: Omit<Workspace, 'id'> & { id?: string }) => Workspace
+  addWorkspace: (input: Workspace) => Workspace
   updateWorkspace: (id: string, patch: Partial<Workspace>) => void
   removeWorkspace: (id: string) => void
+  refreshWorkspaces: () => Promise<void>
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
@@ -85,10 +87,12 @@ function migrateWorkspaceId(id: string): string {
 }
 
 function migrateWorkspaces(list: Workspace[]): Workspace[] {
-  return list.map((workspace) => ({
-    ...workspace,
-    id: migrateWorkspaceId(workspace.id),
-  }))
+  return list
+    .map((workspace) => ({
+      ...workspace,
+      id: migrateWorkspaceId(workspace.id),
+    }))
+    .filter((workspace) => isUuid(workspace.id))
 }
 
 function readStoredList(): Workspace[] {
@@ -97,7 +101,8 @@ function readStoredList(): Workspace[] {
     if (!raw) return FALLBACK_WORKSPACES
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed) || parsed.length === 0) return FALLBACK_WORKSPACES
-    return migrateWorkspaces(parsed as Workspace[])
+    const migrated = migrateWorkspaces(parsed as Workspace[])
+    return migrated.length > 0 ? migrated : FALLBACK_WORKSPACES
   } catch {
     return FALLBACK_WORKSPACES
   }
@@ -106,21 +111,14 @@ function readStoredList(): Workspace[] {
 function readStoredActiveId(): string | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return migrateWorkspaceId(raw)
+    if (raw) {
+      const migrated = migrateWorkspaceId(raw)
+      return isUuid(migrated) ? migrated : null
+    }
   } catch {
     // localStorage no disponible
   }
   return null
-}
-
-function slugify(nombre: string): string {
-  const base = nombre
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return base || `evento-${Date.now()}`
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -129,40 +127,60 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const persistList = useCallback((next: Workspace[]) => {
     try {
-      localStorage.setItem(LIST_STORAGE_KEY, JSON.stringify(next))
+      localStorage.setItem(
+        LIST_STORAGE_KEY,
+        JSON.stringify(next.filter((w) => isUuid(w.id))),
+      )
     } catch {
       // no-op
     }
   }, [])
 
-  // Fuente de verdad: epms.eventos. Al montar, reemplaza la lista local con
-  // los eventos reales (incluye cover_url), conservando cualquier workspace
-  // creado solo en el cliente que aún no exista en Supabase.
-  useEffect(() => {
-    let cancelled = false
-    loadEventos().then((remotos) => {
-      if (cancelled || !remotos) return
+  const applyRemoteEventos = useCallback(
+    (remotos: Workspace[]) => {
       setWorkspaces((prev) => {
-        const locales = new Map(prev.map((w) => [w.id, w]))
+        const locales = new Map(
+          prev.filter((w) => isUuid(w.id)).map((w) => [w.id, w]),
+        )
         const merged = remotos.map((remoto) => {
           const local = locales.get(remoto.id)
           locales.delete(remoto.id)
           return local ? { ...local, ...remoto } : remoto
         })
-        const soloLocales = [...locales.values()]
-        const next = [...merged, ...soloLocales]
+        // Solo conservamos locales UUID que aún no estén en Supabase
+        // (p.ej. acabamos de crear y el refresh aún no llegó). Slugs fantasma
+        // como media-bootcamp-week se descartan.
+        const soloLocalesUuid = [...locales.values()].filter((w) =>
+          isUuid(w.id),
+        )
+        const next = [...merged, ...soloLocalesUuid]
         persistList(next)
         return next
       })
+      setActiveId((current) => {
+        if (current && isUuid(current)) return current
+        return null
+      })
+    },
+    [persistList],
+  )
+
+  // Fuente de verdad: epms.eventos. Al montar, reemplaza la lista local con
+  // los eventos reales (incluye cover_url) y descarta ids no-UUID.
+  useEffect(() => {
+    let cancelled = false
+    loadEventos().then((remotos) => {
+      if (cancelled || !remotos) return
+      applyRemoteEventos(remotos)
     })
     return () => {
       cancelled = true
     }
-  }, [persistList])
+  }, [applyRemoteEventos])
 
   const persistActive = useCallback((id: string | null) => {
     try {
-      if (id) localStorage.setItem(STORAGE_KEY, id)
+      if (id && isUuid(id)) localStorage.setItem(STORAGE_KEY, id)
       else localStorage.removeItem(STORAGE_KEY)
     } catch {
       // no-op
@@ -178,25 +196,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   )
 
   const addWorkspace = useCallback(
-    (input: Omit<Workspace, 'id'> & { id?: string }) => {
-      const base = input.id ?? slugify(input.nombre)
-      const id = workspaces.some((w) => w.id === base)
-        ? `${base}-${Date.now()}`
-        : base
-      const created: Workspace = {
-        ...input,
-        id,
+    (input: Workspace) => {
+      if (!isUuid(input.id)) {
+        throw new Error(
+          'El workspace debe tener un id UUID de epms.eventos',
+        )
       }
+      const created: Workspace = { ...input }
       setWorkspaces((prev) => {
+        if (prev.some((w) => w.id === created.id)) {
+          const next = prev.map((w) =>
+            w.id === created.id ? { ...w, ...created } : w,
+          )
+          persistList(next)
+          return next
+        }
         const next = [...prev, created]
         persistList(next)
         return next
       })
-      persistActive(id)
-      setActiveId(id)
+      persistActive(created.id)
+      setActiveId(created.id)
       return created
     },
-    [persistActive, persistList, workspaces],
+    [persistActive, persistList],
   )
 
   const updateWorkspace = useCallback(
@@ -226,6 +249,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [persistActive, persistList],
   )
 
+  const refreshWorkspaces = useCallback(async () => {
+    const remotos = await loadEventos()
+    if (remotos) applyRemoteEventos(remotos)
+  }, [applyRemoteEventos])
+
   const workspace = useMemo(
     () => workspaces.find((w) => w.id === activeId) ?? null,
     [workspaces, activeId],
@@ -239,6 +267,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       addWorkspace,
       updateWorkspace,
       removeWorkspace,
+      refreshWorkspaces,
     }),
     [
       workspaces,
@@ -247,6 +276,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       addWorkspace,
       updateWorkspace,
       removeWorkspace,
+      refreshWorkspaces,
     ],
   )
 

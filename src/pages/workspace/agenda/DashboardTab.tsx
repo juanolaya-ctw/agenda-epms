@@ -22,8 +22,8 @@ const KPIS: Kpi[] = [
 ]
 
 const SPEAKER_KPIS: Kpi[] = [
-  { key: 'speakersEnSesion', label: 'Speakers en sesión', conTotal: true },
-  { key: 'sinSesionAsignada', label: 'Sin sesión asignada' },
+  // Sin /total global: el pool de speakers es compartido entre eventos.
+  { key: 'speakersEnSesion', label: 'Speakers en sesión' },
   { key: 'toolkitEnviado', label: 'Toolkit enviado', conTotal: true },
   { key: 'publicaronFase1', label: 'Publicaron Fase 1', conTotal: true },
   { key: 'fotosEnviadas', label: 'Fotos enviadas', conTotal: true },
@@ -137,18 +137,14 @@ export function DashboardTab() {
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {SPEAKER_KPIS.map((kpi) => (
           <MetricCard
             key={kpi.key}
             label={kpi.label}
             value={data[kpi.key]}
             total={
-              !kpi.conTotal
-                ? undefined
-                : kpi.key === 'speakersEnSesion'
-                  ? data.speakersTotales // pool global
-                  : data.speakersEnSesion // avance sobre los confirmados en sesión
+              kpi.conTotal ? data.speakersEnSesion : undefined
             }
             error={data.kpiErrors[kpi.key]}
           />

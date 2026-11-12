@@ -4,6 +4,7 @@ import { Navbar } from '@/components/layout/Navbar'
 import { WorkspaceCoverBanner } from '@/components/layout/WorkspaceCoverBanner'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { useRequestsPendientesCount } from '@/hooks/useDashboardData'
+import { isUuid } from '@/lib/isUuid'
 import { cn } from '@/lib/utils'
 import type { ViewRole } from '@/lib/workspaceRoutes'
 
@@ -81,7 +82,7 @@ export function WorkspaceLayout({ role }: WorkspaceLayoutProps) {
     if (found && workspace?.id !== found.id) setWorkspace(found)
   }, [found, workspace, setWorkspace])
 
-  if (!id || !found) return <Navigate to="/home" replace />
+  if (!id || !isUuid(id) || !found) return <Navigate to="/home" replace />
 
   const view = VIEW[role]
 

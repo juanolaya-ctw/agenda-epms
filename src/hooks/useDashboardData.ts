@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { DASHBOARD_SPEAKER_CHECKBOX_PROPS } from '@/lib/createEventoWorkspace'
+import { fetchSesionIdsForEvento } from '@/lib/eventoSesionIds'
 import { supabase } from '@/lib/supabase'
 
 export type SesionConCupo = {
@@ -47,9 +49,8 @@ export type DashboardData = {
   sesionesPorEscenarioError: string | null
 }
 
-const PROP_TOOLKIT_FASE1 = 'Envio toolkit Soy Speaker'
-const PROP_PUBLICARON_F1 = 'Speakers que publicaron F1'
-const PROP_ENVIO_FOTOS = 'Envio Fotos'
+const [PROP_TOOLKIT_FASE1, PROP_PUBLICARON_F1, PROP_ENVIO_FOTOS] =
+  DASHBOARD_SPEAKER_CHECKBOX_PROPS
 
 const EMPTY: Omit<DashboardData, 'loading'> = {
   totalSesiones: 0,
@@ -194,13 +195,6 @@ function asArray<T>(value: T | T[] | null | undefined): T[] {
 
 function esValorTrue(valor: unknown): boolean {
   return valor === true || valor === 'true'
-}
-
-async function countSpeakersGlobales() {
-  const { count, error } = await supabase
-    .from('speakers')
-    .select('id', { count: 'exact', head: true })
-  return { value: count ?? 0, error: queryErrorMessage(error) }
 }
 
 async function countSpeakersAsignados(eventoId: string) {
@@ -417,7 +411,6 @@ function contarSesionesPorEscenario(
 
 function aplicarConteosIndependientes(
   base: Omit<DashboardData, 'loading'>,
-  speakersGlobales: { value: number; error: string | null },
   speakersAsignados: { value: number; error: string | null },
   checkboxCounts: CheckboxCounts,
   escenarios: { rows: SesionesPorEscenario[]; error: string | null },
@@ -433,26 +426,18 @@ function aplicarConteosIndependientes(
   if (checkboxCounts.fotos.error) {
     kpiErrors.fotosEnviadas = checkboxCounts.fotos.error
   }
-  if (speakersGlobales.error) {
-    kpiErrors.speakersTotales = speakersGlobales.error
-    kpiErrors.sinSesionAsignada = speakersGlobales.error
-  }
   if (speakersAsignados.error) {
-    kpiErrors.sinSesionAsignada = speakersAsignados.error
+    kpiErrors.speakersEnSesion = speakersAsignados.error
   }
-  const errorEnSesion = speakersAsignados.error ?? speakersGlobales.error
-  if (errorEnSesion) kpiErrors.speakersEnSesion = errorEnSesion
 
-  const speakersTotales = speakersGlobales.error ? 0 : speakersGlobales.value
-  const sinSesionAsignada =
-    speakersAsignados.error || speakersGlobales.error
-      ? 0
-      : Math.max(0, speakersGlobales.value - speakersAsignados.value)
+  // Multi-evento: el pool global de speakers no es denominador del workspace.
+  // speakersTotales = speakers del evento (asignados). sinSesionAsignada queda
+  // en 0 hasta que exista un pipeline de speakers scopeado por evento.
+  const speakersEnSesion = speakersAsignados.error ? 0 : speakersAsignados.value
 
   const firstError =
     base.error ??
     speakersAsignados.error ??
-    speakersGlobales.error ??
     checkboxCounts.toolkit.error ??
     checkboxCounts.publicaron.error ??
     checkboxCounts.fotos.error ??
@@ -461,9 +446,9 @@ function aplicarConteosIndependientes(
 
   return {
     ...base,
-    speakersTotales,
-    speakersEnSesion: errorEnSesion ? 0 : speakersAsignados.value,
-    sinSesionAsignada,
+    speakersTotales: speakersEnSesion,
+    speakersEnSesion,
+    sinSesionAsignada: 0,
     toolkitEnviado: checkboxCounts.toolkit.error ? 0 : checkboxCounts.toolkit.value,
     publicaronFase1: checkboxCounts.publicaron.error
       ? 0
@@ -482,14 +467,12 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
   const [
     graph,
     estadosQueCuentan,
-    speakersGlobales,
     speakersAsignados,
     checkboxCounts,
     escenarios,
   ] = await Promise.all([
     loadEventGraph(eventoId),
     fetchEstadosQueCuentan(eventoId),
-    countSpeakersGlobales(),
     asignadosP,
     countCheckboxPorNombre(eventoId, asignadosP),
     fetchSesionesPorEscenario(eventoId),
@@ -507,7 +490,6 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
           requestsEnRevision: graph.error,
         },
       },
-      speakersGlobales,
       speakersAsignados,
       checkboxCounts,
       escenarios,
@@ -527,7 +509,6 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
           requestsEnRevision: sesionesRes.error,
         },
       },
-      speakersGlobales,
       speakersAsignados,
       checkboxCounts,
       escenarios,
@@ -589,7 +570,6 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
       sesionesPorEscenario: [],
       sesionesPorEscenarioError: null,
     },
-    speakersGlobales,
     speakersAsignados,
     checkboxCounts,
     escenariosFinal,
@@ -597,8 +577,7 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
 }
 
 // Conteo aislado para el badge de la pestaña Requests en WorkspaceLayout.
-// Cuenta PENDIENTE + EN_REVISION (no resueltos). Sin filtro de evento por ahora
-// — alineado con la bandeja que lista todos los requests.
+// Cuenta PENDIENTE + EN_REVISION ligados a sesiones del evento.
 const REQUESTS_COUNT_INVALIDATE = 'epms:requests-count-invalidate'
 
 export function invalidateRequestsPendientesCount() {
@@ -611,8 +590,6 @@ export function useRequestsPendientesCount(
   const [count, setCount] = useState(0)
 
   useEffect(() => {
-    // eventoId indica que estamos en vista Agenda de un workspace;
-    // el conteo aún no filtra por evento (pocos datos reales).
     if (!eventoId) {
       setCount(0)
       return
@@ -621,10 +598,24 @@ export function useRequestsPendientesCount(
     let cancelled = false
 
     async function load() {
+      const { ids: sesionIds, error: sesionError } =
+        await fetchSesionIdsForEvento(eventoId!)
+      if (cancelled) return
+      if (sesionError) {
+        console.error('[useRequestsPendientesCount]', sesionError)
+        setCount(0)
+        return
+      }
+      if (sesionIds.length === 0) {
+        setCount(0)
+        return
+      }
+
       const { count: value, error } = await supabase
         .from('requests')
         .select('id', { count: 'exact', head: true })
         .in('estado', ['PENDIENTE', 'EN_REVISION'])
+        .in('sesion_id', sesionIds)
 
       if (cancelled) return
       if (error) {

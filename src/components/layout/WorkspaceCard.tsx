@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Image as ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace, type Workspace } from '@/contexts/WorkspaceContext'
+import { isUuid } from '@/lib/isUuid'
 import { areaToRoute, workspaceHomePath } from '@/lib/workspaceRoutes'
 import { supabase } from '@/lib/supabase'
 
@@ -19,15 +20,6 @@ function formatDateRange(inicio: string, fin: string): string {
   return `${fmt(start)} – ${fmt(end)}`
 }
 
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error ?? new Error('No se pudo leer'))
-    reader.readAsDataURL(file)
-  })
-}
-
 type WorkspaceCardProps = {
   workspace: Workspace
 }
@@ -35,7 +27,7 @@ type WorkspaceCardProps = {
 export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
   const navigate = useNavigate()
   const { usuario } = useAuth()
-  const { workspace: active, setWorkspace } = useWorkspace()
+  const { workspace: active, setWorkspace, updateWorkspace } = useWorkspace()
   const isActive = active?.id === workspace.id
 
   const [coverUrl, setCoverUrl] = useState<string | undefined>(
@@ -43,6 +35,10 @@ export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
   )
   const [subiendo, setSubiendo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setCoverUrl(workspace.coverUrl)
+  }, [workspace.coverUrl])
 
   function open() {
     setWorkspace(workspace)
@@ -64,16 +60,38 @@ export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+    if (!isUuid(workspace.id)) {
+      toast.error('Este workspace no está sincronizado con Supabase')
+      return
+    }
+
+    const ext =
+      file.name.split('.').pop()?.toLowerCase() ||
+      file.type.split('/')[1] ||
+      'jpg'
+    const filename = `covers/evento-${workspace.id}-${Date.now()}.${ext}`
 
     setSubiendo(true)
     try {
-      const base64 = await readAsDataUrl(file)
+      const { error: uploadError } = await supabase.storage
+        .from('speaker-fotos')
+        .upload(filename, file, {
+          contentType: file.type,
+          upsert: true,
+        })
+      if (uploadError) throw new Error(uploadError.message)
+
+      const { data } = supabase.storage
+        .from('speaker-fotos')
+        .getPublicUrl(filename)
+
       const { error } = await supabase
         .from('eventos')
-        .update({ cover_url: base64 })
+        .update({ cover_url: data.publicUrl })
         .eq('id', workspace.id)
       if (error) throw new Error(error.message)
-      setCoverUrl(base64)
+      setCoverUrl(data.publicUrl)
+      updateWorkspace(workspace.id, { coverUrl: data.publicUrl })
       toast.success('Cover actualizado')
     } catch (err) {
       toast.error(

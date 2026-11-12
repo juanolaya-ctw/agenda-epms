@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { fetchSesionIdsForEvento } from '@/lib/eventoSesionIds'
 import { supabase } from '@/lib/supabase'
 
 export type RequestTipo = 'propuesta_speaker' | 'conflicto' | 'ajuste'
@@ -212,15 +213,38 @@ export function useMisRequests(solicitanteId: string | null | undefined) {
   return { requests, loading, error, refetch }
 }
 
-/** Bandeja de Agenda: todos los requests (sin filtro de evento por ahora). */
-export function useAgendaRequests() {
+/** Bandeja de Agenda: requests ligados a sesiones del evento (workspace). */
+export function useAgendaRequests(eventoId: string | null | undefined) {
   const [requests, setRequests] = useState<AgendaRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const refetch = useCallback(async () => {
+    if (!eventoId) {
+      setRequests([])
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     setLoading(true)
     setError(null)
+
+    const { ids: sesionIds, error: sesionError } =
+      await fetchSesionIdsForEvento(eventoId)
+    if (sesionError) {
+      setError(sesionError)
+      setRequests([])
+      setLoading(false)
+      return
+    }
+
+    if (sesionIds.length === 0) {
+      setRequests([])
+      setLoading(false)
+      return
+    }
+
     const { data, error: qError } = await supabase
       .from('requests')
       .select(
@@ -239,6 +263,7 @@ export function useAgendaRequests() {
         solicitante:usuarios!solicitante_id(id, nombre)
       `,
       )
+      .in('sesion_id', sesionIds)
       .order('created_at', { ascending: false })
 
     if (qError) {
@@ -250,7 +275,7 @@ export function useAgendaRequests() {
 
     setRequests((data as AgendaRequestRow[] | null)?.map(mapAgendaRequest) ?? [])
     setLoading(false)
-  }, [])
+  }, [eventoId])
 
   useEffect(() => {
     void refetch()

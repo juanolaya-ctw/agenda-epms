@@ -7,18 +7,10 @@ import { Navbar } from '@/components/layout/Navbar'
 import { WorkspaceCard } from '@/components/layout/WorkspaceCard'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
-import { supabase } from '@/lib/supabase'
+import { createEventoWorkspace } from '@/lib/createEventoWorkspace'
+import { workspaceHomePath, areaToRoute } from '@/lib/workspaceRoutes'
 
 const ESTADOS_POR_DEFECTO = ['BORRADOR', 'CONFIRMADA']
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-function colorPorNombreEstado(nombre: string): string {
-  const n = nombre.trim().toUpperCase()
-  if (n === 'CONFIRMADA') return 'green'
-  if (n === 'CANCELADA') return 'red'
-  return 'gray'
-}
 
 function primerNombre(nombreCompleto: string): string {
   const primero = nombreCompleto.trim().split(/\s+/).filter(Boolean)[0]
@@ -29,7 +21,7 @@ export function WorkspaceHome() {
   const navigate = useNavigate()
   const location = useLocation()
   const { usuario } = useAuth()
-  const { workspaces, addWorkspace } = useWorkspace()
+  const { workspaces, addWorkspace, setWorkspace } = useWorkspace()
   const [showCreateModal, setShowCreateModal] = useState(false)
 
   useEffect(() => {
@@ -115,29 +107,35 @@ export function WorkspaceHome() {
       {showCreateModal && (
         <CreateWorkspaceModal
           onClose={() => setShowCreateModal(false)}
-          onCreate={(payload) => {
-            const created = addWorkspace(payload)
-            setShowCreateModal(false)
-            // Persistir los estados de sesión si el workspace corresponde a un
-            // evento real en Supabase (id UUID). Los workspaces solo-locales
-            // conservan la lista en el objeto Workspace (localStorage).
-            if (UUID_RE.test(created.id) && payload.estados.length > 0) {
-              void supabase
-                .from('estados_sesion')
-                .insert(
-                  payload.estados.map((nombre, orden) => ({
-                    evento_id: created.id,
-                    nombre,
-                    orden,
-                    color: colorPorNombreEstado(nombre),
-                  })),
-                )
-                .then(({ error }) => {
-                  if (error)
-                    toast.error(
-                      `No se pudieron crear los estados: ${error.message}`,
-                    )
-                })
+          onCreate={async (payload) => {
+            try {
+              const created = await createEventoWorkspace(payload)
+              const workspace = addWorkspace({
+                id: created.id,
+                nombre: created.nombre,
+                fechaInicio: created.fechaInicio,
+                fechaFin: created.fechaFin,
+                coverUrl: created.coverUrl,
+                escenarios: payload.escenarios,
+                formatos: payload.formatos,
+                tracks: payload.tracks,
+                estados: payload.estados,
+              })
+              setWorkspace(workspace)
+              setShowCreateModal(false)
+              toast.success(`Evento «${created.nombre}» creado`)
+              const view =
+                usuario && usuario.rol !== 'admin'
+                  ? areaToRoute(usuario.area)
+                  : 'agenda'
+              navigate(workspaceHomePath(created.id, view))
+            } catch (err) {
+              toast.error(
+                `No se pudo crear el evento: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              )
+              throw err
             }
           }}
         />
@@ -150,7 +148,7 @@ type CreatePayload = {
   nombre: string
   fechaInicio: string
   fechaFin: string
-  coverUrl?: string
+  coverFile?: File
   escenarios: string[]
   formatos: string[]
   tracks: string[]
@@ -162,42 +160,38 @@ function CreateWorkspaceModal({
   onCreate,
 }: {
   onClose: () => void
-  onCreate: (payload: CreatePayload) => void
+  onCreate: (payload: CreatePayload) => Promise<void>
 }) {
   const [nombre, setNombre] = useState('')
   const [fechaInicio, setFechaInicio] = useState('')
   const [fechaFin, setFechaFin] = useState('')
-  const [coverUrl, setCoverUrl] = useState<string | undefined>()
+  const [coverFile, setCoverFile] = useState<File | undefined>()
   const [escenarios, setEscenarios] = useState<string[]>([])
   const [formatos, setFormatos] = useState<string[]>([])
   const [tracks, setTracks] = useState<string[]>([])
   const [estados, setEstados] = useState<string[]>(ESTADOS_POR_DEFECTO)
+  const [saving, setSaving] = useState(false)
 
-  function handleCover(file: File | undefined) {
-    if (!file) {
-      setCoverUrl(undefined)
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') setCoverUrl(reader.result)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!nombre.trim() || !fechaInicio || !fechaFin) return
-    onCreate({
-      nombre: nombre.trim(),
-      fechaInicio,
-      fechaFin,
-      coverUrl,
-      escenarios,
-      formatos,
-      tracks,
-      estados: estados.map((e) => e.trim()).filter(Boolean),
-    })
+    if (!nombre.trim() || !fechaInicio || !fechaFin || saving) return
+    setSaving(true)
+    try {
+      await onCreate({
+        nombre: nombre.trim(),
+        fechaInicio,
+        fechaFin,
+        coverFile,
+        escenarios,
+        formatos,
+        tracks,
+        estados: estados.map((e) => e.trim()).filter(Boolean),
+      })
+    } catch {
+      // El caller ya mostró toast; el modal permanece abierto.
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -214,6 +208,7 @@ function CreateWorkspaceModal({
               required
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
+              disabled={saving}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </label>
@@ -225,6 +220,7 @@ function CreateWorkspaceModal({
                 type="date"
                 value={fechaInicio}
                 onChange={(e) => setFechaInicio(e.target.value)}
+                disabled={saving}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </label>
@@ -235,6 +231,7 @@ function CreateWorkspaceModal({
                 type="date"
                 value={fechaFin}
                 onChange={(e) => setFechaFin(e.target.value)}
+                disabled={saving}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </label>
@@ -244,7 +241,8 @@ function CreateWorkspaceModal({
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => handleCover(e.target.files?.[0])}
+              disabled={saving}
+              onChange={(e) => setCoverFile(e.target.files?.[0])}
               className="w-full text-sm"
             />
           </label>
@@ -252,24 +250,39 @@ function CreateWorkspaceModal({
             label="Escenarios"
             items={escenarios}
             onChange={setEscenarios}
+            disabled={saving}
           />
           <EditableList
             label="Formatos"
             items={formatos}
             onChange={setFormatos}
+            disabled={saving}
           />
-          <EditableList label="Tracks" items={tracks} onChange={setTracks} />
+          <EditableList
+            label="Tracks"
+            items={tracks}
+            onChange={setTracks}
+            disabled={saving}
+          />
           <EditableList
             label="Estados de sesión"
             items={estados}
             onChange={setEstados}
+            disabled={saving}
           />
         </div>
         <div className="mt-6 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={saving}
+          >
             Cancelar
           </Button>
-          <Button type="submit">Crear workspace</Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Creando…' : 'Crear workspace'}
+          </Button>
         </div>
       </form>
     </div>
@@ -280,16 +293,18 @@ function EditableList({
   label,
   items,
   onChange,
+  disabled,
 }: {
   label: string
   items: string[]
   onChange: (items: string[]) => void
+  disabled?: boolean
 }) {
   const [draft, setDraft] = useState('')
 
   function add() {
     const value = draft.trim()
-    if (!value) return
+    if (!value || disabled) return
     onChange([...items, value])
     setDraft('')
   }
@@ -306,7 +321,8 @@ function EditableList({
             <span>{item}</span>
             <button
               type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
+              disabled={disabled}
+              className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               onClick={() => onChange(items.filter((_, i) => i !== index))}
             >
               Quitar
@@ -318,6 +334,7 @@ function EditableList({
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          disabled={disabled}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault()
@@ -327,7 +344,12 @@ function EditableList({
           placeholder={`Añadir ${label.toLowerCase()}`}
           className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
         />
-        <Button type="button" variant="outline" onClick={add}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={add}
+          disabled={disabled}
+        >
           Añadir
         </Button>
       </div>

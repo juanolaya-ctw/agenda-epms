@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Navigate, Outlet, useParams } from 'react-router-dom'
 import { Navbar } from '@/components/layout/Navbar'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { isUuid } from '@/lib/isUuid'
 
 export function SettingsLayout() {
   const { id } = useParams()
@@ -12,7 +13,7 @@ export function SettingsLayout() {
     if (found && workspace?.id !== found.id) setWorkspace(found)
   }, [found, workspace, setWorkspace])
 
-  if (!id || !found) return <Navigate to="/home" replace />
+  if (!id || !isUuid(id) || !found) return <Navigate to="/home" replace />
 
   return (
     <div className="min-h-screen bg-background">
