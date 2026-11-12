@@ -38,6 +38,7 @@ import {
   type FiltroActivo,
   type FiltroColumna,
 } from '@/components/table-filters/TableFilters'
+import { AsociarSpeakerDialog } from './AsociarSpeakerDialog'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
@@ -132,6 +133,7 @@ export function SpeakersTable({
     useSpeakersData(eventoId)
   const [busqueda, setBusqueda] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [asociarOpen, setAsociarOpen] = useState(false)
   const [modo, setModo] = useState<'create' | 'edit'>('create')
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [propEditando, setPropEditando] = useState<PropiedadCustom | null>(null)
@@ -277,6 +279,10 @@ export function SpeakersTable({
   }, [speakers, busqueda, filtros, valoresPorSpeaker])
 
   const totalCols = columnIds.length
+
+  function abrirAsociar() {
+    setAsociarOpen(true)
+  }
 
   function abrirCrear() {
     setModo('create')
@@ -757,8 +763,8 @@ export function SpeakersTable({
           {!readOnly && (
             <>
               <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
-              <Button onClick={abrirCrear}>
-                <UserPlus /> Agregar speaker
+              <Button onClick={abrirAsociar}>
+                <UserPlus /> Asociar speaker
               </Button>
             </>
           )}
@@ -773,7 +779,8 @@ export function SpeakersTable({
 
       {!loading && speakers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
-          No hay speakers asignados a sesiones de este evento.
+          No hay speakers asociados a este evento. Asocia desde el
+          directorio o crea uno nuevo.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -824,6 +831,16 @@ export function SpeakersTable({
         />
       )}
 
+      {!readOnly && (
+        <AsociarSpeakerDialog
+          open={asociarOpen}
+          onOpenChange={setAsociarOpen}
+          eventoId={eventoId}
+          onAsociado={refetch}
+          onCrearNuevo={abrirCrear}
+        />
+      )}
+
       <SpeakerPerfilDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
@@ -832,6 +849,7 @@ export function SpeakersTable({
         eventoId={eventoId}
         onSaved={refetch}
         readOnly={readOnly}
+        asociarAlCrear
         propiedadesEvento={propiedades}
         valoresDelSpeaker={activo ? valoresPorSpeaker[activo.id] : undefined}
       />

@@ -169,6 +169,7 @@ export function SesionFormDialog({
       toolkit_slug: null,
       sesionesEnEvento: 0,
       eventosParticipados: [],
+      eventosAsociados: [],
     })
 
   useEffect(() => {

@@ -24,10 +24,12 @@ import {
 } from '@/components/ui/dialog'
 import {
   actualizarSpeaker,
+  asociarSpeakerAEvento,
   crearSpeaker,
   guardarValorPropiedad,
   propiedadesSpeaker,
   sesionesDeSpeaker,
+  speakerPorEmail,
   valoresSpeaker,
   type ParticipacionSesion,
   type PropiedadCustom,
@@ -81,6 +83,8 @@ type SpeakerPerfilDialogProps = {
   onSaved: () => void
   /** Solo consulta (CS / Sales): sin guardar ni editar. */
   readOnly?: boolean
+  /** Tras crear en el workspace, asocia el speaker al evento. */
+  asociarAlCrear?: boolean
   /** Propiedades del evento ya cargadas por el padre (evita refetch). */
   propiedadesEvento?: PropiedadCustom[]
   /** Valores de este speaker ya cargados por el padre (evita refetch). */
@@ -95,12 +99,15 @@ export function SpeakerPerfilDialog({
   eventoId,
   onSaved,
   readOnly = false,
+  asociarAlCrear = false,
   propiedadesEvento,
   valoresDelSpeaker,
 }: SpeakerPerfilDialogProps) {
   const [form, setForm] = useState<FormState>(() => initialForm(speaker))
   const [saving, setSaving] = useState(false)
   const [fotoUrl, setFotoUrl] = useState<string | null>(speaker?.foto_url ?? null)
+  const [fotoPendiente, setFotoPendiente] = useState<File | null>(null)
+  const [previewObjectUrl, setPreviewObjectUrl] = useState<string | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState(false)
   const [descargandoFoto, setDescargandoFoto] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -124,10 +131,30 @@ export function SpeakerPerfilDialog({
       setForm(initialForm(speaker))
       setSaving(false)
       setFotoUrl(speaker?.foto_url ?? null)
+      setFotoPendiente(null)
       setSubiendoFoto(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, speakerId])
+
+  useEffect(() => {
+    if (!fotoPendiente) {
+      setPreviewObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+      return
+    }
+    const url = URL.createObjectURL(fotoPendiente)
+    setPreviewObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return url
+    })
+    return () => URL.revokeObjectURL(url)
+  }, [fotoPendiente])
+
+  const fotoVisible = previewObjectUrl ?? fotoUrl
+  const puedeEditarFoto = !readOnly && (mode === 'edit' ? Boolean(speaker) : true)
 
   // La tabla ahora trae solo columnas ligeras; al abrir un perfil se hace
   // un point-lookup por PK para poblar el formulario completo (bio, doc,
@@ -209,40 +236,59 @@ export function SpeakerPerfilDialog({
     })
   }
 
-  async function handleFotoChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !speaker) return
-
+  async function subirFotoSpeaker(
+    speakerId: string,
+    file: File,
+    emailHint?: string,
+  ): Promise<string> {
     const ext =
       file.name.split('.').pop()?.toLowerCase() ||
       file.type.split('/')[1] ||
       'jpg'
-    const email = speaker.email || form.email || speaker.id
+    const email = emailHint || form.email || speakerId
     const filename = `speakers/${email}-${Date.now()}.${ext}`
+    const arrayBuffer = await readAsArrayBuffer(file)
+    const { error: uploadError } = await supabase.storage
+      .from('speaker-fotos')
+      .upload(filename, arrayBuffer, {
+        contentType: file.type,
+        upsert: true,
+      })
+    if (uploadError) throw new Error(uploadError.message)
+
+    const { data } = supabase.storage
+      .from('speaker-fotos')
+      .getPublicUrl(filename)
+
+    const { error: updateError } = await supabase
+      .from('speakers')
+      .update({ foto_url: data.publicUrl })
+      .eq('id', speakerId)
+    if (updateError) throw new Error(updateError.message)
+
+    return data.publicUrl
+  }
+
+  async function handleFotoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    // En creación: preview local; se sube al guardar.
+    if (mode === 'create' || !speaker) {
+      setFotoPendiente(file)
+      return
+    }
 
     setSubiendoFoto(true)
     try {
-      const arrayBuffer = await readAsArrayBuffer(file)
-      const { error: uploadError } = await supabase.storage
-        .from('speaker-fotos')
-        .upload(filename, arrayBuffer, {
-          contentType: file.type,
-          upsert: true,
-        })
-      if (uploadError) throw new Error(uploadError.message)
-
-      const { data } = supabase.storage
-        .from('speaker-fotos')
-        .getPublicUrl(filename)
-
-      const { error: updateError } = await supabase
-        .from('speakers')
-        .update({ foto_url: data.publicUrl })
-        .eq('id', speaker.id)
-      if (updateError) throw new Error(updateError.message)
-
-      setFotoUrl(data.publicUrl)
+      const publicUrl = await subirFotoSpeaker(
+        speaker.id,
+        file,
+        speaker.email || form.email,
+      )
+      setFotoUrl(publicUrl)
+      setFotoPendiente(null)
       toast.success('Foto actualizada')
       onSaved()
     } catch (err) {
@@ -322,8 +368,56 @@ export function SpeakerPerfilDialog({
         await actualizarSpeaker(speaker.id, datos)
         toast.success('Speaker actualizado')
       } else {
-        await crearSpeaker(datos)
-        toast.success('Speaker creado')
+        let newId: string
+        try {
+          newId = await crearSpeaker(datos)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          const esDuplicado =
+            /duplicate|unique|already exists|speakers_email/i.test(msg)
+          if (!esDuplicado || !asociarAlCrear) throw err
+
+          const existente = await speakerPorEmail(form.email)
+          if (!existente) throw err
+
+          const { created } = await asociarSpeakerAEvento(
+            eventoId,
+            existente.id,
+          )
+          toast.success(
+            created
+              ? `«${existente.nombre}» ya existía en el directorio y se asoció al evento`
+              : `«${existente.nombre}» ya estaba asociado a este evento`,
+          )
+          onOpenChange(false)
+          onSaved()
+          return
+        }
+
+        if (asociarAlCrear) {
+          await asociarSpeakerAEvento(eventoId, newId)
+        }
+
+        if (fotoPendiente) {
+          try {
+            await subirFotoSpeaker(newId, fotoPendiente, form.email)
+          } catch (fotoErr) {
+            toast.error(
+              `Speaker creado, pero no se pudo subir la foto: ${
+                fotoErr instanceof Error ? fotoErr.message : String(fotoErr)
+              }`,
+            )
+            onOpenChange(false)
+            onSaved()
+            return
+          }
+        }
+
+        toast.success(
+          asociarAlCrear
+            ? 'Speaker creado y asociado al evento'
+            : 'Speaker creado',
+        )
       }
       onOpenChange(false)
       onSaved()
@@ -399,7 +493,9 @@ export function SpeakerPerfilDialog({
               {mode === 'edit' ? 'Perfil del speaker' : 'Nuevo speaker'}
             </DialogTitle>
             <DialogDescription>
-              Datos del pool global de speakers y su seguimiento en este evento.
+              {mode === 'create' && asociarAlCrear
+                ? 'Se crea en el directorio global y se asocia a este evento. Si el email ya existe, se asociará el perfil existente.'
+                : 'Datos del pool global de speakers y su seguimiento en este evento.'}
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -410,22 +506,21 @@ export function SpeakerPerfilDialog({
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                disabled={readOnly || !speaker || subiendoFoto}
+                disabled={!puedeEditarFoto || subiendoFoto}
                 onClick={() => fileInputRef.current?.click()}
                 className="group relative shrink-0 cursor-pointer rounded-full disabled:cursor-default"
-                title={
-                  readOnly || !speaker ? undefined : 'Cambiar foto'
-                }
+                title={puedeEditarFoto ? 'Cambiar foto' : undefined}
+                aria-label={puedeEditarFoto ? 'Cambiar foto' : undefined}
               >
                 <Avatar size="lg">
-                  {fotoUrl && (
-                    <AvatarImage src={fotoUrl} alt={form.nombre} />
+                  {fotoVisible && (
+                    <AvatarImage src={fotoVisible} alt={form.nombre} />
                   )}
                   <AvatarFallback>
                     {iniciales(form.nombre || 'NN')}
                   </AvatarFallback>
                 </Avatar>
-                {!readOnly && speaker && (
+                {puedeEditarFoto && (
                   <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
                     <Camera className="size-4" />
                   </span>
@@ -437,13 +532,18 @@ export function SpeakerPerfilDialog({
                 accept="image/*"
                 className="hidden"
                 onChange={handleFotoChange}
-                disabled={readOnly}
+                disabled={!puedeEditarFoto}
               />
               <div className="flex min-w-0 flex-col gap-1">
                 <p className="truncate text-sm font-medium">
                   {form.nombre || 'Sin nombre'}
                 </p>
-                {fotoUrl && (
+                {mode === 'create' && fotoPendiente && (
+                  <p className="text-xs text-muted-foreground">
+                    Foto lista; se subirá al guardar.
+                  </p>
+                )}
+                {fotoUrl && !fotoPendiente && (
                   <Button
                     type="button"
                     variant="outline"

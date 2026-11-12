@@ -20,7 +20,10 @@ export type Speaker = {
   fuente: string | null
   toolkit_slug: string | null
   sesionesEnEvento: number
+  /** Nombres de eventos (membresía), para búsqueda/filtros. */
   eventosParticipados: string[]
+  /** Membresía evento_speakers con id para asociar desde CRM. */
+  eventosAsociados: { id: string; nombre: string }[]
 }
 
 export type SpeakerEditable = {
@@ -84,8 +87,13 @@ function one<T>(rel: T | T[] | null | undefined): T | null {
 
 function mapSpeakerRow(
   r: Record<string, unknown>,
-  extras: { sesionesEnEvento: number; eventosParticipados: string[] },
+  extras: {
+    sesionesEnEvento: number
+    eventosParticipados: string[]
+    eventosAsociados?: { id: string; nombre: string }[]
+  },
 ): Speaker {
+  const eventosAsociados = extras.eventosAsociados ?? []
   return {
     id: r.id as string,
     nombre: (r.nombre as string | null) ?? '',
@@ -104,7 +112,11 @@ function mapSpeakerRow(
     fuente: pick(r.fuente as string | null),
     toolkit_slug: pick(r.toolkit_slug as string | null),
     sesionesEnEvento: extras.sesionesEnEvento,
-    eventosParticipados: extras.eventosParticipados,
+    eventosParticipados:
+      extras.eventosParticipados.length > 0
+        ? extras.eventosParticipados
+        : eventosAsociados.map((e) => e.nombre),
+    eventosAsociados,
   }
 }
 
@@ -170,14 +182,16 @@ const SPEAKER_COLS =
   'id, foto_url, nombre, cargo, empresa, pais, email, fuente, toolkit_slug, ' +
   'telefono, linkedin_url, ciudad, tipo_documento, numero_documento, email_secundario'
 
-// Solo speakers con al menos una sesión en ESTE evento (!inner + filtro).
+// Speakers asociados a ESTE evento (membresía evento_speakers).
+// sesion_speakers sin !inner: cuentan sesiones pero no excluyen a nadie.
 // El directorio global sigue en loadSpeakersGlobal / CRM.
 const SPEAKERS_TABLA_SELECT = `
   ${SPEAKER_COLS},
-  sesion_speakers!inner (
-    sesion:sesiones!inner (
-      slot:slots!inner (
-        escenario:escenarios!inner ( evento_id )
+  evento_speakers!inner ( evento_id ),
+  sesion_speakers (
+    sesion:sesiones (
+      slot:slots (
+        escenario:escenarios ( evento_id )
       )
     )
   )
@@ -197,7 +211,7 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     supabase
       .from('speakers')
       .select(SPEAKERS_TABLA_SELECT)
-      .eq('sesion_speakers.sesion.slot.escenario.evento_id', eventoId)
+      .eq('evento_speakers.evento_id', eventoId)
       .order('nombre'),
     loadPropiedadesYValores(eventoId),
   ])
@@ -211,8 +225,8 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     }
   }
 
-  const speakers: Speaker[] = ((spRes.data ?? []) as SpeakerTablaRow[])
-    .map((r) => {
+  const speakers: Speaker[] = ((spRes.data ?? []) as SpeakerTablaRow[]).map(
+    (r) => {
       const rels = Array.isArray(r.sesion_speakers) ? r.sesion_speakers : []
       let sesionesEnEvento = 0
       for (const rel of rels) {
@@ -225,8 +239,8 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
         sesionesEnEvento,
         eventosParticipados: [],
       })
-    })
-    .filter((sp) => sp.sesionesEnEvento > 0)
+    },
+  )
 
   return {
     speakers,
@@ -236,9 +250,12 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
   }
 }
 
-type EventoNombreEmbed = { nombre: string | null }
+type EventoIdNombreEmbed = { id: string; nombre: string | null }
+type EventoSpeakerRel = {
+  evento: EventoIdNombreEmbed | EventoIdNombreEmbed[] | null
+}
 type EscenarioEventoEmbed = {
-  evento: EventoNombreEmbed | EventoNombreEmbed[] | null
+  evento: { nombre: string | null } | { nombre: string | null }[] | null
 }
 type SlotEventoEmbed = {
   escenario: EscenarioEventoEmbed | EscenarioEventoEmbed[] | null
@@ -249,11 +266,15 @@ type SesionSpeakerEventoRel = {
 }
 type SpeakerGlobalRow = Record<string, unknown> & {
   id: string
+  evento_speakers?: EventoSpeakerRel[] | null
   sesion_speakers?: SesionSpeakerEventoRel[] | null
 }
 
 const SPEAKERS_GLOBAL_SELECT = `
   ${SPEAKER_COLS},
+  evento_speakers (
+    evento:eventos ( id, nombre )
+  ),
   sesion_speakers (
     sesion:sesiones (
       slot:slots (
@@ -265,8 +286,7 @@ const SPEAKERS_GLOBAL_SELECT = `
   )
 `
 
-// Una sola query embebida: speakers + todas sus participaciones con el
-// nombre del evento, en vez de reconstruir el grafo a mano en 6 pasos.
+// Speakers globales + membresía (evento_speakers) + conteo de sesiones.
 async function loadSpeakersGlobal(): Promise<LoadResult> {
   const empty = { propiedades: [] as PropiedadCustom[], valoresPorSpeaker: {} }
   const { data, error } = await supabase
@@ -277,19 +297,39 @@ async function loadSpeakersGlobal(): Promise<LoadResult> {
   if (error) return { speakers: [], ...empty, error: error.message }
 
   const speakers: Speaker[] = ((data ?? []) as SpeakerGlobalRow[]).map((r) => {
+    const memb = Array.isArray(r.evento_speakers) ? r.evento_speakers : []
+    const byId = new Map<string, string>()
+    for (const rel of memb) {
+      const evento = one(rel.evento)
+      if (evento?.id) byId.set(evento.id, evento.nombre ?? '')
+    }
+    // Fallback: eventos solo vía sesión (datos previos al backfill).
     const rels = Array.isArray(r.sesion_speakers) ? r.sesion_speakers : []
-    const eventos = new Set<string>()
     for (const rel of rels) {
       const sesion = one(rel.sesion)
       const slot = one(sesion?.slot)
       const escenario = one(slot?.escenario)
       const evento = one(escenario?.evento)
       const nombre = evento?.nombre
-      if (nombre) eventos.add(nombre)
+      if (nombre && ![...byId.values()].includes(nombre)) {
+        byId.set(`nombre:${nombre}`, nombre)
+      }
     }
+    const eventosAsociados = [...byId.entries()]
+      .filter(([id]) => isUuid(id))
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    const nombres = [
+      ...new Set([
+        ...eventosAsociados.map((e) => e.nombre),
+        ...[...byId.values()].filter(Boolean),
+      ]),
+    ].sort()
+
     return mapSpeakerRow(r as unknown as Record<string, unknown>, {
       sesionesEnEvento: rels.length,
-      eventosParticipados: [...eventos].sort(),
+      eventosParticipados: nombres,
+      eventosAsociados,
     })
   })
 
@@ -316,9 +356,93 @@ export async function crearSpeaker(
   return data.id as string
 }
 
+export async function speakerPorEmail(
+  email: string,
+): Promise<Speaker | null> {
+  const normalized = email.trim().toLowerCase()
+  if (!normalized) return null
+  const { data, error } = await supabase
+    .from('speakers')
+    .select(SPEAKER_COLS)
+    .ilike('email', normalized)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  return mapSpeakerRow(data as unknown as Record<string, unknown>, {
+    sesionesEnEvento: 0,
+    eventosParticipados: [],
+  })
+}
+
+/** Asocia un speaker del pool global a un evento. Idempotente. */
+export async function asociarSpeakerAEvento(
+  eventoId: string,
+  speakerId: string,
+): Promise<{ created: boolean }> {
+  if (!isUuid(eventoId) || !isUuid(speakerId)) {
+    throw new Error('eventoId y speakerId deben ser UUID')
+  }
+  const { data: existing, error: existError } = await supabase
+    .from('evento_speakers')
+    .select('speaker_id')
+    .eq('evento_id', eventoId)
+    .eq('speaker_id', speakerId)
+    .maybeSingle()
+  if (existError) throw new Error(existError.message)
+  if (existing) return { created: false }
+
+  const { error } = await supabase.from('evento_speakers').insert({
+    evento_id: eventoId,
+    speaker_id: speakerId,
+  })
+  if (error) throw new Error(error.message)
+  return { created: true }
+}
+
+export async function desasociarSpeakerDeEvento(
+  eventoId: string,
+  speakerId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('evento_speakers')
+    .delete()
+    .eq('evento_id', eventoId)
+    .eq('speaker_id', speakerId)
+  if (error) throw new Error(error.message)
+}
+
+/** Búsqueda ligera en el pool global (CRM) por nombre o email. */
+export async function buscarSpeakersGlobales(
+  query: string,
+  limit = 20,
+): Promise<Speaker[]> {
+  const q = query.trim()
+  if (q.length < 2) return []
+
+  // Evita romper el filtro PostgREST si el texto trae comas/comodines.
+  const safe = q.replace(/[%_,]/g, ' ').trim()
+  if (safe.length < 2) return []
+  const pattern = `%${safe}%`
+  const { data, error } = await supabase
+    .from('speakers')
+    .select(SPEAKER_COLS)
+    .or(`nombre.ilike."${pattern}",email.ilike."${pattern}"`)
+    .order('nombre')
+    .limit(limit)
+
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) =>
+    mapSpeakerRow(row, {
+      sesionesEnEvento: 0,
+      eventosParticipados: [],
+    }),
+  )
+}
+
 export async function eliminarSpeaker(id: string): Promise<void> {
   // Limpieza explícita de referencias antes del DELETE, por si alguna FK no
   // tiene ON DELETE CASCADE en la BD real.
+  await supabase.from('evento_speakers').delete().eq('speaker_id', id)
   await supabase.from('sesion_speakers').delete().eq('speaker_id', id)
   await supabase.from('valores_propiedades').delete().eq('speaker_id', id)
   const { error } = await supabase.from('speakers').delete().eq('id', id)

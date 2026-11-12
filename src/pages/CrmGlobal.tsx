@@ -1,12 +1,18 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Trash2, UserPlus } from 'lucide-react'
+import { ArrowLeft, Download, Pencil, Trash2, UserPlus } from 'lucide-react'
+import { toast } from 'sonner'
 import { InlineText } from '@/components/InlineText'
 import { Navbar } from '@/components/layout/Navbar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -16,10 +22,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { useWorkspace, type Workspace } from '@/contexts/WorkspaceContext'
 import { useOptimisticOverrides } from '@/hooks/useOptimisticOverrides'
 import {
+  contrasteSobreHex,
+  COLORES_ESCENARIO_PALETTE,
+} from '@/hooks/useSesionesData'
+import {
   actualizarSpeaker,
+  asociarSpeakerAEvento,
   useSpeakersData,
   type Speaker,
   type SpeakerEditable,
@@ -31,6 +42,7 @@ import {
   type FiltroColumna,
 } from '@/components/table-filters/TableFilters'
 import { EliminarSpeakerDialog } from '@/pages/workspace/agenda/speakers/EliminarSpeakerDialog'
+import { downloadSpeakersCsv } from '@/pages/workspace/agenda/speakers/exportSpeakersCsv'
 import { SpeakerPerfilDialog } from '@/pages/workspace/agenda/speakers/SpeakerPerfilDialog'
 import { FuenteBadge, iniciales } from '@/pages/workspace/agenda/speakers/speakerUtils'
 import {
@@ -61,22 +73,138 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const emailOpcional = (v: string) => v === '' || EMAIL_RE.test(v)
 const toStr = (v: unknown): string => (v == null ? '' : String(v))
 
-function EventosBadges({ nombres }: { nombres: string[] }) {
-  if (nombres.length === 0) {
-    return (
-      <Badge className="bg-muted text-muted-foreground">
-        Sin eventos asignados
+function colorPorEventoKey(key: string): { bg: string; fg: string } {
+  let hash = 0
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+  }
+  const bg =
+    COLORES_ESCENARIO_PALETTE[hash % COLORES_ESCENARIO_PALETTE.length] ??
+    '#42B3F3'
+  return { bg, fg: contrasteSobreHex(bg) }
+}
+
+function EventosCell({
+  speaker,
+  workspaces,
+  onAsociado,
+}: {
+  speaker: Speaker
+  workspaces: Workspace[]
+  onAsociado: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const asociadosIds = new Set(speaker.eventosAsociados.map((e) => e.id))
+  const disponibles = workspaces.filter((w) => !asociadosIds.has(w.id))
+
+  const badges =
+    speaker.eventosAsociados.length > 0
+      ? speaker.eventosAsociados.map((e) => ({
+          key: e.id,
+          nombre: e.nombre,
+          ...colorPorEventoKey(e.id),
+        }))
+      : speaker.eventosParticipados.map((nombre) => {
+          const ws = workspaces.find((w) => w.nombre === nombre)
+          const key = ws?.id ?? nombre
+          return { key, nombre, ...colorPorEventoKey(key) }
+        })
+
+  async function handleAsignar(eventoId: string) {
+    if (!eventoId || busy) return
+    setBusy(true)
+    try {
+      const { created } = await asociarSpeakerAEvento(eventoId, speaker.id)
+      const nombre =
+        workspaces.find((w) => w.id === eventoId)?.nombre ?? 'evento'
+      toast.success(
+        created
+          ? `«${speaker.nombre}» asociado a ${nombre}`
+          : `Ya estaba asociado a ${nombre}`,
+      )
+      setOpen(false)
+      onAsociado()
+    } catch (err) {
+      toast.error(
+        `No se pudo asociar: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const puedeAsignar = disponibles.length > 0
+
+  const badgesEl =
+    badges.length === 0 ? (
+      <Badge className="bg-muted font-normal text-muted-foreground">
+        {puedeAsignar ? 'Asignar a evento…' : 'Sin eventos'}
       </Badge>
+    ) : (
+      badges.map((b) => (
+        <Badge
+          key={b.key}
+          className="border-0 font-medium"
+          style={{ backgroundColor: b.bg, color: b.fg }}
+        >
+          {b.nombre}
+        </Badge>
+      ))
+    )
+
+  if (!puedeAsignar) {
+    return (
+      <div className="flex max-w-[240px] flex-wrap items-center gap-1">
+        {badgesEl}
+      </div>
     )
   }
+
   return (
-    <div className="flex flex-wrap gap-1">
-      {nombres.map((nombre) => (
-        <Badge key={nombre} variant="secondary">
-          {nombre}
-        </Badge>
-      ))}
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex max-w-[240px] flex-wrap items-center gap-1 rounded-md text-left outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Eventos de ${speaker.nombre}. Abrir para asignar`}
+        >
+          {badgesEl}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start">
+        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+          Asignar a evento
+        </p>
+        <ul className="max-h-56 overflow-y-auto">
+          {disponibles.map((ws) => {
+            const { bg, fg } = colorPorEventoKey(ws.id)
+            return (
+              <li key={ws.id}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+                  onClick={() => void handleAsignar(ws.id)}
+                >
+                  <span
+                    className="inline-block size-2.5 shrink-0 rounded-sm"
+                    style={{
+                      backgroundColor: bg,
+                      boxShadow: `inset 0 0 0 1px ${fg}33`,
+                    }}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 truncate">{ws.nombre}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -195,9 +323,24 @@ export function CrmGlobal() {
                 onChange={setFiltros}
               />
             </div>
-            <Button onClick={abrirCrear}>
-              <UserPlus /> Agregar speaker
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={filtrados.length === 0}
+                onClick={() => {
+                  downloadSpeakersCsv(filtrados)
+                  toast.success(
+                    `CSV exportado (${filtrados.length} speaker${filtrados.length === 1 ? '' : 's'})`,
+                  )
+                }}
+              >
+                <Download /> Exportar CSV
+              </Button>
+              <Button onClick={abrirCrear}>
+                <UserPlus /> Agregar speaker
+              </Button>
+            </div>
           </div>
 
           {error && (
@@ -366,7 +509,11 @@ export function CrmGlobal() {
                           <FuenteBadge fuente={sp.fuente} />
                         </TableCell>
                         <TableCell>
-                          <EventosBadges nombres={sp.eventosParticipados} />
+                          <EventosCell
+                            speaker={sp}
+                            workspaces={workspaces}
+                            onAsociado={refetch}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">

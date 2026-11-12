@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { isUuid } from '@/lib/isUuid'
 
@@ -122,6 +123,7 @@ function readStoredActiveId(): string | null {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { usuario, loading: authLoading } = useAuth()
   const [workspaces, setWorkspaces] = useState<Workspace[]>(readStoredList)
   const [activeId, setActiveId] = useState<string | null>(readStoredActiveId)
 
@@ -138,6 +140,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const applyRemoteEventos = useCallback(
     (remotos: Workspace[]) => {
+      const fallbackIds = new Set(FALLBACK_WORKSPACES.map((w) => w.id))
       setWorkspaces((prev) => {
         const locales = new Map(
           prev.filter((w) => isUuid(w.id)).map((w) => [w.id, w]),
@@ -147,11 +150,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           locales.delete(remoto.id)
           return local ? { ...local, ...remoto } : remoto
         })
-        // Solo conservamos locales UUID que aún no estén en Supabase
-        // (p.ej. acabamos de crear y el refresh aún no llegó). Slugs fantasma
-        // como media-bootcamp-week se descartan.
-        const soloLocalesUuid = [...locales.values()].filter((w) =>
-          isUuid(w.id),
+        // Conserva UUID locales recién creados que aún no vinieron en remotos.
+        // Nunca reintroducir FALLBACK (GovTech sin cover) tras un fetch real.
+        const soloLocalesUuid = [...locales.values()].filter(
+          (w) => isUuid(w.id) && !fallbackIds.has(w.id),
         )
         const next = [...merged, ...soloLocalesUuid]
         persistList(next)
@@ -165,9 +167,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [persistList],
   )
 
-  // Fuente de verdad: epms.eventos. Al montar, reemplaza la lista local con
-  // los eventos reales (incluye cover_url) y descarta ids no-UUID.
+  // Fuente de verdad: epms.eventos. Hay que esperar a que Auth termine:
+  // si se consulta sin JWT, RLS devuelve []/error y el home se queda con el
+  // FALLBACK (GovTech sin cover) y sin los eventos reales de prod.
   useEffect(() => {
+    if (authLoading || !usuario) return
     let cancelled = false
     loadEventos().then((remotos) => {
       if (cancelled || !remotos) return
@@ -176,7 +180,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [applyRemoteEventos])
+  }, [applyRemoteEventos, authLoading, usuario])
 
   const persistActive = useCallback((id: string | null) => {
     try {
