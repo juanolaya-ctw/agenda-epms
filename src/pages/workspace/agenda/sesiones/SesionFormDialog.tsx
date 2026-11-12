@@ -168,6 +168,7 @@ export function SesionFormDialog({
       fuente: null,
       toolkit_slug: null,
       sesionesEnEvento: 0,
+      estadoEnEvento: null,
       eventosParticipados: [],
       eventosAsociados: [],
     })

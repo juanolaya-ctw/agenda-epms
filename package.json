@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && tsc -p tsconfig.api.json --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit && tsc -p tsconfig.api.json --noEmit"
+    "typecheck": "tsc -b --noEmit && tsc -p tsconfig.api.json --noEmit",
+    "test:bloque1": "tsx --test scripts/crm-bloque1-unit.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

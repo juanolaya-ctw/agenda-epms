@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Search, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,8 +15,9 @@ import { Input } from '@/components/ui/input'
 import {
   asociarSpeakerAEvento,
   buscarSpeakersGlobales,
-  type Speaker,
+  type SpeakerBusqueda,
 } from '@/hooks/useSpeakersData'
+import { ESTADO_ALTA_NUEVA } from '@/lib/eventoSpeakerEstado'
 import { iniciales } from './speakerUtils'
 
 type AsociarSpeakerDialogProps = {
@@ -34,7 +36,7 @@ export function AsociarSpeakerDialog({
   onCrearNuevo,
 }: AsociarSpeakerDialogProps) {
   const [query, setQuery] = useState('')
-  const [resultados, setResultados] = useState<Speaker[]>([])
+  const [resultados, setResultados] = useState<SpeakerBusqueda[]>([])
   const [buscando, setBuscando] = useState(false)
   const [asociandoId, setAsociandoId] = useState<string | null>(null)
 
@@ -59,7 +61,7 @@ export function AsociarSpeakerDialog({
     let cancelled = false
     setBuscando(true)
     const timer = window.setTimeout(() => {
-      void buscarSpeakersGlobales(q)
+      void buscarSpeakersGlobales(q, { eventoId })
         .then((rows) => {
           if (!cancelled) setResultados(rows)
         })
@@ -82,14 +84,22 @@ export function AsociarSpeakerDialog({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, query])
+  }, [open, query, eventoId])
 
-  async function handleAsociar(speaker: Speaker) {
+  async function handleAsociar(speaker: SpeakerBusqueda) {
+    if (speaker.yaAsociadoAlEvento) return
     setAsociandoId(speaker.id)
     try {
-      const { created } = await asociarSpeakerAEvento(eventoId, speaker.id)
-      if (created) toast.success(`«${speaker.nombre}» asociado al evento`)
-      else toast.message(`«${speaker.nombre}» ya estaba asociado`)
+      const { created } = await asociarSpeakerAEvento(
+        eventoId,
+        speaker.id,
+        ESTADO_ALTA_NUEVA,
+      )
+      if (created) {
+        toast.success(
+          `«${speaker.nombre}» asociado (${ESTADO_ALTA_NUEVA.replaceAll('_', ' ').toLowerCase()})`,
+        )
+      } else toast.message(`«${speaker.nombre}» ya estaba asociado`)
       onOpenChange(false)
       onAsociado()
     } catch (err) {
@@ -114,8 +124,9 @@ export function AsociarSpeakerDialog({
         <DialogHeader>
           <DialogTitle>Asociar speaker</DialogTitle>
           <DialogDescription>
-            Busca en el directorio global y asocia al evento sin duplicar
-            perfiles. Si no existe, créalo nuevo.
+            Busca en el directorio global (nombre, email u organización). Las
+            coincidencias similares son alertas; no se fusionan perfiles. Puedes
+            crear sin correo.
           </DialogDescription>
         </DialogHeader>
 
@@ -124,7 +135,7 @@ export function AsociarSpeakerDialog({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por nombre o email…"
+            placeholder="Buscar por nombre, email u organización…"
             className="pl-9"
             aria-label="Buscar speakers en el directorio"
           />
@@ -159,9 +170,21 @@ export function AsociarSpeakerDialog({
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{sp.nombre}</p>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <p className="truncate text-sm font-medium">{sp.nombre}</p>
+                      {sp.yaAsociadoAlEvento && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          Ya en este evento
+                        </Badge>
+                      )}
+                      {!sp.yaAsociadoAlEvento && sp.alertaSimilarNombre && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Revisar coincidencia
+                        </Badge>
+                      )}
+                    </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      {[sp.cargo, sp.empresa, sp.email]
+                      {[sp.cargo, sp.empresa, sp.email || 'sin email']
                         .filter(Boolean)
                         .join(' · ')}
                     </p>
@@ -169,10 +192,21 @@ export function AsociarSpeakerDialog({
                   <Button
                     type="button"
                     size="sm"
-                    disabled={asociandoId === sp.id}
+                    disabled={
+                      sp.yaAsociadoAlEvento || asociandoId === sp.id
+                    }
                     onClick={() => void handleAsociar(sp)}
+                    aria-label={
+                      sp.yaAsociadoAlEvento
+                        ? `${sp.nombre} ya asociado`
+                        : `Asociar ${sp.nombre}`
+                    }
                   >
-                    {asociandoId === sp.id ? 'Asociando…' : 'Asociar'}
+                    {sp.yaAsociadoAlEvento
+                      ? 'Asociado'
+                      : asociandoId === sp.id
+                        ? 'Asociando…'
+                        : 'Asociar'}
                   </Button>
                 </li>
               ))}

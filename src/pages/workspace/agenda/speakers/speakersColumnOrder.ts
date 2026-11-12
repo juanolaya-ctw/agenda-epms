@@ -6,6 +6,7 @@ export const SPEAKERS_FIXED_COLUMNS = [
   { id: 'foto', label: 'Foto' },
   { id: 'foto_url', label: 'URL foto' },
   { id: 'nombre', label: 'Nombre' },
+  { id: 'estado_evento', label: 'Estado (evento)' },
   { id: 'cargo', label: 'Cargo' },
   { id: 'empresa', label: 'Empresa' },
   { id: 'pais', label: 'País' },

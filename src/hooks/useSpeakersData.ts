@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
+import {
+  ESTADO_ALTA_NUEVA,
+  type EventoSpeakerEstado,
+  isEventoSpeakerEstado,
+} from '@/lib/eventoSpeakerEstado'
 import { isUuid } from '@/lib/isUuid'
+import {
+  isValidSpeakerEmail,
+  normalizeSpeakerEmail,
+} from '@/lib/speakerEmail'
 import { supabase } from '@/lib/supabase'
 
 export type Speaker = {
@@ -20,6 +29,8 @@ export type Speaker = {
   fuente: string | null
   toolkit_slug: string | null
   sesionesEnEvento: number
+  /** Pipeline de invitación en el evento del workspace (si aplica). */
+  estadoEnEvento: EventoSpeakerEstado | null
   /** Nombres de eventos (membresía), para búsqueda/filtros. */
   eventosParticipados: string[]
   /** Membresía evento_speakers con id para asociar desde CRM. */
@@ -91,6 +102,7 @@ function mapSpeakerRow(
     sesionesEnEvento: number
     eventosParticipados: string[]
     eventosAsociados?: { id: string; nombre: string }[]
+    estadoEnEvento?: EventoSpeakerEstado | null
   },
 ): Speaker {
   const eventosAsociados = extras.eventosAsociados ?? []
@@ -112,12 +124,26 @@ function mapSpeakerRow(
     fuente: pick(r.fuente as string | null),
     toolkit_slug: pick(r.toolkit_slug as string | null),
     sesionesEnEvento: extras.sesionesEnEvento,
+    estadoEnEvento: extras.estadoEnEvento ?? null,
     eventosParticipados:
       extras.eventosParticipados.length > 0
         ? extras.eventosParticipados
         : eventosAsociados.map((e) => e.nombre),
     eventosAsociados,
   }
+}
+
+function normalizeEditableEmail(
+  datos: Partial<SpeakerEditable>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...datos }
+  if (!('email' in datos)) return payload
+  const normalized = normalizeSpeakerEmail(datos.email)
+  if (!isValidSpeakerEmail(normalized)) {
+    throw new Error('Email inválido')
+  }
+  payload.email = normalized
+  return payload
 }
 
 type LoadResult = {
@@ -187,7 +213,7 @@ const SPEAKER_COLS =
 // El directorio global sigue en loadSpeakersGlobal / CRM.
 const SPEAKERS_TABLA_SELECT = `
   ${SPEAKER_COLS},
-  evento_speakers!inner ( evento_id ),
+  evento_speakers!inner ( evento_id, estado ),
   sesion_speakers (
     sesion:sesiones (
       slot:slots (
@@ -235,9 +261,27 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
         const escenario = one(slot?.escenario)
         if (escenario?.evento_id === eventoId) sesionesEnEvento += 1
       }
+      const membRaw = (r as { evento_speakers?: unknown }).evento_speakers
+      const membList = Array.isArray(membRaw)
+        ? membRaw
+        : membRaw
+          ? [membRaw]
+          : []
+      const memb = membList.find(
+        (m) =>
+          m &&
+          typeof m === 'object' &&
+          (m as { evento_id?: string }).evento_id === eventoId,
+      ) as { estado?: string } | undefined
+      const estadoRaw = memb?.estado
+      const estadoEnEvento =
+        typeof estadoRaw === 'string' && isEventoSpeakerEstado(estadoRaw)
+          ? estadoRaw
+          : null
       return mapSpeakerRow(r as unknown as Record<string, unknown>, {
         sesionesEnEvento,
         eventosParticipados: [],
+        estadoEnEvento,
       })
     },
   )
@@ -340,16 +384,18 @@ export async function actualizarSpeaker(
   id: string,
   datos: Partial<SpeakerEditable>,
 ): Promise<void> {
-  const { error } = await supabase.from('speakers').update(datos).eq('id', id)
+  const payload = normalizeEditableEmail(datos)
+  const { error } = await supabase.from('speakers').update(payload).eq('id', id)
   if (error) throw new Error(error.message)
 }
 
 export async function crearSpeaker(
   datos: Partial<SpeakerEditable>,
 ): Promise<string> {
+  const payload = normalizeEditableEmail(datos)
   const { data, error } = await supabase
     .from('speakers')
-    .insert({ ...datos, fuente: 'admin_manual' })
+    .insert({ ...payload, fuente: 'admin_manual' })
     .select('id')
     .single()
   if (error) throw new Error(error.message)
@@ -359,7 +405,7 @@ export async function crearSpeaker(
 export async function speakerPorEmail(
   email: string,
 ): Promise<Speaker | null> {
-  const normalized = email.trim().toLowerCase()
+  const normalized = normalizeSpeakerEmail(email)
   if (!normalized) return null
   const { data, error } = await supabase
     .from('speakers')
@@ -378,6 +424,7 @@ export async function speakerPorEmail(
 export async function asociarSpeakerAEvento(
   eventoId: string,
   speakerId: string,
+  estado: EventoSpeakerEstado = ESTADO_ALTA_NUEVA,
 ): Promise<{ created: boolean }> {
   if (!isUuid(eventoId) || !isUuid(speakerId)) {
     throw new Error('eventoId y speakerId deben ser UUID')
@@ -394,21 +441,84 @@ export async function asociarSpeakerAEvento(
   const { error } = await supabase.from('evento_speakers').insert({
     evento_id: eventoId,
     speaker_id: speakerId,
+    estado,
   })
   if (error) throw new Error(error.message)
   return { created: true }
 }
 
+export async function actualizarEstadoEventoSpeaker(
+  eventoId: string,
+  speakerId: string,
+  estado: EventoSpeakerEstado,
+  estadoMotivo?: string | null,
+): Promise<void> {
+  if (!isUuid(eventoId) || !isUuid(speakerId)) {
+    throw new Error('eventoId y speakerId deben ser UUID')
+  }
+  const { error } = await supabase
+    .from('evento_speakers')
+    .update({
+      estado,
+      estado_motivo: estadoMotivo ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('evento_id', eventoId)
+    .eq('speaker_id', speakerId)
+  if (error) throw new Error(error.message)
+}
+
+export type DesasociarResultado =
+  | { ok: true }
+  | { ok: false; reason: 'tiene_sesiones'; sesiones: number }
+
+/**
+ * Quita la membresía. Conserva valores_propiedades e interacciones.
+ * Bloquea si hay sesiones asignadas en el evento (no las borra).
+ */
 export async function desasociarSpeakerDeEvento(
   eventoId: string,
   speakerId: string,
-): Promise<void> {
+): Promise<DesasociarResultado> {
+  if (!isUuid(eventoId) || !isUuid(speakerId)) {
+    throw new Error('eventoId y speakerId deben ser UUID')
+  }
+
+  const sesiones = await contarSesionesEnEvento(eventoId, speakerId)
+  if (sesiones > 0) {
+    return { ok: false, reason: 'tiene_sesiones', sesiones }
+  }
+
   const { error } = await supabase
     .from('evento_speakers')
     .delete()
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
   if (error) throw new Error(error.message)
+  return { ok: true }
+}
+
+async function contarSesionesEnEvento(
+  eventoId: string,
+  speakerId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('sesion_speakers')
+    .select(
+      `
+      id,
+      sesion:sesiones!inner (
+        slot:slots!inner (
+          escenario:escenarios!inner ( evento_id )
+        )
+      )
+    `,
+    )
+    .eq('speaker_id', speakerId)
+    .eq('sesion.slot.escenario.evento_id', eventoId)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).length
 }
 
 /**
@@ -474,32 +584,67 @@ export async function quitarSpeakerDeEvento(
   if (membErr) throw new Error(membErr.message)
 }
 
-/** Búsqueda ligera en el pool global (CRM) por nombre o email. */
+export type SpeakerBusqueda = Speaker & {
+  yaAsociadoAlEvento: boolean
+  alertaSimilarNombre?: boolean
+}
+
+/** Búsqueda en pool global por nombre, email o empresa. */
 export async function buscarSpeakersGlobales(
   query: string,
-  limit = 20,
-): Promise<Speaker[]> {
+  opts?: { eventoId?: string; limit?: number },
+): Promise<SpeakerBusqueda[]> {
   const q = query.trim()
   if (q.length < 2) return []
 
-  // Evita romper el filtro PostgREST si el texto trae comas/comodines.
   const safe = q.replace(/[%_,]/g, ' ').trim()
   if (safe.length < 2) return []
   const pattern = `%${safe}%`
+  const limit = opts?.limit ?? 20
   const { data, error } = await supabase
     .from('speakers')
     .select(SPEAKER_COLS)
-    .or(`nombre.ilike."${pattern}",email.ilike."${pattern}"`)
+    .or(
+      `nombre.ilike."${pattern}",email.ilike."${pattern}",empresa.ilike."${pattern}"`,
+    )
     .order('nombre')
     .limit(limit)
 
   if (error) throw new Error(error.message)
-  return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) =>
-    mapSpeakerRow(row, {
-      sesionesEnEvento: 0,
-      eventosParticipados: [],
-    }),
+
+  const rows = ((data ?? []) as unknown as Record<string, unknown>[]).map(
+    (row) =>
+      mapSpeakerRow(row, {
+        sesionesEnEvento: 0,
+        eventosParticipados: [],
+      }),
   )
+
+  let asociados = new Set<string>()
+  if (opts?.eventoId && isUuid(opts.eventoId) && rows.length > 0) {
+    const { data: memb } = await supabase
+      .from('evento_speakers')
+      .select('speaker_id')
+      .eq('evento_id', opts.eventoId)
+      .in(
+        'speaker_id',
+        rows.map((r) => r.id),
+      )
+    asociados = new Set((memb ?? []).map((m) => m.speaker_id as string))
+  }
+
+  const qLower = safe.toLowerCase()
+  return rows.map((sp) => {
+    const nombreHit = sp.nombre.toLowerCase().includes(qLower)
+    const orgHit = (sp.empresa ?? '').toLowerCase().includes(qLower)
+    const emailExact =
+      sp.email != null && sp.email.toLowerCase() === qLower
+    return {
+      ...sp,
+      yaAsociadoAlEvento: asociados.has(sp.id),
+      alertaSimilarNombre: !emailExact && (nombreHit || orgHit),
+    }
+  })
 }
 
 export async function eliminarSpeaker(id: string): Promise<void> {

@@ -443,7 +443,7 @@ export function CrmGlobal() {
                         <TableCell className="max-w-[200px] text-muted-foreground">
                           <InlineText
                             value={campoActual(sp, 'email')}
-                            validate={(v) => EMAIL_RE.test(v)}
+                            validate={emailOpcional}
                             onSave={(v) => guardarCampo(sp, 'email', v)}
                           />
                         </TableCell>

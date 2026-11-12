@@ -46,7 +46,7 @@ const CAMPOS: { key: keyof SpeakerEditable; label: string; required?: boolean }[
   { key: 'empresa', label: 'Empresa' },
   { key: 'pais', label: 'País' },
   { key: 'ciudad', label: 'Ciudad' },
-  { key: 'email', label: 'Email', required: true },
+  { key: 'email', label: 'Email' },
   { key: 'telefono', label: 'Teléfono' },
   { key: 'linkedin_url', label: 'LinkedIn' },
   { key: 'tipo_documento', label: 'Tipo de documento' },
@@ -357,8 +357,16 @@ export function SpeakerPerfilDialog({
   }
 
   async function handleGuardar() {
-    if (!form.nombre.trim() || !form.email.trim()) {
-      toast.error('Nombre y email son obligatorios.')
+    if (!form.nombre.trim()) {
+      toast.error('El nombre es obligatorio.')
+      return
+    }
+    const emailTrim = form.email.trim()
+    if (
+      emailTrim &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim.toLowerCase())
+    ) {
+      toast.error('Email inválido.')
       return
     }
     const datos: Partial<SpeakerEditable> = { ...form }
@@ -375,7 +383,7 @@ export function SpeakerPerfilDialog({
           const msg = err instanceof Error ? err.message : String(err)
           const esDuplicado =
             /duplicate|unique|already exists|speakers_email/i.test(msg)
-          if (!esDuplicado || !asociarAlCrear) throw err
+          if (!esDuplicado || !asociarAlCrear || !emailTrim) throw err
 
           const existente = await speakerPorEmail(form.email)
           if (!existente) throw err
@@ -400,7 +408,11 @@ export function SpeakerPerfilDialog({
 
         if (fotoPendiente) {
           try {
-            await subirFotoSpeaker(newId, fotoPendiente, form.email)
+            await subirFotoSpeaker(
+              newId,
+              fotoPendiente,
+              emailTrim || newId,
+            )
           } catch (fotoErr) {
             toast.error(
               `Speaker creado, pero no se pudo subir la foto: ${

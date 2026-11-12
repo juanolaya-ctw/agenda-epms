@@ -23,6 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  actualizarEstadoEventoSpeaker,
   actualizarSpeaker,
   guardarValorPropiedad,
   type PropiedadCustom,
@@ -30,6 +31,13 @@ import {
   type SpeakerEditable,
   useSpeakersData,
 } from '@/hooks/useSpeakersData'
+import {
+  ESTADO_LABELS,
+  EVENTO_SPEAKER_ESTADOS,
+  isEventoSpeakerEstado,
+  type EventoSpeakerEstado,
+} from '@/lib/eventoSpeakerEstado'
+import { EMAIL_RE } from '@/lib/speakerEmail'
 import { InlineText } from '@/components/InlineText'
 import { ReportarRequestDialog } from '@/components/requests/ReportarRequestDialog'
 import {
@@ -88,7 +96,6 @@ type CampoTexto = Extract<
   | 'email_secundario'
 >
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const emailOpcional = (v: string) => v === '' || EMAIL_RE.test(v)
 
 function toStr(v: unknown): string {
@@ -174,6 +181,12 @@ export function SpeakersTable({
 
   const filterColumns: FiltroColumna[] = useMemo(() => {
     const base: FiltroColumna[] = [
+      {
+        campo: 'estadoEnEvento',
+        etiqueta: 'Estado (evento)',
+        tipo: 'select',
+        opciones: [...EVENTO_SPEAKER_ESTADOS],
+      },
       {
         campo: 'pais',
         etiqueta: 'País',
@@ -472,6 +485,55 @@ export function SpeakersTable({
             )}
           </TableCell>
         )
+      case 'estado_evento':
+        return (
+          <TableCell key={columnId} className="min-w-[160px]">
+            {readOnly ? (
+              <span className="text-sm">
+                {sp.estadoEnEvento
+                  ? ESTADO_LABELS[sp.estadoEnEvento]
+                  : '—'}
+              </span>
+            ) : (
+              <Select
+                value={sp.estadoEnEvento ?? undefined}
+                onValueChange={(v) => {
+                  if (!isEventoSpeakerEstado(v)) return
+                  void (async () => {
+                    try {
+                      await actualizarEstadoEventoSpeaker(
+                        eventoId,
+                        sp.id,
+                        v as EventoSpeakerEstado,
+                      )
+                      refetch()
+                    } catch (err) {
+                      toast.error(
+                        `No se pudo actualizar estado: ${
+                          err instanceof Error ? err.message : String(err)
+                        }`,
+                      )
+                    }
+                  })()
+                }}
+              >
+                <SelectTrigger
+                  className="h-8 w-[170px]"
+                  aria-label={`Estado de ${sp.nombre}`}
+                >
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EVENTO_SPEAKER_ESTADOS.map((e) => (
+                    <SelectItem key={e} value={e}>
+                      {ESTADO_LABELS[e]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </TableCell>
+        )
       case 'cargo':
         return (
           <TableCell
@@ -535,7 +597,7 @@ export function SpeakersTable({
               <div className="min-w-0 max-w-[180px]">
                 <InlineText
                   value={campoActual(sp, 'email')}
-                  validate={(v) => EMAIL_RE.test(v)}
+                  validate={emailOpcional}
                   onSave={(v) => guardarCampo(sp, 'email', v)}
                 />
               </div>
