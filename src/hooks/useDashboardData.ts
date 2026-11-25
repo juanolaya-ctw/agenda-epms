@@ -464,21 +464,22 @@ function aplicarConteosIndependientes(
 async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loading'>> {
   const asignadosP = countSpeakersAsignados(eventoId)
   // Independientes del grafo de sesiones: conteos de speakers y checkboxes.
+  // No pedimos fetchSesionesPorEscenario aquí: si fetchSesiones OK lo
+  // derivamos en cliente; el embed pesado solo como fallback de error.
   const [
     graph,
     estadosQueCuentan,
     speakersAsignados,
     checkboxCounts,
-    escenarios,
   ] = await Promise.all([
     loadEventGraph(eventoId),
     fetchEstadosQueCuentan(eventoId),
     asignadosP,
     countCheckboxPorNombre(eventoId, asignadosP),
-    fetchSesionesPorEscenario(eventoId),
   ])
 
   if (graph.error) {
+    const escenarios = await fetchSesionesPorEscenario(eventoId)
     return aplicarConteosIndependientes(
       {
         ...EMPTY,
@@ -498,6 +499,7 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
 
   const sesionesRes = await fetchSesiones(graph.slotIds)
   if (sesionesRes.error) {
+    const escenarios = await fetchSesionesPorEscenario(eventoId)
     return aplicarConteosIndependientes(
       {
         ...EMPTY,
@@ -540,17 +542,14 @@ async function loadDashboard(eventoId: string): Promise<Omit<DashboardData, 'loa
   const firstError =
     asignados.error ?? pendientes.error ?? revision.error ?? null
 
-  const escenariosFinal =
-    escenarios.error
-      ? {
-          rows: contarSesionesPorEscenario(
-            sesiones,
-            graph.slotsById,
-            graph.escenarioNombre,
-          ),
-          error: null as string | null,
-        }
-      : escenarios
+  const escenariosFinal = {
+    rows: contarSesionesPorEscenario(
+      sesiones,
+      graph.slotsById,
+      graph.escenarioNombre,
+    ),
+    error: null as string | null,
+  }
 
   return aplicarConteosIndependientes(
     {
@@ -660,12 +659,25 @@ export function useDashboardData(eventoId: string | null | undefined): Dashboard
       })
     void recargar()
 
-    // Tiempo real: cualquier checkbox marcado/desmarcado recarga los conteos
-    // (sin skeleton). Requiere epms.valores_propiedades en supabase_realtime.
+    // Tiempo real: checkboxes / asignaciones recargan conteos (sin skeleton).
+    // Sin tabla speakers: edits del CRM global no disparan full reload.
+    // Debounce 900ms; si el payload trae evento_id, ignorar otros eventos.
     let timer: ReturnType<typeof setTimeout> | undefined
-    const alCambiar = () => {
+    const alCambiar = (payload: {
+      new?: Record<string, unknown> | null
+      old?: Record<string, unknown> | null
+    }) => {
+      const row = payload.new ?? payload.old
+      const payloadEventoId = row?.evento_id
+      if (
+        typeof payloadEventoId === 'string' &&
+        payloadEventoId.length > 0 &&
+        payloadEventoId !== eventoId
+      ) {
+        return
+      }
       clearTimeout(timer)
-      timer = setTimeout(() => void recargar(), 500) // agrupa ráfagas de cambios
+      timer = setTimeout(() => void recargar(), 900)
     }
     const channel = supabase
       .channel(`dashboard-valores-${eventoId}`)
@@ -674,8 +686,11 @@ export function useDashboardData(eventoId: string | null | undefined): Dashboard
         { event: '*', schema: 'epms', table: 'valores_propiedades' },
         alCambiar,
       )
-      .on('postgres_changes', { event: '*', schema: 'epms', table: 'sesion_speakers' }, alCambiar)
-      .on('postgres_changes', { event: '*', schema: 'epms', table: 'speakers' }, alCambiar)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'epms', table: 'sesion_speakers' },
+        alCambiar,
+      )
       .subscribe()
 
     return () => {

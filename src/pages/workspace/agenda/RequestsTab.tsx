@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom'
 import { Inbox } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
-import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { invalidateRequestsPendientesCount } from '@/hooks/useDashboardData'
 import {
   decidirRequest,
@@ -191,8 +190,7 @@ function RequestCard({
 
 export function RequestsTab() {
   const { id } = useParams()
-  const { workspace } = useWorkspace()
-  const eventoId = workspace?.id ?? id
+  const eventoId = id
   const { usuario } = useAuth()
   const { requests, loading, error, refetch } = useAgendaRequests(eventoId)
   const [filtroEstado, setFiltroEstado] = useState<string>('todos')

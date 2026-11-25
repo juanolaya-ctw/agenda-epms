@@ -83,7 +83,7 @@ Caché: `Cache-Control: public, max-age=60, s-maxage=60, stale-while-revalidate=
 
 No se devuelven correos, teléfonos, documentos, LinkedIn, estado interno, cupos, piezas, requests, CRM ni notas de Sales/CS. Si un texto público trae un email, se elimina (título, descripción, nombre del escenario, nombre, cargo, empresa y bio). `foto_url` es `null` cuando la foto no está en el Storage de este proyecto: `epms.agenda_publica` marca `tiene_foto` solo si el host de `foto_url` es el de la URL de Supabase configurada en el servidor. Cuando sí lo está, la URL es de esta API (`/api/speaker-foto`): el objeto de Storage a veces lleva un email en el nombre y esa ruta no sale en el JSON ni en los headers. La foto solo se sirve si es jpeg, png, webp, gif o avif y pesa como máximo 5 MB (`Content-Security-Policy: default-src 'none'; sandbox` y `X-Content-Type-Options: nosniff`). Se cachea con `s-maxage=86400`.
 
-`epms.agenda_publica` devuelve `escenario.color` en `null`: la columna `escenarios.color` todavía no existe en producción (`epms-alter-escenarios-color.sql`) y la función no la lee. La API pinta el color con la paleta del calendario interno, por orden de nombre del escenario dentro del evento.
+`epms.agenda_publica` lee `escenarios.color` (columna añadida con `supabase/migrations/20261125_escenarios_color.sql`). Si el valor viene `null`, la API pinta el color con la paleta del calendario interno, por orden de nombre del escenario dentro del evento.
 
 ### Ejemplo real
 

@@ -547,6 +547,7 @@ export function CrmGlobal() {
       <EliminarSpeakerDialog
         speaker={speakerAEliminar}
         eventoId={eventoId}
+        modo="crm"
         onOpenChange={(open) => !open && setSpeakerAEliminar(null)}
         onDeleted={refetch}
       />

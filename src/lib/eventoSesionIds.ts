@@ -1,12 +1,38 @@
 import { supabase } from '@/lib/supabase'
 
+const CACHE_TTL_MS = 45_000
+
+type CacheEntry = {
+  ids: string[]
+  expiresAt: number
+}
+
+const sesionIdsCache = new Map<string, CacheEntry>()
+
+/**
+ * Invalida el cache de sesionIds. Sin argumento, limpia todo.
+ * Llamar tras mutar sesiones/slots del evento.
+ */
+export function invalidateSesionIdsCache(eventoId?: string): void {
+  if (eventoId) {
+    sesionIdsCache.delete(eventoId)
+    return
+  }
+  sesionIdsCache.clear()
+}
+
 /**
  * Resuelve los ids de sesión pertenecientes a un evento
- * (escenarios → slots → sesiones).
+ * (escenarios → slots → sesiones). Cache en memoria con TTL 45s.
  */
 export async function fetchSesionIdsForEvento(
   eventoId: string,
 ): Promise<{ ids: string[]; error: string | null }> {
+  const cached = sesionIdsCache.get(eventoId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ids: cached.ids, error: null }
+  }
+
   const { data: escenarios, error: escError } = await supabase
     .from('escenarios')
     .select('id')
@@ -15,7 +41,13 @@ export async function fetchSesionIdsForEvento(
   if (escError) return { ids: [], error: escError.message }
 
   const escenarioIds = (escenarios ?? []).map((row) => row.id as string)
-  if (escenarioIds.length === 0) return { ids: [], error: null }
+  if (escenarioIds.length === 0) {
+    sesionIdsCache.set(eventoId, {
+      ids: [],
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+    return { ids: [], error: null }
+  }
 
   const { data: slots, error: slotsError } = await supabase
     .from('slots')
@@ -25,7 +57,13 @@ export async function fetchSesionIdsForEvento(
   if (slotsError) return { ids: [], error: slotsError.message }
 
   const slotIds = (slots ?? []).map((row) => row.id as string)
-  if (slotIds.length === 0) return { ids: [], error: null }
+  if (slotIds.length === 0) {
+    sesionIdsCache.set(eventoId, {
+      ids: [],
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+    return { ids: [], error: null }
+  }
 
   const { data: sesiones, error: sesionesError } = await supabase
     .from('sesiones')
@@ -34,8 +72,10 @@ export async function fetchSesionIdsForEvento(
 
   if (sesionesError) return { ids: [], error: sesionesError.message }
 
-  return {
-    ids: (sesiones ?? []).map((row) => row.id as string),
-    error: null,
-  }
+  const ids = (sesiones ?? []).map((row) => row.id as string)
+  sesionIdsCache.set(eventoId, {
+    ids,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  })
+  return { ids, error: null }
 }

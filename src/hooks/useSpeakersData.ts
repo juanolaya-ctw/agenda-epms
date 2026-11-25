@@ -411,6 +411,69 @@ export async function desasociarSpeakerDeEvento(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Soft-scope: quita al speaker solo de este evento.
+ * Borra sesion_speakers del evento, valores_propiedades de props del evento
+ * y la membresía evento_speakers. No toca el perfil global ni otros eventos.
+ */
+export async function quitarSpeakerDeEvento(
+  eventoId: string,
+  speakerId: string,
+): Promise<void> {
+  if (!isUuid(eventoId) || !isUuid(speakerId)) {
+    throw new Error('eventoId y speakerId deben ser UUID')
+  }
+
+  const { data: ssRows, error: ssErr } = await supabase
+    .from('sesion_speakers')
+    .select(
+      `
+      id,
+      sesion:sesiones!inner (
+        slot:slots!inner (
+          escenario:escenarios!inner ( evento_id )
+        )
+      )
+    `,
+    )
+    .eq('speaker_id', speakerId)
+    .eq('sesion.slot.escenario.evento_id', eventoId)
+
+  if (ssErr) throw new Error(ssErr.message)
+
+  const ssIds = (ssRows ?? []).map((row) => row.id as string)
+  if (ssIds.length > 0) {
+    const { error } = await supabase
+      .from('sesion_speakers')
+      .delete()
+      .in('id', ssIds)
+    if (error) throw new Error(error.message)
+  }
+
+  const { data: props, error: propsErr } = await supabase
+    .from('propiedades_custom')
+    .select('id')
+    .eq('evento_id', eventoId)
+  if (propsErr) throw new Error(propsErr.message)
+
+  const propIds = (props ?? []).map((row) => row.id as string)
+  if (propIds.length > 0) {
+    const { error } = await supabase
+      .from('valores_propiedades')
+      .delete()
+      .eq('speaker_id', speakerId)
+      .in('propiedad_id', propIds)
+    if (error) throw new Error(error.message)
+  }
+
+  const { error: membErr } = await supabase
+    .from('evento_speakers')
+    .delete()
+    .eq('evento_id', eventoId)
+    .eq('speaker_id', speakerId)
+  if (membErr) throw new Error(membErr.message)
+}
+
 /** Búsqueda ligera en el pool global (CRM) por nombre o email. */
 export async function buscarSpeakersGlobales(
   query: string,

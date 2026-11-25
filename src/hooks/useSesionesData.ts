@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { invalidateSesionIdsCache } from '@/lib/eventoSesionIds'
 import { supabase } from '@/lib/supabase'
 
 export type OpcionCatalogo = { id: string; nombre: string }
@@ -442,6 +443,7 @@ export async function crearSesion(
     estado: values.estado,
   })
 
+  if (!res.error) invalidateSesionIdsCache()
   return { error: res.error?.message ?? null }
 }
 
@@ -475,6 +477,7 @@ export async function actualizarSesion(
     })
     .eq('id', sesionId)
 
+  if (!sesionRes.error) invalidateSesionIdsCache()
   return { error: sesionRes.error?.message ?? null }
 }
 
@@ -482,6 +485,7 @@ export async function eliminarSesion(
   sesionId: string,
 ): Promise<{ error: string | null }> {
   const res = await supabase.from('sesiones').delete().eq('id', sesionId)
+  if (!res.error) invalidateSesionIdsCache()
   return { error: res.error?.message ?? null }
 }
 

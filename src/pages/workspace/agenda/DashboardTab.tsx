@@ -1,5 +1,4 @@
 import { useParams } from 'react-router-dom'
-import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { cn } from '@/lib/utils'
 import { useDashboardData, type DashboardKpiKey } from '@/hooks/useDashboardData'
 
@@ -111,8 +110,7 @@ function KpiSkeleton() {
 
 export function DashboardTab() {
   const { id } = useParams()
-  const { workspace } = useWorkspace()
-  const eventoId = workspace?.id ?? id
+  const eventoId = id
   const data = useDashboardData(eventoId)
 
   if (data.loading) {

@@ -104,7 +104,7 @@ BEGIN
           'id', esc.id,
           'nombre', epms.agenda_texto_publico(esc.nombre),
           'evento_id', esc.evento_id,
-          'color', NULL
+          'color', esc.color
         )
         ORDER BY esc.nombre, esc.id
       )
@@ -137,7 +137,7 @@ BEGIN
           'escenario', jsonb_build_object(
             'id', esc.id,
             'nombre', epms.agenda_texto_publico(esc.nombre),
-            'color', NULL
+            'color', esc.color
           ),
           'speakers', COALESCE((
             SELECT jsonb_agg(jsonb_build_object(
