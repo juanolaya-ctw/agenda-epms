@@ -14,11 +14,11 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { speaker_id, nombre, cargo, empresa, foto_url } = body;
+    const { evento_id, speaker_id, nombre, cargo, empresa, foto_url } = body;
 
-    if (!speaker_id || !nombre || !foto_url) {
+    if (!evento_id || !speaker_id || !nombre || !foto_url) {
       return new Response(
-        JSON.stringify({ error: "Faltan campos requeridos: speaker_id, nombre, foto_url" }),
+        JSON.stringify({ error: "Faltan campos requeridos: evento_id, speaker_id, nombre, foto_url" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -38,7 +38,7 @@ serve(async (req) => {
       workerResp = await fetch(`${RAILWAY_WORKER_URL}/govtech/fase1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speaker_id, nombre, cargo, empresa, foto_url }),
+        body: JSON.stringify({ evento_id, speaker_id, nombre, cargo, empresa, foto_url }),
         signal: controller.signal,
       });
     } finally {

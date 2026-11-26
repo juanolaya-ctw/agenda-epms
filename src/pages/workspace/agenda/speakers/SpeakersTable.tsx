@@ -137,8 +137,15 @@ export function SpeakersTable({
   eventoId,
   readOnly = false,
 }: SpeakersTableProps) {
-  const { speakers, propiedades, valoresPorSpeaker, loading, error, refetch } =
-    useSpeakersData(eventoId)
+  const {
+    speakers,
+    propiedades,
+    valoresPorSpeaker,
+    toolkitBaseUrl,
+    loading,
+    error,
+    refetch,
+  } = useSpeakersData(eventoId)
   const [busqueda, setBusqueda] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [asociarOpen, setAsociarOpen] = useState(false)
@@ -313,9 +320,9 @@ export function SpeakersTable({
     setDialogOpen(true)
   }
 
-  async function copiarToolkit(slug: string) {
+  async function copiarToolkit(url: string) {
     try {
-      await navigator.clipboard.writeText(toolkitUrl(slug))
+      await navigator.clipboard.writeText(url)
       toast.success('Link copiado')
     } catch {
       toast.error('No se pudo copiar el link')
@@ -748,25 +755,36 @@ export function SpeakersTable({
             <FuenteBadge fuente={sp.fuente} />
           </TableCell>
         )
-      case 'toolkit':
+      case 'toolkit': {
+        const urlToolkit = toolkitUrl(toolkitBaseUrl, sp.toolkit_slug)
         return (
           <TableCell key={columnId}>
-            {sp.toolkit_slug ? (
+            {urlToolkit ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 aria-label={`Copiar link del toolkit de ${sp.nombre}`}
                 title="Copiar link del toolkit"
-                onClick={() => void copiarToolkit(sp.toolkit_slug!)}
+                onClick={() => void copiarToolkit(urlToolkit)}
               >
                 <Link />
               </Button>
             ) : (
-              <span className="text-muted-foreground">—</span>
+              <span
+                className="text-muted-foreground"
+                title={
+                  sp.toolkit_slug
+                    ? 'Este evento no tiene dominio de toolkit configurado'
+                    : undefined
+                }
+              >
+                —
+              </span>
             )}
           </TableCell>
         )
+      }
       case SPEAKERS_ACCIONES_ID:
         return (
           <TableCell key={columnId} className="text-right">
@@ -944,6 +962,8 @@ export function SpeakersTable({
         onSaved={refetch}
         readOnly={readOnly}
         asociarAlCrear
+        mostrarToolkit
+        toolkitBaseUrl={toolkitBaseUrl}
         propiedadesEvento={propiedades}
         valoresDelSpeaker={activo ? valoresPorSpeaker[activo.id] : undefined}
       />

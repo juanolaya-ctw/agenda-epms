@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { contarCheckboxesDeEvento } from '@/lib/dashboardCheckboxes'
 import { DASHBOARD_SPEAKER_CHECKBOX_PROPS } from '@/lib/createEventoWorkspace'
 import { fetchSesionIdsForEvento } from '@/lib/eventoSesionIds'
 import { supabase } from '@/lib/supabase'
@@ -193,10 +194,6 @@ function asArray<T>(value: T | T[] | null | undefined): T[] {
   return [value]
 }
 
-function esValorTrue(valor: unknown): boolean {
-  return valor === true || valor === 'true'
-}
-
 async function countSpeakersAsignados(eventoId: string) {
   const { data, error } = await supabase
     .from('sesion_speakers')
@@ -282,21 +279,22 @@ async function countCheckboxPorNombre(
     }
   }
 
-  const toolkit = new Set<string>()
-  const publicaron = new Set<string>()
-  const fotos = new Set<string>()
-  for (const row of valores ?? []) {
-    const speakerId = row.speaker_id as string | null
-    if (!speakerId || !asignados.ids.has(speakerId) || !esValorTrue(row.valor)) continue
-    if (row.propiedad_id === toolkitId) toolkit.add(speakerId)
-    if (row.propiedad_id === publicaronId) publicaron.add(speakerId)
-    if (row.propiedad_id === fotosId) fotos.add(speakerId)
-  }
+  // propiedad_id ya viene filtrado por evento_id. asignados son speakers
+  // con sesión en este evento: un checkbox de otro workspace no entra.
+  const conteo = contarCheckboxesDeEvento(
+    asignados.ids,
+    (valores ?? []).map((row) => ({
+      speakerId: row.speaker_id as string | null,
+      propiedadId: row.propiedad_id as string,
+      valor: row.valor,
+    })),
+    { toolkit: toolkitId, publicaron: publicaronId, fotos: fotosId },
+  )
 
   return {
-    toolkit: { value: toolkit.size, error: null },
-    publicaron: { value: publicaron.size, error: null },
-    fotos: { value: fotos.size, error: null },
+    toolkit: { value: conteo.toolkit, error: null },
+    publicaron: { value: conteo.publicaron, error: null },
+    fotos: { value: conteo.fotos, error: null },
   }
 }
 

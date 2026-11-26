@@ -10,7 +10,8 @@ Diferencias vs CTF:
 - Trigger: llamado por Edge Function (no loop automático)
 - Datos del speaker: vienen en el payload del request, NO se leen de BD
   (el speaker pudo haberlos editado en el toolkit antes de generar)
-- Solo guarda en BD la URL de la pieza generada (link_pieza_fase1)
+- Solo guarda en BD la URL de la pieza generada
+  (epms.evento_speakers.link_pieza_fase1, por evento_id + speaker_id)
 
 Modos de uso:
   python generate_govtech_graphics.py --serve          # Servidor HTTP en puerto 8080
@@ -20,6 +21,7 @@ Modos de uso:
 Endpoint HTTP:
   POST /govtech/fase1
   Body JSON: {
+    "evento_id": "uuid",
     "speaker_id": "uuid",
     "nombre": "Nombre Apellido",
     "cargo": "CEO",
@@ -499,18 +501,21 @@ def _upload_to_storage(image_bytes: bytes, filename: str) -> str:
     return public_url
 
 
-def _save_pieza_url(speaker_id: str, url: str):
-    """Guarda la URL de la pieza en epms.speakers.link_pieza_fase1."""
-    endpoint = f"{SUPABASE_URL}/rest/v1/speakers"
+def _save_pieza_url(evento_id: str, speaker_id: str, url: str):
+    """Guarda la URL en epms.evento_speakers de ESE evento. No toca speakers."""
+    endpoint = f"{SUPABASE_URL}/rest/v1/evento_speakers"
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=minimal",
+        "Prefer": "return=representation",
         "Accept-Profile": "epms",
         "Content-Profile": "epms",
     }
-    params = {"id": f"eq.{speaker_id}"}
+    params = {
+        "evento_id": f"eq.{evento_id}",
+        "speaker_id": f"eq.{speaker_id}",
+    }
     payload = {
         "link_pieza_fase1": url,
         "updated_at": datetime.utcnow().isoformat(),
@@ -520,18 +525,24 @@ def _save_pieza_url(speaker_id: str, url: str):
         params=params, json=payload, timeout=30
     )
     resp.raise_for_status()
+    body = resp.json()
+    if not body:
+        raise RuntimeError(
+            "No hay membresía evento_speakers para ese evento y speaker; "
+            "no se escribió la pieza."
+        )
 
 
 # ─── Pipeline principal ────────────────────────────────────────────────────────
 
-def generate_pieza(speaker_id: str, nombre: str, cargo: str | None,
+def generate_pieza(evento_id: str, speaker_id: str, nombre: str, cargo: str | None,
                    empresa: str | None, foto_url: str) -> str:
     """
     Pipeline completo:
       1. Descarga foto desde URL pública
       2. Compone imagen con template GovTech
       3. Sube a Supabase Storage
-      4. Guarda URL en epms.speakers.link_pieza_fase1
+      4. Guarda URL en epms.evento_speakers.link_pieza_fase1
       5. Retorna URL pública de la pieza
     """
     log.info(f"Generando pieza: {nombre}")
@@ -544,13 +555,13 @@ def generate_pieza(speaker_id: str, nombre: str, cargo: str | None,
     final_bytes = _compose_speaker_image(photo_bytes, nombre, cargo, empresa)
     log.info(f"  Imagen compuesta: {len(final_bytes):,} bytes")
 
-    filename = f"fase1-{speaker_id}.png"
+    filename = f"fase1/{evento_id}/{speaker_id}.png"
     log.info(f"  Subiendo a Storage como '{filename}'...")
     public_url = _upload_to_storage(final_bytes, filename)
     log.info(f"  URL pública: {public_url}")
 
     log.info("  Guardando URL en Supabase...")
-    _save_pieza_url(speaker_id, public_url)
+    _save_pieza_url(evento_id, speaker_id, public_url)
     log.info("  OK")
 
     return public_url
@@ -594,7 +605,7 @@ class GovTechHandler(BaseHTTPRequestHandler):
             return
 
         # Validar campos requeridos
-        required = ["speaker_id", "nombre", "foto_url"]
+        required = ["evento_id", "speaker_id", "nombre", "foto_url"]
         missing = [f for f in required if not payload.get(f)]
         if missing:
             self._send_json(400, {"error": f"Campos requeridos faltantes: {', '.join(missing)}"})
@@ -602,6 +613,7 @@ class GovTechHandler(BaseHTTPRequestHandler):
 
         try:
             url = generate_pieza(
+                evento_id  = payload["evento_id"],
                 speaker_id = payload["speaker_id"],
                 nombre     = payload["nombre"],
                 cargo      = payload.get("cargo"),
