@@ -324,7 +324,9 @@ export function SpeakersTable({
   const columnIds = useMemo(
     () =>
       visibleColumnIds(columnIdsOrdered, hiddenColumns).filter(
-        (id) => esAgenda || id !== 'ultima_gestion',
+        (id) =>
+          esAgenda ||
+          (id !== 'ultima_gestion' && id !== 'notas_internas'),
       ),
     [columnIdsOrdered, hiddenColumns, esAgenda],
   )
@@ -338,7 +340,11 @@ export function SpeakersTable({
       labels.set(`prop:${prop.id}`, prop.nombre)
     }
     return columnIdsOrdered
-      .filter((id) => esAgenda || id !== 'ultima_gestion')
+      .filter(
+        (id) =>
+          esAgenda ||
+          (id !== 'ultima_gestion' && id !== 'notas_internas'),
+      )
       .map((id) => ({
         id,
         label: labels.get(id) ?? id,

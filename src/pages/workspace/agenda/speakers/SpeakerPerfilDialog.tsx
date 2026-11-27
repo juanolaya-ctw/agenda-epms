@@ -49,6 +49,7 @@ import type { EventoSpeakerEstado } from '@/lib/eventoSpeakerEstado'
 import { estadoLocalTrasRegistrarGestion } from '@/lib/gestionForm'
 import { isUuid } from '@/lib/isUuid'
 import { formatDiaLargo } from '../sesiones/format'
+import { ActividadSection } from './ActividadSection'
 import { GestionesSection } from './GestionesSection'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { asChecklist, iniciales, toolkitUrl } from './speakerUtils'
@@ -931,15 +932,17 @@ export function SpeakerPerfilDialog({
                       className="h-8"
                     />
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label className="text-xs">Notas internas</Label>
-                    <Textarea
-                      value={notasInternas}
-                      onChange={(e) => setNotasInternas(e.target.value)}
-                      rows={3}
-                      disabled={readOnly}
-                    />
-                  </div>
+                  {esAgenda && (
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs">Notas internas</Label>
+                      <Textarea
+                        value={notasInternas}
+                        onChange={(e) => setNotasInternas(e.target.value)}
+                        rows={3}
+                        disabled={readOnly}
+                      />
+                    </div>
+                  )}
                   {!readOnly && (
                     <Button
                       type="button"
@@ -989,6 +992,14 @@ export function SpeakerPerfilDialog({
                       setEstadoEnEventoLocal(next.estadoEnEvento)
                       onSaved()
                     }}
+                  />
+                  <div className="border-t border-border" />
+                  <ActividadSection
+                    modo={gestionesModo === 'global' ? 'global' : 'evento'}
+                    speakerId={speakerId}
+                    eventoId={
+                      gestionesModo === 'evento' ? eventoId : undefined
+                    }
                   />
                   <div className="border-t border-border" />
                 </>

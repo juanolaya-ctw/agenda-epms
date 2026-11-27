@@ -86,3 +86,49 @@ export function esVencido(
   if (Number.isNaN(t.getTime())) return false
   return t.getTime() < inicioDiaBogota(ahora).getTime()
 }
+
+const MESES_ES_CORTO = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+] as const
+
+/**
+ * Timestamptz → «27 nov 2026, 16:12» en America/Bogota (con hora).
+ * No se corre de día por UTC cerca de medianoche.
+ */
+export function timestampAFechaHoraBogota(
+  iso: string | null | undefined,
+): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BOGOTA_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  const y = parts.find((p) => p.type === 'year')?.value
+  const m = parts.find((p) => p.type === 'month')?.value
+  const day = parts.find((p) => p.type === 'day')?.value
+  const hour = parts.find((p) => p.type === 'hour')?.value
+  const minute = parts.find((p) => p.type === 'minute')?.value
+  if (!y || !m || !day || hour == null || minute == null) return null
+  const mesIdx = Number(m) - 1
+  const mes = MESES_ES_CORTO[mesIdx]
+  if (!mes) return null
+  return `${Number(day)} ${mes} ${y}, ${hour}:${minute}`
+}
