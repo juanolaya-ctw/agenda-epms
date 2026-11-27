@@ -17,6 +17,7 @@ export const SPEAKERS_FIXED_COLUMNS = [
   { id: 'estado_evento', label: 'Estado (evento)' },
   { id: 'responsable', label: 'Responsable' },
   { id: 'proximo_seguimiento', label: 'Próximo seguimiento' },
+  { id: 'ultima_gestion', label: 'Última gestión' },
   { id: 'viaticos', label: 'Viáticos' },
   { id: 'pista_espacio', label: 'Pista / Espacio' },
   { id: 'notas_internas', label: 'Notas internas' },
