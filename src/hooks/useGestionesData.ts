@@ -60,6 +60,7 @@ export async function listarGestionesEventoSpeaker(
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
     .order('ocurrida_at', { ascending: false })
+    .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return ((data ?? []) as Record<string, unknown>[]).map(mapGestionRow)
 }
@@ -75,6 +76,7 @@ export async function listarGestionesSpeakerGlobal(
     )
     .eq('speaker_id', speakerId)
     .order('ocurrida_at', { ascending: false })
+    .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
@@ -91,19 +93,30 @@ export async function listarGestionesSpeakerGlobal(
   })
 }
 
-/** Una sola query por evento; reduce a la última por speaker en cliente. */
+/**
+ * Una sola query por evento; reduce a la última por speaker en cliente.
+ * TODO: PostgREST limita ~1000 filas por defecto. Si un evento supera ese
+ * número de gestiones, el mapa de "Última gestión" quedaría incompleto sin
+ * avisar. Valorar RPC/vista agregada o paginación cuando crezca el volumen.
+ */
 export async function listarUltimasGestionesEvento(
   eventoId: string,
 ): Promise<Map<string, UltimaGestionResumen>> {
   if (!isUuid(eventoId)) throw new Error('eventoId debe ser UUID')
   const { data, error } = await supabase
     .from('evento_speaker_gestiones')
-    .select('speaker_id, tipo, ocurrida_at')
+    .select('speaker_id, tipo, ocurrida_at, created_at')
     .eq('evento_id', eventoId)
     .order('ocurrida_at', { ascending: false })
+    .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return ultimaGestionPorSpeaker(
-    ((data ?? []) as { speaker_id: string; tipo: string; ocurrida_at: string }[]),
+    (data ?? []) as {
+      speaker_id: string
+      tipo: string
+      ocurrida_at: string
+      created_at: string
+    }[],
   )
 }
 

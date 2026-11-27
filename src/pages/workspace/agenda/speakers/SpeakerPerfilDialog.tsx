@@ -45,6 +45,8 @@ import {
   timestampAYmdBogota,
   ymdATimestampBogota,
 } from '@/lib/bogotaDate'
+import type { EventoSpeakerEstado } from '@/lib/eventoSpeakerEstado'
+import { estadoLocalTrasRegistrarGestion } from '@/lib/gestionForm'
 import { isUuid } from '@/lib/isUuid'
 import { formatDiaLargo } from '../sesiones/format'
 import { GestionesSection } from './GestionesSection'
@@ -171,6 +173,8 @@ export function SpeakerPerfilDialog({
   const [responsableTexto, setResponsableTexto] = useState('')
   const [seguimientoYmd, setSeguimientoYmd] = useState('')
   const [seguimientoNota, setSeguimientoNota] = useState('')
+  const [estadoEnEventoLocal, setEstadoEnEventoLocal] =
+    useState<EventoSpeakerEstado | null>(null)
   const [requiereViaticos, setRequiereViaticos] = useState(false)
   const [viaticosNota, setViaticosNota] = useState('')
   const [pistaEspacio, setPistaEspacio] = useState('')
@@ -193,6 +197,7 @@ export function SpeakerPerfilDialog({
       setResponsableTexto(speaker?.responsable_texto ?? '')
       setSeguimientoYmd(timestampAYmdBogota(speaker?.proximo_seguimiento_at) ?? '')
       setSeguimientoNota(speaker?.proximo_seguimiento_nota ?? '')
+      setEstadoEnEventoLocal(speaker?.estadoEnEvento ?? null)
       setRequiereViaticos(speaker?.requiere_viaticos === true)
       setViaticosNota(speaker?.viaticos_nota ?? '')
       setPistaEspacio(speaker?.pista_espacio ?? '')
@@ -966,11 +971,24 @@ export function SpeakerPerfilDialog({
                     eventoId={
                       gestionesModo === 'evento' ? eventoId : undefined
                     }
-                    estadoEnEvento={speaker?.estadoEnEvento ?? null}
+                    estadoEnEvento={estadoEnEventoLocal}
                     puedeRegistrar={
                       gestionesModo === 'evento' && !readOnly && esAgenda
                     }
-                    onRegistered={onSaved}
+                    onRegistered={(resultado) => {
+                      const next = estadoLocalTrasRegistrarGestion(
+                        {
+                          seguimientoYmd,
+                          seguimientoNota,
+                          estadoEnEvento: estadoEnEventoLocal,
+                        },
+                        resultado,
+                      )
+                      setSeguimientoYmd(next.seguimientoYmd)
+                      setSeguimientoNota(next.seguimientoNota)
+                      setEstadoEnEventoLocal(next.estadoEnEvento)
+                      onSaved()
+                    }}
                   />
                   <div className="border-t border-border" />
                 </>

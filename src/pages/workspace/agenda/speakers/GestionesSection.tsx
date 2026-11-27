@@ -8,6 +8,7 @@ import {
 } from '@/hooks/useGestionesData'
 import { listarUsuariosAgenda } from '@/hooks/useSpeakersData'
 import type { EventoSpeakerEstado } from '@/lib/eventoSpeakerEstado'
+import type { ResultadoRegistroGestion } from '@/lib/gestionForm'
 import { GestionesList } from './GestionesList'
 import { RegistrarGestionForm } from './RegistrarGestionForm'
 
@@ -18,7 +19,7 @@ type GestionesSectionProps = {
   estadoEnEvento?: EventoSpeakerEstado | null
   /** Formulario de alta (solo Agenda + editable). */
   puedeRegistrar: boolean
-  onRegistered?: () => void
+  onRegistered?: (resultado: ResultadoRegistroGestion) => void
 }
 
 export function GestionesSection({
@@ -80,9 +81,9 @@ export function GestionesSection({
           eventoId={eventoId}
           speakerId={speakerId}
           estadoEnEvento={estadoEnEvento}
-          onRegistered={() => {
+          onRegistered={(resultado) => {
             void cargar()
-            onRegistered?.()
+            onRegistered?.(resultado)
           }}
         />
       )}

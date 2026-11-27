@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Eye,
   Flag,
@@ -267,20 +267,51 @@ export function SpeakersTable({
     }
   }, [])
 
+  const [ultimasGestionesOk, setUltimasGestionesOk] = useState(true)
+  const ultimasGestionesGen = useRef(0)
+
   const cargarUltimasGestiones = () => {
     if (!esAgenda) {
+      ultimasGestionesGen.current += 1
       setUltimasGestiones(new Map())
+      setUltimasGestionesOk(true)
       return
     }
-    void listarUltimasGestionesEvento(eventoId)
-      .then((map) => setUltimasGestiones(map))
-      .catch(() => setUltimasGestiones(new Map()))
+    const gen = ++ultimasGestionesGen.current
+    const eventoIdAlCargar = eventoId
+    void listarUltimasGestionesEvento(eventoIdAlCargar)
+      .then((map) => {
+        if (gen !== ultimasGestionesGen.current) return
+        setUltimasGestiones(map)
+        setUltimasGestionesOk(true)
+      })
+      .catch((err) => {
+        if (gen !== ultimasGestionesGen.current) return
+        toast.error(
+          `No se pudieron cargar las últimas gestiones: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+        setUltimasGestiones(new Map())
+        setUltimasGestionesOk(false)
+        setChipSinGestiones(false)
+      })
   }
 
   useEffect(() => {
     cargarUltimasGestiones()
+    return () => {
+      ultimasGestionesGen.current += 1
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventoId, esAgenda, loading])
+
+  // Tras refetch, re-sincroniza el speaker del perfil abierto.
+  useEffect(() => {
+    if (!activo) return
+    const fresh = speakers.find((s) => s.id === activo.id)
+    if (fresh) setActivo(fresh)
+  }, [speakers]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const defaultOrder = useMemo(
     () => defaultSpeakersColumnOrder(propiedades.map((p) => p.id)),
@@ -291,8 +322,11 @@ export function SpeakersTable({
     [storedOrder, defaultOrder],
   )
   const columnIds = useMemo(
-    () => visibleColumnIds(columnIdsOrdered, hiddenColumns),
-    [columnIdsOrdered, hiddenColumns],
+    () =>
+      visibleColumnIds(columnIdsOrdered, hiddenColumns).filter(
+        (id) => esAgenda || id !== 'ultima_gestion',
+      ),
+    [columnIdsOrdered, hiddenColumns, esAgenda],
   )
 
   const columnasPanel = useMemo(() => {
@@ -303,11 +337,13 @@ export function SpeakersTable({
     for (const prop of propiedades) {
       labels.set(`prop:${prop.id}`, prop.nombre)
     }
-    return columnIdsOrdered.map((id) => ({
-      id,
-      label: labels.get(id) ?? id,
-    }))
-  }, [columnIdsOrdered, propiedades])
+    return columnIdsOrdered
+      .filter((id) => esAgenda || id !== 'ultima_gestion')
+      .map((id) => ({
+        id,
+        label: labels.get(id) ?? id,
+      }))
+  }, [columnIdsOrdered, propiedades, esAgenda])
 
   function persistColumnOrder(ids: string[]) {
     setStoredOrder(ids)
@@ -496,7 +532,11 @@ export function SpeakersTable({
       ) {
         return false
       }
-      if (chipSinGestiones && !filaSinGestiones(sp.id, ultimasGestiones)) {
+      if (
+        chipSinGestiones &&
+        ultimasGestionesOk &&
+        !filaSinGestiones(sp.id, ultimasGestiones)
+      ) {
         return false
       }
       return filaPasaFiltros(
@@ -515,6 +555,7 @@ export function SpeakersTable({
     chipSinEmail,
     chipSinGestiones,
     ultimasGestiones,
+    ultimasGestionesOk,
     membresiaOverrides,
   ])
 
@@ -1404,11 +1445,13 @@ export function SpeakersTable({
             onClick={() => setChipSinEmail((v) => !v)}
             label="Sin email"
           />
-          <ChipToggle
-            active={chipSinGestiones}
-            onClick={() => setChipSinGestiones((v) => !v)}
-            label="Sin gestiones"
-          />
+          {esAgenda && (
+            <ChipToggle
+              active={chipSinGestiones}
+              onClick={() => setChipSinGestiones((v) => !v)}
+              label="Sin gestiones"
+            />
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {EVENTO_SPEAKER_ESTADOS.map((estado) => (

@@ -6,6 +6,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { EventoSpeakerEstado } from '@/lib/eventoSpeakerEstado'
+import type { ResultadoRegistroGestion } from '@/lib/gestionForm'
 import { RegistrarGestionForm } from './RegistrarGestionForm'
 
 type RegistrarGestionDialogProps = {
@@ -15,7 +16,7 @@ type RegistrarGestionDialogProps = {
   speakerId: string
   speakerNombre: string
   estadoEnEvento: EventoSpeakerEstado | null
-  onRegistered: () => void
+  onRegistered: (resultado?: ResultadoRegistroGestion) => void
 }
 
 export function RegistrarGestionDialog({
@@ -41,8 +42,8 @@ export function RegistrarGestionDialog({
           speakerId={speakerId}
           estadoEnEvento={estadoEnEvento}
           compact
-          onRegistered={() => {
-            onRegistered()
+          onRegistered={(resultado) => {
+            onRegistered(resultado)
             onOpenChange(false)
           }}
         />

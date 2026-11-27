@@ -71,7 +71,12 @@ CREATE POLICY "agenda_insert_evento_speaker_gestiones"
   );
 
 GRANT SELECT, INSERT ON epms.evento_speaker_gestiones TO authenticated;
--- Sin UPDATE ni DELETE: bitácora append-only.
+-- Default privileges del schema epms dan arw (SELECT/INSERT/UPDATE) a
+-- authenticated en tablas nuevas. Revocamos lo que no corresponde a bitácora
+-- append-only, y cualquier grant residual a PUBLIC/anon.
+REVOKE ALL ON epms.evento_speaker_gestiones FROM PUBLIC, anon;
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON epms.evento_speaker_gestiones FROM authenticated;
 
 -- ── 3) RPC registrar_gestion ─────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION epms.registrar_gestion(
@@ -107,7 +112,8 @@ BEGIN
   INTO v_memb_estado
   FROM epms.evento_speakers es
   WHERE es.evento_id = p_evento_id
-    AND es.speaker_id = p_speaker_id;
+    AND es.speaker_id = p_speaker_id
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Sin membresía en este evento';
@@ -153,7 +159,8 @@ BEGIN
       estado = 'CONTACTADO',
       updated_at = now()
     WHERE evento_id = p_evento_id
-      AND speaker_id = p_speaker_id;
+      AND speaker_id = p_speaker_id
+      AND estado IN ('PENDIENTE_CONTACTAR', 'SIN_CLASIFICAR');
   END IF;
 
   RETURN v_row;

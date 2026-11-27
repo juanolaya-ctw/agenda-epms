@@ -7,6 +7,7 @@ import { describe, it } from 'node:test'
 import {
   armarPayloadRegistrarGestion,
   defaultMarcarContactado,
+  estadoLocalTrasRegistrarGestion,
   puedeMarcarContactado,
 } from '../src/lib/gestionForm'
 import {
@@ -104,5 +105,68 @@ describe('ultima gestion y filtro sin gestiones', () => {
     assert.equal(map.get('s2')?.tipo, 'linkedin')
     assert.equal(filaSinGestiones('s1', map), false)
     assert.equal(filaSinGestiones('s3', map), true)
+  })
+
+  it('desempata por created_at cuando ocurrida_at coincide', () => {
+    const mismoDia = ymdATimestampBogota('2026-11-27')
+    const map = ultimaGestionPorSpeaker([
+      {
+        speaker_id: 's1',
+        tipo: 'correo',
+        ocurrida_at: mismoDia,
+        created_at: '2026-11-27T15:00:00.000Z',
+      },
+      {
+        speaker_id: 's1',
+        tipo: 'llamada',
+        ocurrida_at: mismoDia,
+        created_at: '2026-11-27T16:00:00.000Z',
+      },
+      {
+        speaker_id: 's1',
+        tipo: 'whatsapp',
+        ocurrida_at: mismoDia,
+        created_at: '2026-11-27T15:30:00.000Z',
+      },
+    ])
+    assert.equal(map.get('s1')?.tipo, 'llamada')
+  })
+})
+
+describe('estadoLocalTrasRegistrarGestion', () => {
+  it('actualiza seguimiento y CONTACTADO cuando aplica', () => {
+    const next = estadoLocalTrasRegistrarGestion(
+      {
+        seguimientoYmd: '2026-11-20',
+        seguimientoNota: 'vieja',
+        estadoEnEvento: 'PENDIENTE_CONTACTAR',
+      },
+      {
+        proximaYmd: '2026-12-01',
+        proximaNota: 'llamar',
+        marcoContactado: true,
+      },
+    )
+    assert.equal(next.seguimientoYmd, '2026-12-01')
+    assert.equal(next.seguimientoNota, 'llamar')
+    assert.equal(next.estadoEnEvento, 'CONTACTADO')
+  })
+
+  it('no pisa seguimiento si no hubo próxima; no baja estados avanzados', () => {
+    const next = estadoLocalTrasRegistrarGestion(
+      {
+        seguimientoYmd: '2026-11-20',
+        seguimientoNota: 'mantener',
+        estadoEnEvento: 'EN_CONVERSACION',
+      },
+      {
+        proximaYmd: null,
+        proximaNota: null,
+        marcoContactado: true,
+      },
+    )
+    assert.equal(next.seguimientoYmd, '2026-11-20')
+    assert.equal(next.seguimientoNota, 'mantener')
+    assert.equal(next.estadoEnEvento, 'EN_CONVERSACION')
   })
 })

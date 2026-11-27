@@ -17,6 +17,7 @@ import { ymdBogota } from '@/lib/bogotaDate'
 import {
   defaultMarcarContactado,
   puedeMarcarContactado,
+  type ResultadoRegistroGestion,
 } from '@/lib/gestionForm'
 import {
   GESTION_TIPOS,
@@ -29,7 +30,7 @@ type RegistrarGestionFormProps = {
   eventoId: string
   speakerId: string
   estadoEnEvento: EventoSpeakerEstado | null
-  onRegistered: () => void
+  onRegistered: (resultado: ResultadoRegistroGestion) => void
   /** Compacto para diálogo rápido. */
   compact?: boolean
 }
@@ -60,13 +61,18 @@ export function RegistrarGestionForm({
     e.preventDefault()
     setSaving(true)
     try {
+      const resultado: ResultadoRegistroGestion = {
+        proximaYmd: proximaYmd.trim() || null,
+        proximaNota: proximaNota.trim() || null,
+        marcoContactado: puedeMarcar && marcarContactado,
+      }
       await registrarGestion(eventoId, speakerId, {
         tipo,
         ocurridaYmd,
         nota,
-        proximaYmd: proximaYmd || null,
-        proximaNota: proximaNota || null,
-        marcarContactado: puedeMarcar && marcarContactado,
+        proximaYmd: resultado.proximaYmd,
+        proximaNota: resultado.proximaNota,
+        marcarContactado: resultado.marcoContactado,
       })
       toast.success('Gestión registrada')
       setNota('')
@@ -74,7 +80,7 @@ export function RegistrarGestionForm({
       setProximaNota('')
       setOcurridaYmd(ymdBogota())
       setTipo('correo')
-      onRegistered()
+      onRegistered(resultado)
     } catch (err) {
       toast.error(
         `No se pudo registrar: ${

@@ -80,3 +80,47 @@ export function gestionAtAYmd(
 ): string {
   return timestampAYmdBogota(iso) ?? ''
 }
+
+/** Resultado local tras registrar (para sincronizar UI del perfil). */
+export type ResultadoRegistroGestion = {
+  proximaYmd: string | null
+  proximaNota: string | null
+  marcoContactado: boolean
+}
+
+export type EstadoLocalTrasGestion = {
+  seguimientoYmd: string
+  seguimientoNota: string
+  estadoEnEvento: EventoSpeakerEstado | null
+}
+
+/**
+ * Calcula el estado local del perfil después de registrar una gestión.
+ * Si hubo próxima fecha, actualiza seguimiento. Si marcó contactado y el
+ * estado lo permitía, pasa a CONTACTADO.
+ */
+export function estadoLocalTrasRegistrarGestion(
+  prev: {
+    seguimientoYmd: string
+    seguimientoNota: string
+    estadoEnEvento: EventoSpeakerEstado | null
+  },
+  resultado: ResultadoRegistroGestion,
+): EstadoLocalTrasGestion {
+  const next: EstadoLocalTrasGestion = {
+    seguimientoYmd: prev.seguimientoYmd,
+    seguimientoNota: prev.seguimientoNota,
+    estadoEnEvento: prev.estadoEnEvento,
+  }
+  if (resultado.proximaYmd) {
+    next.seguimientoYmd = resultado.proximaYmd
+    next.seguimientoNota = resultado.proximaNota ?? ''
+  }
+  if (
+    resultado.marcoContactado &&
+    puedeMarcarContactado(prev.estadoEnEvento)
+  ) {
+    next.estadoEnEvento = 'CONTACTADO'
+  }
+  return next
+}
