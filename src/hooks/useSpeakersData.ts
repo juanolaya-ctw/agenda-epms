@@ -8,6 +8,11 @@ import {
 } from '@/lib/eventoSpeakerEstado'
 import { isUuid } from '@/lib/isUuid'
 import {
+  assertDeleteOk,
+  interpretMembershipDelete,
+  membershipDeleteErrorMessage,
+} from '@/lib/speakerDelete'
+import {
   isValidSpeakerEmail,
   normalizeSpeakerEmail,
 } from '@/lib/speakerEmail'
@@ -530,12 +535,19 @@ export async function desasociarSpeakerDeEvento(
     return { ok: false, reason: 'tiene_sesiones', sesiones }
   }
 
-  const { error } = await supabase
+  // .select() para contar filas borradas: sin privilege/RLS a veces no
+  // hay error y el delete afecta 0 filas (fallo silencioso en UI).
+  const { data, error } = await supabase
     .from('evento_speakers')
     .delete()
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
-  if (error) throw new Error(error.message)
+    .select('speaker_id')
+
+  const interpreted = interpretMembershipDelete({ error, data })
+  if (!interpreted.ok) {
+    throw new Error(membershipDeleteErrorMessage(interpreted))
+  }
   return { ok: true }
 }
 
@@ -617,12 +629,19 @@ export async function quitarSpeakerDeEvento(
     if (error) throw new Error(error.message)
   }
 
-  const { error: membErr } = await supabase
+  const { data: membRows, error: membErr } = await supabase
     .from('evento_speakers')
     .delete()
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
-  if (membErr) throw new Error(membErr.message)
+    .select('speaker_id')
+  const membResult = interpretMembershipDelete({
+    error: membErr,
+    data: membRows,
+  })
+  if (!membResult.ok) {
+    throw new Error(membershipDeleteErrorMessage(membResult))
+  }
 }
 
 export type SpeakerBusqueda = Speaker & {
@@ -691,11 +710,26 @@ export async function buscarSpeakersGlobales(
 export async function eliminarSpeaker(id: string): Promise<void> {
   // Limpieza explícita de referencias antes del DELETE, por si alguna FK no
   // tiene ON DELETE CASCADE en la BD real.
-  await supabase.from('evento_speakers').delete().eq('speaker_id', id)
-  await supabase.from('sesion_speakers').delete().eq('speaker_id', id)
-  await supabase.from('valores_propiedades').delete().eq('speaker_id', id)
+  const { error: membErr } = await supabase
+    .from('evento_speakers')
+    .delete()
+    .eq('speaker_id', id)
+  assertDeleteOk('evento_speakers', membErr)
+
+  const { error: ssErr } = await supabase
+    .from('sesion_speakers')
+    .delete()
+    .eq('speaker_id', id)
+  assertDeleteOk('sesion_speakers', ssErr)
+
+  const { error: valsErr } = await supabase
+    .from('valores_propiedades')
+    .delete()
+    .eq('speaker_id', id)
+  assertDeleteOk('valores_propiedades', valsErr)
+
   const { error } = await supabase.from('speakers').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  assertDeleteOk('speakers', error)
 }
 
 type EscenarioNombreEmbed = { nombre: string | null; evento_id: string }
