@@ -560,6 +560,7 @@ export function CrmGlobal() {
         eventoId={eventoId}
         onSaved={refetch}
         mostrarToolkit={false}
+        gestionesModo="global"
         onAbrirExistente={(existente) => {
           setModo('edit')
           setActivo(existente)

@@ -39,6 +39,7 @@ import {
   type SpeakerEditable,
   type UsuarioAgenda,
 } from '@/hooks/useSpeakersData'
+import { useAuth } from '@/contexts/AuthContext'
 import { planAltaSpeaker } from '@/lib/altaSpeaker'
 import {
   timestampAYmdBogota,
@@ -46,6 +47,7 @@ import {
 } from '@/lib/bogotaDate'
 import { isUuid } from '@/lib/isUuid'
 import { formatDiaLargo } from '../sesiones/format'
+import { GestionesSection } from './GestionesSection'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { asChecklist, iniciales, toolkitUrl } from './speakerUtils'
 
@@ -99,6 +101,13 @@ type SpeakerPerfilDialogProps = {
   asociarAlCrear?: boolean
   /** Muestra el toolkit de esta membresía. El CRM global no lo muestra. */
   mostrarToolkit?: boolean
+  /**
+   * Bitácora de gestiones:
+   * - evento: este workspace (lista + form si Agenda)
+   * - global: CRM (solo lectura, todos los eventos)
+   * - oculto: no mostrar
+   */
+  gestionesModo?: 'evento' | 'global' | 'oculto'
   /** Dominio https del toolkit de este evento. */
   toolkitBaseUrl?: string | null
   /** CRM: el email ya existe y hay que abrir esa ficha, no crear otra. */
@@ -119,11 +128,14 @@ export function SpeakerPerfilDialog({
   readOnly = false,
   asociarAlCrear = false,
   mostrarToolkit = false,
+  gestionesModo = 'oculto',
   toolkitBaseUrl = null,
   onAbrirExistente,
   propiedadesEvento,
   valoresDelSpeaker,
 }: SpeakerPerfilDialogProps) {
+  const { usuario } = useAuth()
+  const esAgenda = usuario?.area === 'Agenda'
   const [form, setForm] = useState<FormState>(() => initialForm(speaker))
   const [saving, setSaving] = useState(false)
   const [fotoUrl, setFotoUrl] = useState<string | null>(speaker?.foto_url ?? null)
@@ -941,6 +953,28 @@ export function SpeakerPerfilDialog({
                 <div className="border-t border-border" />
               </>
             )}
+
+            {esAgenda &&
+              gestionesModo !== 'oculto' &&
+              mode === 'edit' &&
+              speakerId &&
+              open && (
+                <>
+                  <GestionesSection
+                    modo={gestionesModo === 'global' ? 'global' : 'evento'}
+                    speakerId={speakerId}
+                    eventoId={
+                      gestionesModo === 'evento' ? eventoId : undefined
+                    }
+                    estadoEnEvento={speaker?.estadoEnEvento ?? null}
+                    puedeRegistrar={
+                      gestionesModo === 'evento' && !readOnly && esAgenda
+                    }
+                    onRegistered={onSaved}
+                  />
+                  <div className="border-t border-border" />
+                </>
+              )}
 
             {mode === 'create' || !speakerId ? (
               <p className="text-sm text-muted-foreground">

@@ -3,6 +3,7 @@ import {
   Eye,
   Flag,
   Link,
+  NotebookPen,
   Pencil,
   Trash2,
   UserMinus,
@@ -10,6 +11,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/contexts/AuthContext'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -54,6 +56,9 @@ import {
   timestampAYmdBogota,
   ymdATimestampBogota,
 } from '@/lib/bogotaDate'
+import { listarUltimasGestionesEvento } from '@/hooks/useGestionesData'
+import { filaSinGestiones, type UltimaGestionResumen } from '@/lib/gestionResumen'
+import { GESTION_TIPO_LABELS } from '@/lib/gestionTipos'
 import { filaPasaProspeccion } from '@/lib/prospeccionFiltros'
 import { EMAIL_RE } from '@/lib/speakerEmail'
 import { InlineText } from '@/components/InlineText'
@@ -67,6 +72,7 @@ import {
 import { AsociarSpeakerDialog } from './AsociarSpeakerDialog'
 import { AltaRapidaProspectoDialog } from './AltaRapidaProspectoDialog'
 import { DesasociarSpeakerDialog } from './DesasociarSpeakerDialog'
+import { RegistrarGestionDialog } from './RegistrarGestionDialog'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
@@ -189,6 +195,9 @@ export function SpeakersTable({
   eventoId,
   readOnly = false,
 }: SpeakersTableProps) {
+  const { usuario } = useAuth()
+  const esAgenda = usuario?.area === 'Agenda'
+  const puedeGestiones = esAgenda && !readOnly
   const {
     speakers,
     propiedades,
@@ -223,6 +232,11 @@ export function SpeakersTable({
   const [chipPendientesHoy, setChipPendientesHoy] = useState(false)
   const [chipVencidos, setChipVencidos] = useState(false)
   const [chipSinEmail, setChipSinEmail] = useState(false)
+  const [chipSinGestiones, setChipSinGestiones] = useState(false)
+  const [ultimasGestiones, setUltimasGestiones] = useState<
+    Map<string, UltimaGestionResumen>
+  >(() => new Map())
+  const [gestionSpeaker, setGestionSpeaker] = useState<Speaker | null>(null)
   const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioAgenda[]>([])
   const [membresiaOverrides, setMembresiaOverrides] = useState<
     Record<string, MembresiaProspeccionPatch>
@@ -252,6 +266,21 @@ export function SpeakersTable({
       cancelled = true
     }
   }, [])
+
+  const cargarUltimasGestiones = () => {
+    if (!esAgenda) {
+      setUltimasGestiones(new Map())
+      return
+    }
+    void listarUltimasGestionesEvento(eventoId)
+      .then((map) => setUltimasGestiones(map))
+      .catch(() => setUltimasGestiones(new Map()))
+  }
+
+  useEffect(() => {
+    cargarUltimasGestiones()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventoId, esAgenda, loading])
 
   const defaultOrder = useMemo(
     () => defaultSpeakersColumnOrder(propiedades.map((p) => p.id)),
@@ -467,6 +496,9 @@ export function SpeakersTable({
       ) {
         return false
       }
+      if (chipSinGestiones && !filaSinGestiones(sp.id, ultimasGestiones)) {
+        return false
+      }
       return filaPasaFiltros(
         (campo) => getValSpeaker(row, campo, valoresPorSpeaker),
         filtrosSinResponsable,
@@ -481,6 +513,8 @@ export function SpeakersTable({
     chipPendientesHoy,
     chipVencidos,
     chipSinEmail,
+    chipSinGestiones,
+    ultimasGestiones,
     membresiaOverrides,
   ])
 
@@ -1235,6 +1269,20 @@ export function SpeakersTable({
           </TableCell>
         )
       }
+      case 'ultima_gestion': {
+        const u = ultimasGestiones.get(sp.id)
+        const label = u
+          ? `${timestampAYmdBogota(u.ocurrida_at) ?? '—'} · ${GESTION_TIPO_LABELS[u.tipo]}`
+          : ''
+        return (
+          <TableCell
+            key={columnId}
+            className="max-w-[160px] overflow-hidden text-muted-foreground"
+          >
+            <Truncated value={label} />
+          </TableCell>
+        )
+      }
       case SPEAKERS_ACCIONES_ID:
         return (
           <TableCell key={columnId} className="text-right">
@@ -1263,6 +1311,17 @@ export function SpeakersTable({
                 </Button>
               ) : (
                 <>
+                  {puedeGestiones && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Registrar gestión de ${sp.nombre}`}
+                      title="Registrar gestión"
+                      onClick={() => setGestionSpeaker(sp)}
+                    >
+                      <NotebookPen />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -1344,6 +1403,11 @@ export function SpeakersTable({
             active={chipSinEmail}
             onClick={() => setChipSinEmail((v) => !v)}
             label="Sin email"
+          />
+          <ChipToggle
+            active={chipSinGestiones}
+            onClick={() => setChipSinGestiones((v) => !v)}
+            label="Sin gestiones"
           />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1450,6 +1514,25 @@ export function SpeakersTable({
         />
       )}
 
+      {puedeGestiones && gestionSpeaker && (
+        <RegistrarGestionDialog
+          open={!!gestionSpeaker}
+          onOpenChange={(open) => !open && setGestionSpeaker(null)}
+          eventoId={eventoId}
+          speakerId={gestionSpeaker.id}
+          speakerNombre={gestionSpeaker.nombre}
+          estadoEnEvento={
+            membresiaActual(gestionSpeaker).estadoEnEvento ??
+            gestionSpeaker.estadoEnEvento
+          }
+          onRegistered={() => {
+            setMembresiaOverrides({})
+            refetch()
+            cargarUltimasGestiones()
+          }}
+        />
+      )}
+
       <SpeakerPerfilDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
@@ -1459,10 +1542,12 @@ export function SpeakersTable({
         onSaved={() => {
           setMembresiaOverrides({})
           refetch()
+          cargarUltimasGestiones()
         }}
         readOnly={readOnly}
         asociarAlCrear
         mostrarToolkit
+        gestionesModo="evento"
         toolkitBaseUrl={toolkitBaseUrl}
         propiedadesEvento={propiedades}
         valoresDelSpeaker={activo ? valoresPorSpeaker[activo.id] : undefined}
