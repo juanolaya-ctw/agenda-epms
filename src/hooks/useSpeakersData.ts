@@ -29,6 +29,7 @@ export type Speaker = {
   foto_url: string | null
   bio: string | null
   fuente: string | null
+  /** Slug del toolkit de la membresía de ESTE evento. Null en el pool global. */
   toolkit_slug: string | null
   sesionesEnEvento: number
   /** Pipeline de invitación en el evento del workspace (si aplica). */
@@ -58,6 +59,8 @@ export type SpeakersData = {
   speakers: Speaker[]
   propiedades: PropiedadCustom[]
   valoresPorSpeaker: Record<string, Record<string, unknown>>
+  /** Dominio del toolkit de este evento. Null en el CRM y si no está configurado. */
+  toolkitBaseUrl: string | null
   loading: boolean
   error: string | null
   refetch: () => void
@@ -105,6 +108,7 @@ function mapSpeakerRow(
     eventosParticipados: string[]
     eventosAsociados?: { id: string; nombre: string }[]
     estadoEnEvento?: EventoSpeakerEstado | null
+    toolkitSlug?: string | null
   },
 ): Speaker {
   const eventosAsociados = extras.eventosAsociados ?? []
@@ -124,7 +128,7 @@ function mapSpeakerRow(
     foto_url: pick(r.foto_url as string | null),
     bio: pick(r.bio as string | null),
     fuente: pick(r.fuente as string | null),
-    toolkit_slug: pick(r.toolkit_slug as string | null),
+    toolkit_slug: pick(extras.toolkitSlug),
     sesionesEnEvento: extras.sesionesEnEvento,
     estadoEnEvento: extras.estadoEnEvento ?? null,
     eventosParticipados:
@@ -152,6 +156,7 @@ type LoadResult = {
   speakers: Speaker[]
   propiedades: PropiedadCustom[]
   valoresPorSpeaker: Record<string, Record<string, unknown>>
+  toolkitBaseUrl: string | null
   error: string | null
 }
 
@@ -203,11 +208,10 @@ type SpeakerTablaRow = Record<string, unknown> & {
   sesion_speakers?: SesionSpeakerTablaRel[] | null
 }
 
-// Columnas de speaker que pintan SpeakersTable / CrmGlobal. `bio` y las
-// piezas (link_pieza_*, estado_pieza) NO se traen aquí: solo viven en el
-// modal, que hace su propio point-lookup por PK.
+// Columnas de la ficha global. El toolkit y las piezas NO están aquí:
+// viven en evento_speakers y se leen solo para el evento del workspace.
 const SPEAKER_COLS =
-  'id, foto_url, nombre, cargo, empresa, pais, email, fuente, toolkit_slug, ' +
+  'id, foto_url, nombre, cargo, empresa, pais, email, fuente, ' +
   'telefono, linkedin_url, ciudad, tipo_documento, numero_documento, email_secundario'
 
 // Speakers asociados a ESTE evento (membresía evento_speakers).
@@ -215,7 +219,7 @@ const SPEAKER_COLS =
 // El directorio global sigue en loadSpeakersGlobal / CRM.
 const SPEAKERS_TABLA_SELECT = `
   ${SPEAKER_COLS},
-  evento_speakers!inner ( evento_id, estado ),
+  evento_speakers!inner ( evento_id, estado, toolkit_slug ),
   sesion_speakers (
     sesion:sesiones (
       slot:slots (
@@ -231,24 +235,34 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
       speakers: [],
       propiedades: [],
       valoresPorSpeaker: {},
+      toolkitBaseUrl: null,
       error: 'El workspace no tiene un id de evento válido (UUID).',
     }
   }
 
-  const [spRes, pv] = await Promise.all([
+  const [spRes, pv, baseRes] = await Promise.all([
     supabase
       .from('speakers')
       .select(SPEAKERS_TABLA_SELECT)
       .eq('evento_speakers.evento_id', eventoId)
       .order('nombre'),
     loadPropiedadesYValores(eventoId),
+    supabase
+      .from('eventos')
+      .select('toolkit_base_url')
+      .eq('id', eventoId)
+      .maybeSingle(),
   ])
+
+  const toolkitBaseUrl =
+    (baseRes.data?.toolkit_base_url as string | null | undefined) ?? null
 
   if (spRes.error) {
     return {
       speakers: [],
       propiedades: pv.propiedades,
       valoresPorSpeaker: pv.valoresPorSpeaker,
+      toolkitBaseUrl,
       error: spRes.error.message,
     }
   }
@@ -274,16 +288,21 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
           m &&
           typeof m === 'object' &&
           (m as { evento_id?: string }).evento_id === eventoId,
-      ) as { estado?: string } | undefined
+      ) as { estado?: string; toolkit_slug?: string | null } | undefined
       const estadoRaw = memb?.estado
       const estadoEnEvento =
         typeof estadoRaw === 'string' && isEventoSpeakerEstado(estadoRaw)
           ? estadoRaw
           : null
+      const toolkitSlug =
+        typeof memb?.toolkit_slug === 'string' && memb.toolkit_slug.trim()
+          ? memb.toolkit_slug
+          : null
       return mapSpeakerRow(r as unknown as Record<string, unknown>, {
         sesionesEnEvento,
         eventosParticipados: [],
         estadoEnEvento,
+        toolkitSlug,
       })
     },
   )
@@ -292,7 +311,8 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
     speakers,
     propiedades: pv.propiedades,
     valoresPorSpeaker: pv.valoresPorSpeaker,
-    error: pv.error,
+    toolkitBaseUrl,
+    error: pv.error ?? baseRes.error?.message ?? null,
   }
 }
 
@@ -334,7 +354,11 @@ const SPEAKERS_GLOBAL_SELECT = `
 
 // Speakers globales + membresía (evento_speakers) + conteo de sesiones.
 async function loadSpeakersGlobal(): Promise<LoadResult> {
-  const empty = { propiedades: [] as PropiedadCustom[], valoresPorSpeaker: {} }
+  const empty = {
+    propiedades: [] as PropiedadCustom[],
+    valoresPorSpeaker: {},
+    toolkitBaseUrl: null as string | null,
+  }
   const { data, error } = await supabase
     .from('speakers')
     .select(SPEAKERS_GLOBAL_SELECT)
@@ -408,15 +432,21 @@ export async function speakerPorEmail(
   email: string,
 ): Promise<Speaker | null> {
   const normalized = normalizeSpeakerEmail(email)
-  if (!normalized) return null
-  const { data, error } = await supabase
+  if (!normalized || !isValidSpeakerEmail(normalized)) return null
+  // El match lo hace la base: lower(btrim(email)), el mismo índice único.
+  const { data: id, error } = await supabase.rpc('buscar_speaker_por_email', {
+    p_email: email,
+  })
+  if (error) throw new Error(error.message)
+  if (typeof id !== 'string' || !id) return null
+  const row = await supabase
     .from('speakers')
     .select(SPEAKER_COLS)
-    .ilike('email', normalized)
+    .eq('id', id)
     .maybeSingle()
-  if (error) throw new Error(error.message)
-  if (!data) return null
-  return mapSpeakerRow(data as unknown as Record<string, unknown>, {
+  if (row.error) throw new Error(row.error.message)
+  if (!row.data) return null
+  return mapSpeakerRow(row.data as unknown as Record<string, unknown>, {
     sesionesEnEvento: 0,
     eventosParticipados: [],
   })
@@ -841,6 +871,7 @@ type State = {
   speakers: Speaker[]
   propiedades: PropiedadCustom[]
   valoresPorSpeaker: Record<string, Record<string, unknown>>
+  toolkitBaseUrl: string | null
   loading: boolean
   error: string | null
 }
@@ -849,6 +880,7 @@ const EMPTY_STATE: Omit<State, 'loading'> = {
   speakers: [],
   propiedades: [],
   valoresPorSpeaker: {},
+  toolkitBaseUrl: null,
   error: null,
 }
 

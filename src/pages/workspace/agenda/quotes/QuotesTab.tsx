@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +10,7 @@ import { layout, type Foto } from './quoteLayout'
 import { QuotePieza } from './QuotePieza'
 import { mayusInicial } from './ingresoRpc'
 import type { Estado, FilaDB, QuotesBackend } from './backend'
-import { backendSupabase } from './backendSupabase'
+import { crearBackendSupabase } from './backendSupabase'
 import { crearSimulado } from './backendSimulado'
 import { exportarPng } from './exportarPng'
 import { aprobarYPublicar, cargarCandidato, publicarAprobada, subirCandidato } from './quotesFlow'
@@ -24,18 +25,20 @@ const ESTADO_CLASS: Record<Estado, string> = {
   necesita_revision: 'border-transparent bg-red-100 text-red-900',
   enviada: 'border-transparent bg-violet-100 text-violet-900',
 }
-function elegirBackend(): QuotesBackend {
+function elegirBackend(eventoId: string): QuotesBackend {
   const m = new URLSearchParams(window.location.search).get('modo')
-  return m === 'simulado' ? crearSimulado('principal') : m === 'simulado-otro' ? crearSimulado('otro') : backendSupabase
+  return m === 'simulado' ? crearSimulado('principal') : m === 'simulado-otro' ? crearSimulado('otro') : crearBackendSupabase(eventoId)
 }
 export function QuotesTab({ backend }: { backend?: QuotesBackend }) {
-  const be = useMemo(() => backend ?? elegirBackend(), [backend])
+  const { id: eventoId = '' } = useParams()
+  const be = useMemo(() => backend ?? elegirBackend(eventoId), [backend, eventoId])
+  const esReal = !be.simulado
   // Modo lectura por defecto contra la base real: solo muestra. Escribir exige VITE_QUOTES_ESCRITURA=si en el .env.local
-  const soloLectura = be === backendSupabase && import.meta.env.VITE_QUOTES_ESCRITURA !== 'si'
+  const soloLectura = esReal && import.meta.env.VITE_QUOTES_ESCRITURA !== 'si'
   // Sesión de prueba con escritura real: solo foto, Generar pieza y Usar esta versión. El resto exige VITE_QUOTES_CIERRE=si
-  const bloqueoPrueba = be === backendSupabase && import.meta.env.VITE_QUOTES_CIERRE !== 'si'
+  const bloqueoPrueba = esReal && import.meta.env.VITE_QUOTES_CIERRE !== 'si'
   // Aprobacion acotada: habilita SOLO "Aprobar esta version" y "Reintentar publicacion" sin abrir edicion, revision, delegacion ni "Marcar enviada". Exige VITE_QUOTES_APROBACION=si
-  const aprobacionHabilitada = be === backendSupabase && import.meta.env.VITE_QUOTES_APROBACION === 'si'
+  const aprobacionHabilitada = esReal && import.meta.env.VITE_QUOTES_APROBACION === 'si'
   const guardAprobacion = (): boolean => {
     if (bloqueoPrueba && !aprobacionHabilitada) {
       setMsg({ tipo: 'error', texto: 'Bloqueado en esta sesion de prueba: aprobar/publicar sigue deshabilitado.' })

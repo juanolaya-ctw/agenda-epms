@@ -559,6 +559,12 @@ export function CrmGlobal() {
         speaker={activo}
         eventoId={eventoId}
         onSaved={refetch}
+        mostrarToolkit={false}
+        onAbrirExistente={(existente) => {
+          setModo('edit')
+          setActivo(existente)
+          setDialogOpen(true)
+        }}
         propiedadesEvento={propiedades}
       />
     </div>

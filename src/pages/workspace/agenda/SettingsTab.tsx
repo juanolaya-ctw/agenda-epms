@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { supabase } from '@/lib/supabase'
+import { validarToolkitBaseUrl } from '@/lib/toolkitLink'
 import { cn } from '@/lib/utils'
 import type { EstadoColor } from '@/hooks/useSesionesData'
 import { COLORES_ESCENARIO_PALETTE } from '@/hooks/useSesionesData'
@@ -388,6 +389,11 @@ export function SettingsTab() {
   const [nombre, setNombre] = useState(workspace?.nombre ?? '')
   const [fechaInicio, setFechaInicio] = useState(workspace?.fechaInicio ?? '')
   const [fechaFin, setFechaFin] = useState(workspace?.fechaFin ?? '')
+  const [toolkitBaseUrl, setToolkitBaseUrl] = useState('')
+  const [tallyFormId, setTallyFormId] = useState('')
+  const [tallyToken, setTallyToken] = useState<string | null>(null)
+  const [tallyActivo, setTallyActivo] = useState(true)
+  const [guardandoTally, setGuardandoTally] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [eliminando, setEliminando] = useState(false)
@@ -412,7 +418,7 @@ export function SettingsTab() {
     if (!eventoId) return
     let cancelled = false
     async function load() {
-      const [esc, fmt, trk, est] = await Promise.all([
+      const [esc, fmt, trk, est, eventoRow, tallyRow] = await Promise.all([
         supabase
           .from('escenarios')
           .select('id, nombre')
@@ -433,8 +439,39 @@ export function SettingsTab() {
           .select('id, nombre, orden, color, cuenta_para_cupos')
           .eq('evento_id', eventoId)
           .order('orden'),
+        supabase
+          .from('eventos')
+          .select('toolkit_base_url')
+          .eq('id', eventoId)
+          .maybeSingle(),
+        supabase
+          .from('tally_formularios')
+          .select('tally_form_id, webhook_token, activo')
+          .eq('evento_id', eventoId)
+          .maybeSingle(),
       ])
       if (cancelled) return
+      if (eventoRow.error) toast.error(`Toolkit: ${eventoRow.error.message}`)
+      if (tallyRow.error) toast.error(`Tally: ${tallyRow.error.message}`)
+      if (!eventoRow.error) {
+        setToolkitBaseUrl(
+          (eventoRow.data?.toolkit_base_url as string | null) ?? '',
+        )
+      }
+      if (!tallyRow.error && tallyRow.data) {
+        const row = tallyRow.data as {
+          tally_form_id: string
+          webhook_token: string
+          activo: boolean
+        }
+        setTallyFormId(row.tally_form_id)
+        setTallyToken(row.webhook_token)
+        setTallyActivo(row.activo)
+      } else if (!tallyRow.error) {
+        setTallyFormId('')
+        setTallyToken(null)
+        setTallyActivo(true)
+      }
       if (esc.error) toast.error(`Escenarios: ${esc.error.message}`)
       if (fmt.error) toast.error(`Formatos: ${fmt.error.message}`)
       if (trk.error) toast.error(`Tracks: ${trk.error.message}`)
@@ -461,6 +498,13 @@ export function SettingsTab() {
       toast.error('Nombre y fechas son obligatorios.')
       return
     }
+    let toolkitUrl: string | null
+    try {
+      toolkitUrl = validarToolkitBaseUrl(toolkitBaseUrl)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+      return
+    }
     setSaving(true)
     try {
       const { error } = await supabase
@@ -469,6 +513,7 @@ export function SettingsTab() {
           nombre: nextNombre,
           fecha_inicio: fechaInicio,
           fecha_fin: fechaFin,
+          toolkit_base_url: toolkitUrl,
         })
         .eq('id', eventoId)
       if (error) throw new Error(error.message)
@@ -484,6 +529,61 @@ export function SettingsTab() {
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function guardarTally() {
+    if (!eventoId) return
+    const formId = tallyFormId.trim()
+    if (!/^[A-Za-z0-9]+$/.test(formId)) {
+      toast.error('El id del formulario Tally es el código de la URL (solo letras y números).')
+      return
+    }
+    setGuardandoTally(true)
+    try {
+      const payload = {
+        evento_id: eventoId,
+        tally_form_id: formId,
+        activo: tallyActivo,
+        nombre: workspace?.nombre ?? null,
+      }
+      const { data, error } = await supabase
+        .from('tally_formularios')
+        .upsert(payload, { onConflict: 'evento_id' })
+        .select('tally_form_id, webhook_token, activo')
+        .single()
+      if (error) throw new Error(error.message)
+      const row = data as {
+        tally_form_id: string
+        webhook_token: string
+        activo: boolean
+      }
+      setTallyFormId(row.tally_form_id)
+      setTallyToken(row.webhook_token)
+      setTallyActivo(row.activo)
+      toast.success('Formulario Tally guardado')
+    } catch (err) {
+      toast.error(
+        `No se pudo guardar el formulario: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    } finally {
+      setGuardandoTally(false)
+    }
+  }
+
+  const webhookTally = tallyToken
+    ? `${String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')}/functions/v1/tally-webhook?token=${tallyToken}`
+    : null
+
+  async function copiarWebhook() {
+    if (!webhookTally) return
+    try {
+      await navigator.clipboard.writeText(webhookTally)
+      toast.success('URL del webhook copiada')
+    } catch {
+      toast.error('No se pudo copiar la URL')
     }
   }
 
@@ -752,8 +852,77 @@ export function SettingsTab() {
             />
           </div>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ws-toolkit">URL base del toolkit</Label>
+          <Input
+            id="ws-toolkit"
+            className="w-full"
+            value={toolkitBaseUrl}
+            onChange={(e) => setToolkitBaseUrl(e.target.value)}
+            placeholder="https://speakers.ejemplo.co"
+          />
+          <p className="text-xs text-muted-foreground">
+            Dominio público del toolkit de este evento, sin barra final. GovTech
+            usa https://speakers.govtechsummit.co. Vacío = este evento no
+            muestra links de toolkit.
+          </p>
+        </div>
         <Button onClick={() => void handleGuardar()} disabled={saving}>
           {saving ? 'Guardando…' : 'Guardar'}
+        </Button>
+      </section>
+
+      <section className="space-y-4 rounded-xl border border-border bg-white p-6">
+        <h2 className="text-sm font-semibold">Formulario Tally</h2>
+        <p className="text-sm text-muted-foreground">
+          Cada evento tiene su propio formulario y su propio webhook. Un envío
+          crea o reutiliza la persona en el directorio global y la asocia a
+          este evento. No pisa el toolkit ni las piezas de otro evento.
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ws-tally-form">Id del formulario</Label>
+          <Input
+            id="ws-tally-form"
+            className="w-full"
+            value={tallyFormId}
+            onChange={(e) => setTallyFormId(e.target.value)}
+            placeholder="pbNMvy"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={tallyActivo}
+            onCheckedChange={(v) => setTallyActivo(v === true)}
+          />
+          Formulario activo
+        </label>
+        {webhookTally ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium">Webhook de este evento</p>
+            <p className="break-all rounded-md bg-muted px-2.5 py-2 text-xs text-muted-foreground">
+              {webhookTally}
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={() => void copiarWebhook()}>
+              Copiar URL
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Pégala en Tally → Settings → Webhooks. El envío también se
+              reconoce por el formId del payload si el token no viene en la
+              URL (así sigue funcionando el webhook de GovTech ya configurado,
+              formulario pbNMvy).
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Guarda el id para generar la URL del webhook.
+          </p>
+        )}
+        <Button
+          type="button"
+          onClick={() => void guardarTally()}
+          disabled={guardandoTally}
+        >
+          {guardandoTally ? 'Guardando…' : 'Guardar formulario'}
         </Button>
       </section>
 
