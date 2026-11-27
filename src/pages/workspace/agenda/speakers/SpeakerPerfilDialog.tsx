@@ -853,7 +853,7 @@ export function SpeakerPerfilDialog({
                         </SelectItem>
                         {usuariosAgenda.map((u) => (
                           <SelectItem key={u.id} value={u.id}>
-                            {u.nombre || u.email}
+                            {u.nombre || 'Sin nombre'}
                           </SelectItem>
                         ))}
                         <SelectItem value={RESPONSABLE_OTRO}>Otro…</SelectItem>

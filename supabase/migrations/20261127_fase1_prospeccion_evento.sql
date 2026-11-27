@@ -7,11 +7,12 @@
 --   (responsable, próximo seguimiento, viáticos, pista, notas,
 --   snapshot datos_prospeccion). Todos nullable. No se toca el CHECK
 --   ni el catálogo de estado. No hay backfill.
---   Política agenda_read_usuarios: colaboradores Agenda pueden listar
---   el equipo para el selector de responsable (antes solo admin).
+--   Función epms.listar_usuarios_agenda(): lista id/nombre del equipo
+--   Agenda solo si el caller es área Agenda (SECURITY DEFINER, sin
+--   ampliar SELECT RLS sobre usuarios).
 --
 -- Idempotente: ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS,
--- DROP POLICY IF EXISTS + CREATE POLICY.
+-- CREATE OR REPLACE FUNCTION.
 --
 -- El rollback comentado está al final. No lo ejecutes junto con esto.
 
@@ -53,13 +54,32 @@ CREATE INDEX IF NOT EXISTS idx_evento_speakers_proximo_seguimiento
   ON epms.evento_speakers (evento_id, proximo_seguimiento_at)
   WHERE proximo_seguimiento_at IS NOT NULL;
 
--- ── 2) Lectura de equipo Agenda para el selector de responsable ────────────
+-- ── 2) Lista de equipo Agenda para el selector de responsable ──────────────
 -- RLS de evento_speakers ya es fila completa (agenda_all / sales_cs_read);
 -- las columnas nuevas no requieren políticas aparte.
+-- No se amplía SELECT sobre epms.usuarios: solo esta RPC (id, nombre).
 DROP POLICY IF EXISTS "agenda_read_usuarios" ON epms.usuarios;
-CREATE POLICY "agenda_read_usuarios" ON epms.usuarios
-  FOR SELECT TO authenticated
-  USING (epms.mi_area() = 'Agenda');
+
+CREATE OR REPLACE FUNCTION epms.listar_usuarios_agenda()
+RETURNS TABLE(id uuid, nombre text)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = epms, pg_temp
+AS $$
+  SELECT u.id, u.nombre
+  FROM epms.usuarios u
+  WHERE u.area = 'Agenda'
+    AND epms.mi_area() = 'Agenda'
+  ORDER BY u.nombre;
+$$;
+
+COMMENT ON FUNCTION epms.listar_usuarios_agenda() IS
+  'Id y nombre de usuarios área Agenda. Solo si el caller es Agenda. Sin email.';
+
+REVOKE ALL ON FUNCTION epms.listar_usuarios_agenda() FROM PUBLIC;
+REVOKE ALL ON FUNCTION epms.listar_usuarios_agenda() FROM anon;
+GRANT EXECUTE ON FUNCTION epms.listar_usuarios_agenda() TO authenticated;
 
 COMMIT;
 
@@ -69,7 +89,7 @@ COMMIT;
 --
 -- BEGIN;
 --
--- DROP POLICY IF EXISTS "agenda_read_usuarios" ON epms.usuarios;
+-- DROP FUNCTION IF EXISTS epms.listar_usuarios_agenda();
 --
 -- DROP INDEX IF EXISTS epms.idx_evento_speakers_proximo_seguimiento;
 --

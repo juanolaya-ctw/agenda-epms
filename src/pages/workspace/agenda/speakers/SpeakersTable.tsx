@@ -227,6 +227,17 @@ export function SpeakersTable({
   const [membresiaOverrides, setMembresiaOverrides] = useState<
     Record<string, MembresiaProspeccionPatch>
   >({})
+  /** Speakers en modo "Otro…" aunque aún no haya texto guardado. */
+  const [responsableOtroLocal, setResponsableOtroLocal] = useState<
+    Set<string>
+  >(() => new Set())
+  const [responsableOtroDraft, setResponsableOtroDraft] = useState<
+    Record<string, string>
+  >({})
+  /** Drafts locales del date picker (no escribir a medias). */
+  const [seguimientoDraft, setSeguimientoDraft] = useState<
+    Record<string, string>
+  >({})
 
   useEffect(() => {
     let cancelled = false
@@ -958,11 +969,16 @@ export function SpeakersTable({
       }
       case 'responsable': {
         const m = membresiaActual(sp)
+        const enModoOtro =
+          responsableOtroLocal.has(sp.id) ||
+          (!!m.responsable_texto?.trim() && !m.responsable_id)
         const selectValue = m.responsable_id
           ? m.responsable_id
-          : m.responsable_texto
+          : enModoOtro
             ? RESPONSABLE_OTRO
             : RESPONSABLE_NONE
+        const textoLibre =
+          responsableOtroDraft[sp.id] ?? m.responsable_texto ?? ''
         return (
           <TableCell key={columnId} className="min-w-[180px]">
             {readOnly ? (
@@ -973,6 +989,16 @@ export function SpeakersTable({
                   value={selectValue}
                   onValueChange={(v) => {
                     if (v === RESPONSABLE_NONE) {
+                      setResponsableOtroLocal((prev) => {
+                        const next = new Set(prev)
+                        next.delete(sp.id)
+                        return next
+                      })
+                      setResponsableOtroDraft((prev) => {
+                        const next = { ...prev }
+                        delete next[sp.id]
+                        return next
+                      })
                       void guardarMembresia(sp, {
                         responsable_id: null,
                         responsable_texto: null,
@@ -980,16 +1006,30 @@ export function SpeakersTable({
                       return
                     }
                     if (v === RESPONSABLE_OTRO) {
-                      void guardarMembresia(sp, {
-                        responsable_id: null,
-                        responsable_texto: m.responsable_texto ?? '',
-                      })
+                      setResponsableOtroLocal((prev) =>
+                        new Set(prev).add(sp.id),
+                      )
+                      setResponsableOtroDraft((prev) => ({
+                        ...prev,
+                        [sp.id]: m.responsable_texto?.trim() ?? '',
+                      }))
+                      // No persiste '' : el input aparece en local hasta que haya texto.
                       return
                     }
+                    setResponsableOtroLocal((prev) => {
+                      const next = new Set(prev)
+                      next.delete(sp.id)
+                      return next
+                    })
+                    setResponsableOtroDraft((prev) => {
+                      const next = { ...prev }
+                      delete next[sp.id]
+                      return next
+                    })
                     const user = usuariosAgenda.find((u) => u.id === v)
                     void guardarMembresia(sp, {
                       responsable_id: v,
-                      responsable_texto: user?.nombre ?? m.responsable_texto,
+                      responsable_texto: user?.nombre ?? null,
                     })
                   }}
                 >
@@ -1005,23 +1045,32 @@ export function SpeakersTable({
                     </SelectItem>
                     {usuariosAgenda.map((u) => (
                       <SelectItem key={u.id} value={u.id}>
-                        {u.nombre || u.email}
+                        {u.nombre || 'Sin nombre'}
                       </SelectItem>
                     ))}
                     <SelectItem value={RESPONSABLE_OTRO}>Otro…</SelectItem>
                   </SelectContent>
                 </Select>
-                {selectValue === RESPONSABLE_OTRO && (
+                {enModoOtro && (
                   <div className="min-w-0 max-w-[170px]">
                     <InlineText
-                      value={m.responsable_texto ?? ''}
+                      value={textoLibre}
                       placeholder="Nombre libre"
-                      onSave={(texto) =>
-                        guardarMembresia(sp, {
+                      onSave={async (texto) => {
+                        const trimmed = texto.trim()
+                        setResponsableOtroDraft((prev) => ({
+                          ...prev,
+                          [sp.id]: trimmed,
+                        }))
+                        if (!trimmed) {
+                          // No guarda cadena vacía; solo draft local.
+                          return
+                        }
+                        await guardarMembresia(sp, {
                           responsable_id: null,
-                          responsable_texto: texto.trim() || null,
+                          responsable_texto: trimmed,
                         })
-                      }
+                      }}
                     />
                   </div>
                 )}
@@ -1032,13 +1081,54 @@ export function SpeakersTable({
       }
       case 'proximo_seguimiento': {
         const m = membresiaActual(sp)
-        const ymd = timestampAYmdBogota(m.proximo_seguimiento_at) ?? ''
+        const committed = timestampAYmdBogota(m.proximo_seguimiento_at) ?? ''
+        const ymd =
+          sp.id in seguimientoDraft ? seguimientoDraft[sp.id]! : committed
         const nota = m.proximo_seguimiento_nota?.trim() ?? ''
+
+        function commitSeguimiento(next: string) {
+          if (next === committed) {
+            setSeguimientoDraft((prev) => {
+              if (!(sp.id in prev)) return prev
+              const copy = { ...prev }
+              delete copy[sp.id]
+              return copy
+            })
+            return
+          }
+          if (next === '') {
+            void guardarMembresia(sp, { proximo_seguimiento_at: null })
+            setSeguimientoDraft((prev) => {
+              const copy = { ...prev }
+              delete copy[sp.id]
+              return copy
+            })
+            return
+          }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) {
+            // Fecha incompleta: no escribe null ni basura; revierte draft.
+            setSeguimientoDraft((prev) => {
+              const copy = { ...prev }
+              delete copy[sp.id]
+              return copy
+            })
+            return
+          }
+          void guardarMembresia(sp, {
+            proximo_seguimiento_at: ymdATimestampBogota(next),
+          })
+          setSeguimientoDraft((prev) => {
+            const copy = { ...prev }
+            delete copy[sp.id]
+            return copy
+          })
+        }
+
         return (
           <TableCell key={columnId} className="min-w-[140px]">
             {readOnly ? (
               <span className="text-sm" title={nota || undefined}>
-                {ymd || '—'}
+                {committed || '—'}
               </span>
             ) : (
               <Input
@@ -1047,11 +1137,17 @@ export function SpeakersTable({
                 title={nota || 'Próximo seguimiento (Bogotá)'}
                 onChange={(e) => {
                   const next = e.target.value
-                  void guardarMembresia(sp, {
-                    proximo_seguimiento_at: next
-                      ? ymdATimestampBogota(next)
-                      : null,
-                  })
+                  setSeguimientoDraft((prev) => ({
+                    ...prev,
+                    [sp.id]: next,
+                  }))
+                  // Solo guarda si ya es un YYYY-MM-DD completo (picker nativo).
+                  if (next === '' || /^\d{4}-\d{2}-\d{2}$/.test(next)) {
+                    commitSeguimiento(next)
+                  }
+                }}
+                onBlur={(e) => {
+                  commitSeguimiento(e.target.value)
                 }}
                 className="h-7 w-[140px] text-xs"
               />

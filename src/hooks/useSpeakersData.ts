@@ -71,7 +71,6 @@ export type MembresiaProspeccionPatch = {
 export type UsuarioAgenda = {
   id: string
   nombre: string
-  email: string
 }
 
 export type SpeakerEditable = {
@@ -617,17 +616,14 @@ export async function actualizarMembresiaEventoSpeaker(
 }
 
 export async function listarUsuariosAgenda(): Promise<UsuarioAgenda[]> {
-  const { data, error } = await supabase
-    .from('usuarios')
-    .select('id, nombre, email')
-    .eq('area', 'Agenda')
-    .order('nombre')
+  const { data, error } = await supabase.rpc('listar_usuarios_agenda')
   if (error) throw new Error(error.message)
-  return (data ?? []).map((row) => ({
-    id: row.id as string,
-    nombre: (row.nombre as string | null) ?? '',
-    email: (row.email as string | null) ?? '',
-  }))
+  return ((data as { id: string; nombre: string | null }[] | null) ?? []).map(
+    (row) => ({
+      id: row.id,
+      nombre: row.nombre ?? '',
+    }),
+  )
 }
 
 export type AltaRapidaResultado =
