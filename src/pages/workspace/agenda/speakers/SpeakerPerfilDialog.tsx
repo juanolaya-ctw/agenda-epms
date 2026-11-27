@@ -39,13 +39,17 @@ import {
   type SpeakerEditable,
   type UsuarioAgenda,
 } from '@/hooks/useSpeakersData'
+import { useAuth } from '@/contexts/AuthContext'
 import { planAltaSpeaker } from '@/lib/altaSpeaker'
 import {
   timestampAYmdBogota,
   ymdATimestampBogota,
 } from '@/lib/bogotaDate'
+import type { EventoSpeakerEstado } from '@/lib/eventoSpeakerEstado'
+import { estadoLocalTrasRegistrarGestion } from '@/lib/gestionForm'
 import { isUuid } from '@/lib/isUuid'
 import { formatDiaLargo } from '../sesiones/format'
+import { GestionesSection } from './GestionesSection'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { asChecklist, iniciales, toolkitUrl } from './speakerUtils'
 
@@ -99,6 +103,13 @@ type SpeakerPerfilDialogProps = {
   asociarAlCrear?: boolean
   /** Muestra el toolkit de esta membresía. El CRM global no lo muestra. */
   mostrarToolkit?: boolean
+  /**
+   * Bitácora de gestiones:
+   * - evento: este workspace (lista + form si Agenda)
+   * - global: CRM (solo lectura, todos los eventos)
+   * - oculto: no mostrar
+   */
+  gestionesModo?: 'evento' | 'global' | 'oculto'
   /** Dominio https del toolkit de este evento. */
   toolkitBaseUrl?: string | null
   /** CRM: el email ya existe y hay que abrir esa ficha, no crear otra. */
@@ -119,11 +130,14 @@ export function SpeakerPerfilDialog({
   readOnly = false,
   asociarAlCrear = false,
   mostrarToolkit = false,
+  gestionesModo = 'oculto',
   toolkitBaseUrl = null,
   onAbrirExistente,
   propiedadesEvento,
   valoresDelSpeaker,
 }: SpeakerPerfilDialogProps) {
+  const { usuario } = useAuth()
+  const esAgenda = usuario?.area === 'Agenda'
   const [form, setForm] = useState<FormState>(() => initialForm(speaker))
   const [saving, setSaving] = useState(false)
   const [fotoUrl, setFotoUrl] = useState<string | null>(speaker?.foto_url ?? null)
@@ -159,6 +173,8 @@ export function SpeakerPerfilDialog({
   const [responsableTexto, setResponsableTexto] = useState('')
   const [seguimientoYmd, setSeguimientoYmd] = useState('')
   const [seguimientoNota, setSeguimientoNota] = useState('')
+  const [estadoEnEventoLocal, setEstadoEnEventoLocal] =
+    useState<EventoSpeakerEstado | null>(null)
   const [requiereViaticos, setRequiereViaticos] = useState(false)
   const [viaticosNota, setViaticosNota] = useState('')
   const [pistaEspacio, setPistaEspacio] = useState('')
@@ -181,6 +197,7 @@ export function SpeakerPerfilDialog({
       setResponsableTexto(speaker?.responsable_texto ?? '')
       setSeguimientoYmd(timestampAYmdBogota(speaker?.proximo_seguimiento_at) ?? '')
       setSeguimientoNota(speaker?.proximo_seguimiento_nota ?? '')
+      setEstadoEnEventoLocal(speaker?.estadoEnEvento ?? null)
       setRequiereViaticos(speaker?.requiere_viaticos === true)
       setViaticosNota(speaker?.viaticos_nota ?? '')
       setPistaEspacio(speaker?.pista_espacio ?? '')
@@ -941,6 +958,41 @@ export function SpeakerPerfilDialog({
                 <div className="border-t border-border" />
               </>
             )}
+
+            {esAgenda &&
+              gestionesModo !== 'oculto' &&
+              mode === 'edit' &&
+              speakerId &&
+              open && (
+                <>
+                  <GestionesSection
+                    modo={gestionesModo === 'global' ? 'global' : 'evento'}
+                    speakerId={speakerId}
+                    eventoId={
+                      gestionesModo === 'evento' ? eventoId : undefined
+                    }
+                    estadoEnEvento={estadoEnEventoLocal}
+                    puedeRegistrar={
+                      gestionesModo === 'evento' && !readOnly && esAgenda
+                    }
+                    onRegistered={(resultado) => {
+                      const next = estadoLocalTrasRegistrarGestion(
+                        {
+                          seguimientoYmd,
+                          seguimientoNota,
+                          estadoEnEvento: estadoEnEventoLocal,
+                        },
+                        resultado,
+                      )
+                      setSeguimientoYmd(next.seguimientoYmd)
+                      setSeguimientoNota(next.seguimientoNota)
+                      setEstadoEnEventoLocal(next.estadoEnEvento)
+                      onSaved()
+                    }}
+                  />
+                  <div className="border-t border-border" />
+                </>
+              )}
 
             {mode === 'create' || !speakerId ? (
               <p className="text-sm text-muted-foreground">
