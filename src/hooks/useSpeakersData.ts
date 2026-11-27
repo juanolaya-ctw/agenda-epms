@@ -7,6 +7,17 @@ import {
   isEventoSpeakerEstado,
 } from '@/lib/eventoSpeakerEstado'
 import { isUuid } from '@/lib/isUuid'
+import { planAltaSpeaker } from '@/lib/altaSpeaker'
+import {
+  armarPayloadAltaRapida,
+  type AltaRapidaInput,
+  type DatosProspeccion,
+} from '@/lib/prospeccionAlta'
+import {
+  assertDeleteOk,
+  interpretMembershipDelete,
+  membershipDeleteErrorMessage,
+} from '@/lib/speakerDelete'
 import {
   isValidSpeakerEmail,
   normalizeSpeakerEmail,
@@ -34,10 +45,37 @@ export type Speaker = {
   sesionesEnEvento: number
   /** Pipeline de invitación en el evento del workspace (si aplica). */
   estadoEnEvento: EventoSpeakerEstado | null
+  /** Prospección de ESTE evento. Null en el CRM global. */
+  responsable_id: string | null
+  responsable_texto: string | null
+  proximo_seguimiento_at: string | null
+  proximo_seguimiento_nota: string | null
+  requiere_viaticos: boolean | null
+  viaticos_nota: string | null
+  pista_espacio: string | null
+  notas_internas: string | null
+  datos_prospeccion: DatosProspeccion | null
   /** Nombres de eventos (membresía), para búsqueda/filtros. */
   eventosParticipados: string[]
   /** Membresía evento_speakers con id para asociar desde CRM. */
   eventosAsociados: { id: string; nombre: string }[]
+}
+
+export type MembresiaProspeccionPatch = {
+  responsable_id?: string | null
+  responsable_texto?: string | null
+  proximo_seguimiento_at?: string | null
+  proximo_seguimiento_nota?: string | null
+  requiere_viaticos?: boolean | null
+  viaticos_nota?: string | null
+  pista_espacio?: string | null
+  notas_internas?: string | null
+  datos_prospeccion?: DatosProspeccion | null
+}
+
+export type UsuarioAgenda = {
+  id: string
+  nombre: string
 }
 
 export type SpeakerEditable = {
@@ -101,15 +139,26 @@ function one<T>(rel: T | T[] | null | undefined): T | null {
   return rel ?? null
 }
 
+type MembresiaExtras = {
+  sesionesEnEvento: number
+  eventosParticipados: string[]
+  eventosAsociados?: { id: string; nombre: string }[]
+  estadoEnEvento?: EventoSpeakerEstado | null
+  toolkitSlug?: string | null
+  responsable_id?: string | null
+  responsable_texto?: string | null
+  proximo_seguimiento_at?: string | null
+  proximo_seguimiento_nota?: string | null
+  requiere_viaticos?: boolean | null
+  viaticos_nota?: string | null
+  pista_espacio?: string | null
+  notas_internas?: string | null
+  datos_prospeccion?: DatosProspeccion | null
+}
+
 function mapSpeakerRow(
   r: Record<string, unknown>,
-  extras: {
-    sesionesEnEvento: number
-    eventosParticipados: string[]
-    eventosAsociados?: { id: string; nombre: string }[]
-    estadoEnEvento?: EventoSpeakerEstado | null
-    toolkitSlug?: string | null
-  },
+  extras: MembresiaExtras,
 ): Speaker {
   const eventosAsociados = extras.eventosAsociados ?? []
   return {
@@ -131,11 +180,78 @@ function mapSpeakerRow(
     toolkit_slug: pick(extras.toolkitSlug),
     sesionesEnEvento: extras.sesionesEnEvento,
     estadoEnEvento: extras.estadoEnEvento ?? null,
+    responsable_id: pick(extras.responsable_id),
+    responsable_texto: pick(extras.responsable_texto),
+    proximo_seguimiento_at: pick(extras.proximo_seguimiento_at),
+    proximo_seguimiento_nota: pick(extras.proximo_seguimiento_nota),
+    requiere_viaticos:
+      extras.requiere_viaticos === undefined
+        ? null
+        : extras.requiere_viaticos,
+    viaticos_nota: pick(extras.viaticos_nota),
+    pista_espacio: pick(extras.pista_espacio),
+    notas_internas: pick(extras.notas_internas),
+    datos_prospeccion: extras.datos_prospeccion ?? null,
     eventosParticipados:
       extras.eventosParticipados.length > 0
         ? extras.eventosParticipados
         : eventosAsociados.map((e) => e.nombre),
     eventosAsociados,
+  }
+}
+
+type EventoSpeakerEmbed = {
+  evento_id?: string
+  estado?: string
+  toolkit_slug?: string | null
+  responsable_id?: string | null
+  responsable_texto?: string | null
+  proximo_seguimiento_at?: string | null
+  proximo_seguimiento_nota?: string | null
+  requiere_viaticos?: boolean | null
+  viaticos_nota?: string | null
+  pista_espacio?: string | null
+  notas_internas?: string | null
+  datos_prospeccion?: DatosProspeccion | null
+}
+
+function membresiaExtrasFromEmbed(
+  memb: EventoSpeakerEmbed | undefined,
+): Pick<
+  MembresiaExtras,
+  | 'estadoEnEvento'
+  | 'toolkitSlug'
+  | 'responsable_id'
+  | 'responsable_texto'
+  | 'proximo_seguimiento_at'
+  | 'proximo_seguimiento_nota'
+  | 'requiere_viaticos'
+  | 'viaticos_nota'
+  | 'pista_espacio'
+  | 'notas_internas'
+  | 'datos_prospeccion'
+> {
+  const estadoRaw = memb?.estado
+  const estadoEnEvento =
+    typeof estadoRaw === 'string' && isEventoSpeakerEstado(estadoRaw)
+      ? estadoRaw
+      : null
+  const toolkitSlug =
+    typeof memb?.toolkit_slug === 'string' && memb.toolkit_slug.trim()
+      ? memb.toolkit_slug
+      : null
+  return {
+    estadoEnEvento,
+    toolkitSlug,
+    responsable_id: memb?.responsable_id ?? null,
+    responsable_texto: memb?.responsable_texto ?? null,
+    proximo_seguimiento_at: memb?.proximo_seguimiento_at ?? null,
+    proximo_seguimiento_nota: memb?.proximo_seguimiento_nota ?? null,
+    requiere_viaticos: memb?.requiere_viaticos ?? null,
+    viaticos_nota: memb?.viaticos_nota ?? null,
+    pista_espacio: memb?.pista_espacio ?? null,
+    notas_internas: memb?.notas_internas ?? null,
+    datos_prospeccion: memb?.datos_prospeccion ?? null,
   }
 }
 
@@ -217,9 +333,14 @@ const SPEAKER_COLS =
 // Speakers asociados a ESTE evento (membresía evento_speakers).
 // sesion_speakers sin !inner: cuentan sesiones pero no excluyen a nadie.
 // El directorio global sigue en loadSpeakersGlobal / CRM.
+const EVENTO_SPEAKERS_EMBED_COLS =
+  'evento_id, estado, toolkit_slug, ' +
+  'responsable_id, responsable_texto, proximo_seguimiento_at, proximo_seguimiento_nota, ' +
+  'requiere_viaticos, viaticos_nota, pista_espacio, notas_internas, datos_prospeccion'
+
 const SPEAKERS_TABLA_SELECT = `
   ${SPEAKER_COLS},
-  evento_speakers!inner ( evento_id, estado, toolkit_slug ),
+  evento_speakers!inner ( ${EVENTO_SPEAKERS_EMBED_COLS} ),
   sesion_speakers (
     sesion:sesiones (
       slot:slots (
@@ -288,21 +409,11 @@ async function loadSpeakers(eventoId: string): Promise<LoadResult> {
           m &&
           typeof m === 'object' &&
           (m as { evento_id?: string }).evento_id === eventoId,
-      ) as { estado?: string; toolkit_slug?: string | null } | undefined
-      const estadoRaw = memb?.estado
-      const estadoEnEvento =
-        typeof estadoRaw === 'string' && isEventoSpeakerEstado(estadoRaw)
-          ? estadoRaw
-          : null
-      const toolkitSlug =
-        typeof memb?.toolkit_slug === 'string' && memb.toolkit_slug.trim()
-          ? memb.toolkit_slug
-          : null
+      ) as EventoSpeakerEmbed | undefined
       return mapSpeakerRow(r as unknown as Record<string, unknown>, {
         sesionesEnEvento,
         eventosParticipados: [],
-        estadoEnEvento,
-        toolkitSlug,
+        ...membresiaExtrasFromEmbed(memb),
       })
     },
   )
@@ -479,6 +590,113 @@ export async function asociarSpeakerAEvento(
   return { created: true }
 }
 
+/**
+ * Actualiza SOLO campos de prospección de la membresía.
+ * No toca estado ni estado_motivo (eso va por actualizarEstadoEventoSpeaker).
+ */
+export async function actualizarMembresiaEventoSpeaker(
+  eventoId: string,
+  speakerId: string,
+  patch: MembresiaProspeccionPatch,
+): Promise<void> {
+  if (!isUuid(eventoId) || !isUuid(speakerId)) {
+    throw new Error('eventoId y speakerId deben ser UUID')
+  }
+  const payload: Record<string, unknown> = {
+    ...patch,
+    updated_at: new Date().toISOString(),
+  }
+  delete payload.estado
+  delete payload.estado_motivo
+  const { data, error } = await supabase
+    .from('evento_speakers')
+    .update(payload)
+    .eq('evento_id', eventoId)
+    .eq('speaker_id', speakerId)
+    .select('speaker_id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error('Sin membresía en este evento')
+  }
+}
+
+export async function listarUsuariosAgenda(): Promise<UsuarioAgenda[]> {
+  const { data, error } = await supabase.rpc('listar_usuarios_agenda')
+  if (error) throw new Error(error.message)
+  return ((data as { id: string; nombre: string | null }[] | null) ?? []).map(
+    (row) => ({
+      id: row.id,
+      nombre: row.nombre ?? '',
+    }),
+  )
+}
+
+export type AltaRapidaResultado =
+  | { created: true; speakerId: string }
+  | { associated: true; speakerId: string; createdMembership: boolean }
+
+/** Alta rápida: persona global + membresía PENDIENTE_CONTACTAR + snapshot. */
+export async function altaRapidaProspecto(
+  eventoId: string,
+  input: AltaRapidaInput,
+): Promise<AltaRapidaResultado> {
+  if (!isUuid(eventoId)) throw new Error('eventoId debe ser UUID')
+  const payload = armarPayloadAltaRapida(input)
+  const email = payload.speakerGlobal.email
+
+  if (email) {
+    const existente = await speakerPorEmail(email)
+    const plan = planAltaSpeaker({
+      existenteId: existente?.id ?? null,
+      asociarAlEvento: true,
+    })
+    if (existente && plan.tipo === 'asociar_existente') {
+      const { created } = await asociarSpeakerAEvento(eventoId, existente.id)
+      await actualizarMembresiaEventoSpeaker(eventoId, existente.id, {
+        datos_prospeccion: payload.datos_prospeccion,
+      })
+      return {
+        associated: true,
+        speakerId: existente.id,
+        createdMembership: created,
+      }
+    }
+  }
+
+  let speakerId: string
+  try {
+    speakerId = await crearSpeaker({
+      nombre: payload.speakerGlobal.nombre,
+      cargo: payload.speakerGlobal.cargo ?? '',
+      empresa: payload.speakerGlobal.empresa ?? '',
+      pais: payload.speakerGlobal.pais ?? '',
+      email: payload.speakerGlobal.email ?? '',
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!email || !/duplicate|unique|already exists|speakers_email/i.test(msg)) {
+      throw err
+    }
+    const existente = await speakerPorEmail(email)
+    if (!existente) throw err
+    const { created } = await asociarSpeakerAEvento(eventoId, existente.id)
+    await actualizarMembresiaEventoSpeaker(eventoId, existente.id, {
+      datos_prospeccion: payload.datos_prospeccion,
+    })
+    return {
+      associated: true,
+      speakerId: existente.id,
+      createdMembership: created,
+    }
+  }
+
+  await asociarSpeakerAEvento(eventoId, speakerId)
+  await actualizarMembresiaEventoSpeaker(eventoId, speakerId, {
+    datos_prospeccion: payload.datos_prospeccion,
+  })
+  return { created: true, speakerId }
+}
+
 export type ActualizarEstadoResultado =
   | { ok: true }
   | { ok: false; reason: 'sin_membresia' }
@@ -530,12 +748,19 @@ export async function desasociarSpeakerDeEvento(
     return { ok: false, reason: 'tiene_sesiones', sesiones }
   }
 
-  const { error } = await supabase
+  // .select() para contar filas borradas: sin privilege/RLS a veces no
+  // hay error y el delete afecta 0 filas (fallo silencioso en UI).
+  const { data, error } = await supabase
     .from('evento_speakers')
     .delete()
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
-  if (error) throw new Error(error.message)
+    .select('speaker_id')
+
+  const interpreted = interpretMembershipDelete({ error, data })
+  if (!interpreted.ok) {
+    throw new Error(membershipDeleteErrorMessage(interpreted))
+  }
   return { ok: true }
 }
 
@@ -617,12 +842,19 @@ export async function quitarSpeakerDeEvento(
     if (error) throw new Error(error.message)
   }
 
-  const { error: membErr } = await supabase
+  const { data: membRows, error: membErr } = await supabase
     .from('evento_speakers')
     .delete()
     .eq('evento_id', eventoId)
     .eq('speaker_id', speakerId)
-  if (membErr) throw new Error(membErr.message)
+    .select('speaker_id')
+  const membResult = interpretMembershipDelete({
+    error: membErr,
+    data: membRows,
+  })
+  if (!membResult.ok) {
+    throw new Error(membershipDeleteErrorMessage(membResult))
+  }
 }
 
 export type SpeakerBusqueda = Speaker & {
@@ -691,11 +923,26 @@ export async function buscarSpeakersGlobales(
 export async function eliminarSpeaker(id: string): Promise<void> {
   // Limpieza explícita de referencias antes del DELETE, por si alguna FK no
   // tiene ON DELETE CASCADE en la BD real.
-  await supabase.from('evento_speakers').delete().eq('speaker_id', id)
-  await supabase.from('sesion_speakers').delete().eq('speaker_id', id)
-  await supabase.from('valores_propiedades').delete().eq('speaker_id', id)
+  const { error: membErr } = await supabase
+    .from('evento_speakers')
+    .delete()
+    .eq('speaker_id', id)
+  assertDeleteOk('evento_speakers', membErr)
+
+  const { error: ssErr } = await supabase
+    .from('sesion_speakers')
+    .delete()
+    .eq('speaker_id', id)
+  assertDeleteOk('sesion_speakers', ssErr)
+
+  const { error: valsErr } = await supabase
+    .from('valores_propiedades')
+    .delete()
+    .eq('speaker_id', id)
+  assertDeleteOk('valores_propiedades', valsErr)
+
   const { error } = await supabase.from('speakers').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  assertDeleteOk('speakers', error)
 }
 
 type EscenarioNombreEmbed = { nombre: string | null; evento_id: string }
