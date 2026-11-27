@@ -1,5 +1,4 @@
 import {
-  listarGestionesEventoSpeaker,
   listarGestionesSpeakerGlobal,
   type Gestion,
   type GestionConEvento,
@@ -101,23 +100,22 @@ export type ActividadCarga = {
 }
 
 /**
- * Carga cambios + gestiones + usuarios Agenda + nombres de eventos.
- * modo 'evento' con eventoId: gestiones del evento (el filtro UI estrecha cambios).
- * modo 'global': gestiones de todos los eventos.
+ * Carga cambios + gestiones globales + usuarios Agenda + nombres de eventos.
+ * Siempre trae gestiones de todos los eventos; el filtro UI
+ * (`filtrarPorAmbitoEvento`) recorta a «este evento» en el cliente.
+ * Así «Todos los eventos» en el perfil del workspace no pierde gestiones.
  */
 export async function cargarActividadSpeaker(opts: {
   speakerId: string
   modo: 'evento' | 'global'
   eventoId?: string
 }): Promise<ActividadCarga> {
-  const { speakerId, modo, eventoId } = opts
+  const { speakerId } = opts
   if (!isUuid(speakerId)) throw new Error('speakerId debe ser UUID')
 
   const [cambios, gestionesRaw, usuarios] = await Promise.all([
     listarCambiosSpeaker(speakerId),
-    modo === 'evento' && eventoId && isUuid(eventoId)
-      ? listarGestionesEventoSpeaker(eventoId, speakerId)
-      : listarGestionesSpeakerGlobal(speakerId),
+    listarGestionesSpeakerGlobal(speakerId),
     listarUsuariosAgenda().catch(() => []),
   ])
 

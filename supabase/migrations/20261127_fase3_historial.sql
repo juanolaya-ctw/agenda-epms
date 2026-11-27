@@ -113,8 +113,10 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION epms.cambio_origen_actual() FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION epms.cambio_tally_envio_id_actual() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION epms.cambio_origen_actual()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION epms.cambio_tally_envio_id_actual()
+  FROM PUBLIC, anon, authenticated;
 
 -- ── 4) Trigger: epms.speakers ──────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION epms.trg_speaker_cambios_speakers()
@@ -186,6 +188,9 @@ CREATE TRIGGER trg_speaker_cambios_speakers
   FOR EACH ROW
   EXECUTE FUNCTION epms.trg_speaker_cambios_speakers();
 
+REVOKE ALL ON FUNCTION epms.trg_speaker_cambios_speakers()
+  FROM PUBLIC, anon, authenticated;
+
 -- ── 5) Trigger: epms.evento_speakers ─────────────────────────────────────
 CREATE OR REPLACE FUNCTION epms.trg_speaker_cambios_evento_speakers()
 RETURNS trigger
@@ -242,6 +247,10 @@ BEGIN
       RETURN OLD;
     END IF;
 
+    -- Borrar workspace/evento: ON DELETE CASCADE en evento_speakers.evento_id
+    -- dispara este trigger después de borrar la fila de eventos. Insertar con
+    -- OLD.evento_id rompería la FK speaker_cambios.evento_id → eventos.
+    -- Guardamos el historial con evento_id NULL (sigue visible en la ficha).
     v_snap := jsonb_build_object('accion', 'desasociado');
     FOREACH v_campo IN ARRAY v_campos LOOP
       EXECUTE format('SELECT to_jsonb(($1).%I)', v_campo) USING OLD INTO v_old;
@@ -253,7 +262,12 @@ BEGIN
       valor_anterior, valor_nuevo, origen, actor_id, tally_envio_id
     ) VALUES (
       OLD.speaker_id,
-      OLD.evento_id,
+      CASE
+        WHEN EXISTS (
+          SELECT 1 FROM epms.eventos e WHERE e.id = OLD.evento_id
+        ) THEN OLD.evento_id
+        ELSE NULL
+      END,
       'evento_speakers',
       'membresia',
       v_snap,
@@ -296,6 +310,9 @@ CREATE TRIGGER trg_speaker_cambios_evento_speakers
   AFTER INSERT OR UPDATE OR DELETE ON epms.evento_speakers
   FOR EACH ROW
   EXECUTE FUNCTION epms.trg_speaker_cambios_evento_speakers();
+
+REVOKE ALL ON FUNCTION epms.trg_speaker_cambios_evento_speakers()
+  FROM PUBLIC, anon, authenticated;
 
 -- ── 6) Nit Fase 2: limpiar nota al setear próxima fecha ──────────────────
 CREATE OR REPLACE FUNCTION epms.registrar_gestion(

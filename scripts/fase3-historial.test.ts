@@ -140,6 +140,47 @@ describe('filtro este evento vs todos', () => {
     assert.equal(todos.cambios.length, 3)
     assert.equal(todos.gestiones.length, 2)
   })
+
+  it('carga global + filtro cliente: «Todos» conserva gestiones de otros eventos', () => {
+    // Contrato de cargarActividadSpeaker: siempre trae gestiones globales;
+    // filtrarPorAmbitoEvento es quien recorta en UI.
+    const gestionesCargadas = [
+      gestion({ id: 'g-a', evento_id: 'evento-a' }),
+      gestion({ id: 'g-b', evento_id: 'evento-b' }),
+    ]
+    const cambiosCargados = [
+      cambio({
+        id: 'c-b',
+        campo: 'estado',
+        evento_id: 'evento-b',
+        ambito: 'evento_speakers',
+      }),
+    ]
+
+    const enWorkspaceA = filtrarPorAmbitoEvento(
+      cambiosCargados,
+      gestionesCargadas,
+      'este_evento',
+      'evento-a',
+    )
+    assert.deepEqual(
+      enWorkspaceA.gestiones.map((g) => g.id),
+      ['g-a'],
+    )
+    assert.equal(enWorkspaceA.cambios.length, 0)
+
+    const todos = filtrarPorAmbitoEvento(
+      cambiosCargados,
+      gestionesCargadas,
+      'todos',
+      'evento-a',
+    )
+    assert.deepEqual(
+      todos.gestiones.map((g) => g.id).sort(),
+      ['g-a', 'g-b'],
+    )
+    assert.equal(todos.cambios.length, 1)
+  })
 })
 
 describe('merge timeline', () => {

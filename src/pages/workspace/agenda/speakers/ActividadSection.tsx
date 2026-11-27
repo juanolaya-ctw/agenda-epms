@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { cargarActividadSpeaker } from '@/hooks/useActividadData'
 import {
@@ -60,38 +60,46 @@ export function ActividadSection({
     () => new Map(),
   )
   const [loading, setLoading] = useState(false)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [ambito, setAmbito] = useState<FiltroAmbitoActividad>(() =>
     modo === 'global' ? 'todos' : 'este_evento',
   )
   const [origenes, setOrigenes] = useState<Set<ActividadOrigen>>(() => new Set())
+  const cargaGen = useRef(0)
 
   const cargar = useCallback(async () => {
+    const gen = ++cargaGen.current
     setLoading(true)
+    setErrorCarga(null)
     try {
       const data = await cargarActividadSpeaker({
         speakerId,
         modo,
         eventoId,
       })
+      if (gen !== cargaGen.current) return
       setCambios(data.cambios)
       setGestiones(data.gestiones)
       setNombresPorUsuario(data.nombresPorUsuario)
       setNombresEvento(data.nombresEvento)
+      setErrorCarga(null)
     } catch (err) {
-      toast.error(
-        `No se pudo cargar la actividad: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      )
+      if (gen !== cargaGen.current) return
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`No se pudo cargar la actividad: ${msg}`)
+      setErrorCarga(msg)
       setCambios([])
       setGestiones([])
     } finally {
-      setLoading(false)
+      if (gen === cargaGen.current) setLoading(false)
     }
   }, [speakerId, modo, eventoId])
 
   useEffect(() => {
     void cargar()
+    return () => {
+      cargaGen.current += 1
+    }
   }, [cargar])
 
   useEffect(() => {
@@ -154,6 +162,10 @@ export function ActividadSection({
 
       {loading ? (
         <p className="text-xs text-muted-foreground">Cargando…</p>
+      ) : errorCarga ? (
+        <p className="text-xs text-destructive">
+          No se pudo cargar la actividad. Intenta de nuevo más tarde.
+        </p>
       ) : (
         <ActividadList
           items={items}
