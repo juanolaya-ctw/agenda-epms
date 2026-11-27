@@ -1,5 +1,6 @@
 import type { FiltroColumna } from '@/components/table-filters/TableFilters'
 import type { PropiedadCustom, Speaker } from '@/hooks/useSpeakersData'
+import { claveResponsable } from '@/lib/prospeccionFiltros'
 
 export const FUENTES_SPEAKER = ['tally', 'admin_manual', 'import_sheet']
 
@@ -29,8 +30,8 @@ export function propiedadFiltroColumna(
 }
 
 /** Resuelve el valor de un `campo` de filtro para una fila de speaker.
- *  Soporta campos base, pseudo-campos (`_conSesiones`, `_conEventos`) y
- *  propiedades custom (`prop:<id>`). */
+ *  Soporta campos base, pseudo-campos (`_conSesiones`, `_conEventos`,
+ *  `_responsable`) y propiedades custom (`prop:<id>`). */
 export function getValSpeaker(
   sp: Speaker,
   campo: string,
@@ -38,6 +39,7 @@ export function getValSpeaker(
 ): unknown {
   if (campo === '_conSesiones') return sp.sesionesEnEvento > 0
   if (campo === '_conEventos') return sp.eventosParticipados.length > 0
+  if (campo === '_responsable') return claveResponsable(sp)
   if (campo.startsWith('prop:')) {
     return valoresPorSpeaker[sp.id]?.[campo.slice(5)]
   }
@@ -53,6 +55,16 @@ export function opcionesUnicas(
   for (const f of filas) {
     const v = f[campo]
     if (typeof v === 'string' && v.trim() !== '') set.add(v.trim())
+  }
+  return [...set].sort((a, b) => a.localeCompare(b))
+}
+
+/** Labels de responsable únicos (texto o id) para el filtro. */
+export function opcionesResponsable(filas: Speaker[]): string[] {
+  const set = new Set<string>()
+  for (const f of filas) {
+    const key = claveResponsable(f)
+    if (key) set.add(key)
   }
   return [...set].sort((a, b) => a.localeCompare(b))
 }

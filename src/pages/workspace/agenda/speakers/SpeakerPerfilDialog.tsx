@@ -23,10 +23,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  actualizarMembresiaEventoSpeaker,
   actualizarSpeaker,
   asociarSpeakerAEvento,
   crearSpeaker,
   guardarValorPropiedad,
+  listarUsuariosAgenda,
   propiedadesSpeaker,
   sesionesDeSpeaker,
   speakerPorEmail,
@@ -35,11 +37,20 @@ import {
   type PropiedadCustom,
   type Speaker,
   type SpeakerEditable,
+  type UsuarioAgenda,
 } from '@/hooks/useSpeakersData'
 import { planAltaSpeaker } from '@/lib/altaSpeaker'
+import {
+  timestampAYmdBogota,
+  ymdATimestampBogota,
+} from '@/lib/bogotaDate'
+import { isUuid } from '@/lib/isUuid'
 import { formatDiaLargo } from '../sesiones/format'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { asChecklist, iniciales, toolkitUrl } from './speakerUtils'
+
+const RESPONSABLE_NONE = '__none__'
+const RESPONSABLE_OTRO = '__otro__'
 
 const CAMPOS: { key: keyof SpeakerEditable; label: string; required?: boolean }[] = [
   { key: 'nombre', label: 'Nombre', required: true },
@@ -140,6 +151,20 @@ export function SpeakerPerfilDialog({
     estado_pieza: string | null
   } | null>(null)
 
+  const mostrarProspeccion =
+    mode === 'edit' && !!speakerId && isUuid(eventoId)
+
+  const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioAgenda[]>([])
+  const [responsableId, setResponsableId] = useState<string | null>(null)
+  const [responsableTexto, setResponsableTexto] = useState('')
+  const [seguimientoYmd, setSeguimientoYmd] = useState('')
+  const [seguimientoNota, setSeguimientoNota] = useState('')
+  const [requiereViaticos, setRequiereViaticos] = useState(false)
+  const [viaticosNota, setViaticosNota] = useState('')
+  const [pistaEspacio, setPistaEspacio] = useState('')
+  const [notasInternas, setNotasInternas] = useState('')
+  const [savingProspeccion, setSavingProspeccion] = useState(false)
+
   const slugToolkit = mostrarToolkit
     ? (recursos?.toolkit_slug ?? speaker?.toolkit_slug ?? null)
     : null
@@ -152,9 +177,32 @@ export function SpeakerPerfilDialog({
       setFotoUrl(speaker?.foto_url ?? null)
       setFotoPendiente(null)
       setSubiendoFoto(false)
+      setResponsableId(speaker?.responsable_id ?? null)
+      setResponsableTexto(speaker?.responsable_texto ?? '')
+      setSeguimientoYmd(timestampAYmdBogota(speaker?.proximo_seguimiento_at) ?? '')
+      setSeguimientoNota(speaker?.proximo_seguimiento_nota ?? '')
+      setRequiereViaticos(speaker?.requiere_viaticos === true)
+      setViaticosNota(speaker?.viaticos_nota ?? '')
+      setPistaEspacio(speaker?.pista_espacio ?? '')
+      setNotasInternas(speaker?.notas_internas ?? '')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, speakerId])
+
+  useEffect(() => {
+    if (!open || !mostrarProspeccion) return
+    let cancelled = false
+    void listarUsuariosAgenda()
+      .then((rows) => {
+        if (!cancelled) setUsuariosAgenda(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setUsuariosAgenda([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, mostrarProspeccion])
 
   useEffect(() => {
     if (!fotoPendiente) {
@@ -534,6 +582,35 @@ export function SpeakerPerfilDialog({
     }
   }
 
+  async function guardarProspeccion() {
+    if (!speakerId || !mostrarProspeccion || readOnly) return
+    setSavingProspeccion(true)
+    try {
+      await actualizarMembresiaEventoSpeaker(eventoId, speakerId, {
+        responsable_id: responsableId,
+        responsable_texto: responsableTexto.trim() || null,
+        proximo_seguimiento_at: seguimientoYmd
+          ? ymdATimestampBogota(seguimientoYmd)
+          : null,
+        proximo_seguimiento_nota: seguimientoNota.trim() || null,
+        requiere_viaticos: requiereViaticos,
+        viaticos_nota: viaticosNota.trim() || null,
+        pista_espacio: pistaEspacio.trim() || null,
+        notas_internas: notasInternas.trim() || null,
+      })
+      toast.success('Prospección guardada')
+      onSaved()
+    } catch (err) {
+      toast.error(
+        `No se pudo guardar prospección: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    } finally {
+      setSavingProspeccion(false)
+    }
+  }
+
   function toggleItem(prop: PropiedadCustom, index: number) {
     const items = asChecklist(valores[prop.id])
     const next = items.map((item, i) =>
@@ -734,6 +811,136 @@ export function SpeakerPerfilDialog({
             )}
 
             {mostrarToolkit && <div className="border-t border-border" />}
+
+            {mostrarProspeccion && (
+              <>
+                <div className="flex flex-col gap-3">
+                  <h3 className="text-sm font-semibold">
+                    Prospección en este evento
+                  </h3>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Responsable</Label>
+                    <Select
+                      value={
+                        responsableId
+                          ? responsableId
+                          : responsableTexto.trim()
+                            ? RESPONSABLE_OTRO
+                            : RESPONSABLE_NONE
+                      }
+                      disabled={readOnly}
+                      onValueChange={(v) => {
+                        if (v === RESPONSABLE_NONE) {
+                          setResponsableId(null)
+                          setResponsableTexto('')
+                          return
+                        }
+                        if (v === RESPONSABLE_OTRO) {
+                          setResponsableId(null)
+                          return
+                        }
+                        const user = usuariosAgenda.find((u) => u.id === v)
+                        setResponsableId(v)
+                        setResponsableTexto(user?.nombre ?? '')
+                      }}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder="Sin responsable" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={RESPONSABLE_NONE}>
+                          Sin responsable
+                        </SelectItem>
+                        {usuariosAgenda.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.nombre || u.email}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={RESPONSABLE_OTRO}>Otro…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {!responsableId && (
+                      <Input
+                        value={responsableTexto}
+                        onChange={(e) => setResponsableTexto(e.target.value)}
+                        placeholder="Nombre libre"
+                        disabled={readOnly}
+                        className="h-8"
+                      />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Próximo seguimiento</Label>
+                    <Input
+                      type="date"
+                      value={seguimientoYmd}
+                      onChange={(e) => setSeguimientoYmd(e.target.value)}
+                      disabled={readOnly}
+                      className="h-8"
+                    />
+                    <Textarea
+                      value={seguimientoNota}
+                      onChange={(e) => setSeguimientoNota(e.target.value)}
+                      placeholder="Nota del seguimiento"
+                      rows={2}
+                      disabled={readOnly}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-medium">
+                    <Checkbox
+                      checked={requiereViaticos}
+                      disabled={readOnly}
+                      onCheckedChange={(checked) =>
+                        setRequiereViaticos(checked === true)
+                      }
+                    />
+                    Requiere viáticos
+                  </label>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Nota de viáticos</Label>
+                    <Textarea
+                      value={viaticosNota}
+                      onChange={(e) => setViaticosNota(e.target.value)}
+                      rows={2}
+                      disabled={readOnly}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Pista / Espacio</Label>
+                    <Input
+                      value={pistaEspacio}
+                      onChange={(e) => setPistaEspacio(e.target.value)}
+                      disabled={readOnly}
+                      className="h-8"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Notas internas</Label>
+                    <Textarea
+                      value={notasInternas}
+                      onChange={(e) => setNotasInternas(e.target.value)}
+                      rows={3}
+                      disabled={readOnly}
+                    />
+                  </div>
+                  {!readOnly && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-fit"
+                      disabled={savingProspeccion}
+                      onClick={() => void guardarProspeccion()}
+                    >
+                      {savingProspeccion
+                        ? 'Guardando…'
+                        : 'Guardar prospección'}
+                    </Button>
+                  )}
+                </div>
+                <div className="border-t border-border" />
+              </>
+            )}
 
             {mode === 'create' || !speakerId ? (
               <p className="text-sm text-muted-foreground">

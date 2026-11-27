@@ -1,5 +1,14 @@
-import { useMemo, useState } from 'react'
-import { Eye, Flag, Link, Pencil, Trash2, UserMinus, UserPlus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Eye,
+  Flag,
+  Link,
+  Pencil,
+  Trash2,
+  UserMinus,
+  UserPlus,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -24,11 +33,15 @@ import {
 } from '@/components/ui/table'
 import {
   actualizarEstadoEventoSpeaker,
+  actualizarMembresiaEventoSpeaker,
   actualizarSpeaker,
   guardarValorPropiedad,
+  listarUsuariosAgenda,
+  type MembresiaProspeccionPatch,
   type PropiedadCustom,
   type Speaker,
   type SpeakerEditable,
+  type UsuarioAgenda,
   useSpeakersData,
 } from '@/hooks/useSpeakersData'
 import {
@@ -37,6 +50,11 @@ import {
   isEventoSpeakerEstado,
   type EventoSpeakerEstado,
 } from '@/lib/eventoSpeakerEstado'
+import {
+  timestampAYmdBogota,
+  ymdATimestampBogota,
+} from '@/lib/bogotaDate'
+import { filaPasaProspeccion } from '@/lib/prospeccionFiltros'
 import { EMAIL_RE } from '@/lib/speakerEmail'
 import { InlineText } from '@/components/InlineText'
 import { ReportarRequestDialog } from '@/components/requests/ReportarRequestDialog'
@@ -47,6 +65,7 @@ import {
   type FiltroColumna,
 } from '@/components/table-filters/TableFilters'
 import { AsociarSpeakerDialog } from './AsociarSpeakerDialog'
+import { AltaRapidaProspectoDialog } from './AltaRapidaProspectoDialog'
 import { DesasociarSpeakerDialog } from './DesasociarSpeakerDialog'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
 import { PropiedadEditarDialog } from './PropiedadEditarDialog'
@@ -62,6 +81,7 @@ import {
 import {
   FUENTES_SPEAKER,
   getValSpeaker,
+  opcionesResponsable,
   opcionesUnicas,
   propiedadFiltroColumna,
 } from './speakerFiltros'
@@ -70,11 +90,17 @@ import {
   SPEAKERS_FIXED_COLUMNS,
   defaultSpeakersColumnOrder,
   loadColumnOrder,
+  loadHiddenColumns,
   mergeColumnOrder,
   propiedadIdFromColumn,
   saveColumnOrder,
+  saveHiddenColumns,
+  visibleColumnIds,
 } from './speakersColumnOrder'
 import { cn } from '@/lib/utils'
+
+const RESPONSABLE_NONE = '__none__'
+const RESPONSABLE_OTRO = '__otro__'
 
 type SpeakersTableProps = {
   eventoId: string
@@ -125,6 +151,32 @@ function Truncated({
   )
 }
 
+function ChipToggle({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-md border px-2 py-0.5 text-xs transition-colors',
+        active
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-border bg-background text-muted-foreground hover:bg-muted',
+      )}
+    >
+      {label}
+    </button>
+  )
+}
+
 function headClassName(columnId: string): string | undefined {
   if (columnId === 'foto') return 'w-12'
   if (columnId === 'linkedin' || columnId === 'foto_url') return CELL_URL
@@ -161,14 +213,46 @@ export function SpeakersTable({
   const [storedOrder, setStoredOrder] = useState<string[] | null>(
     () => loadColumnOrder(),
   )
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(
+    () => loadHiddenColumns(),
+  )
+  const [altaRapidaOpen, setAltaRapidaOpen] = useState(false)
+  const [estadosFiltro, setEstadosFiltro] = useState<Set<EventoSpeakerEstado>>(
+    () => new Set(),
+  )
+  const [chipPendientesHoy, setChipPendientesHoy] = useState(false)
+  const [chipVencidos, setChipVencidos] = useState(false)
+  const [chipSinEmail, setChipSinEmail] = useState(false)
+  const [usuariosAgenda, setUsuariosAgenda] = useState<UsuarioAgenda[]>([])
+  const [membresiaOverrides, setMembresiaOverrides] = useState<
+    Record<string, MembresiaProspeccionPatch>
+  >({})
+
+  useEffect(() => {
+    let cancelled = false
+    void listarUsuariosAgenda()
+      .then((rows) => {
+        if (!cancelled) setUsuariosAgenda(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setUsuariosAgenda([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const defaultOrder = useMemo(
     () => defaultSpeakersColumnOrder(propiedades.map((p) => p.id)),
     [propiedades],
   )
-  const columnIds = useMemo(
+  const columnIdsOrdered = useMemo(
     () => mergeColumnOrder(storedOrder, defaultOrder),
     [storedOrder, defaultOrder],
+  )
+  const columnIds = useMemo(
+    () => visibleColumnIds(columnIdsOrdered, hiddenColumns),
+    [columnIdsOrdered, hiddenColumns],
   )
 
   const columnasPanel = useMemo(() => {
@@ -179,24 +263,34 @@ export function SpeakersTable({
     for (const prop of propiedades) {
       labels.set(`prop:${prop.id}`, prop.nombre)
     }
-    return columnIds.map((id) => ({
+    return columnIdsOrdered.map((id) => ({
       id,
       label: labels.get(id) ?? id,
     }))
-  }, [columnIds, propiedades])
+  }, [columnIdsOrdered, propiedades])
 
   function persistColumnOrder(ids: string[]) {
     setStoredOrder(ids)
     saveColumnOrder(ids)
   }
 
+  function toggleHiddenColumn(id: string, hidden: boolean) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev)
+      if (hidden) next.add(id)
+      else next.delete(id)
+      saveHiddenColumns(next)
+      return next
+    })
+  }
+
   const filterColumns: FiltroColumna[] = useMemo(() => {
     const base: FiltroColumna[] = [
       {
-        campo: 'estadoEnEvento',
-        etiqueta: 'Estado (evento)',
+        campo: '_responsable',
+        etiqueta: 'Responsable',
         tipo: 'select',
-        opciones: [...EVENTO_SPEAKER_ESTADOS],
+        opciones: opcionesResponsable(speakers),
       },
       {
         campo: 'pais',
@@ -232,6 +326,46 @@ export function SpeakersTable({
   const [valorOverrides, setValorOverrides] = useState<Record<string, unknown>>(
     {},
   )
+
+  function membresiaActual(
+    sp: Speaker,
+  ): Speaker & MembresiaProspeccionPatch {
+    const ov = membresiaOverrides[sp.id]
+    if (!ov) return sp
+    return { ...sp, ...ov }
+  }
+
+  async function guardarMembresia(
+    sp: Speaker,
+    patch: MembresiaProspeccionPatch,
+  ) {
+    const previo = membresiaOverrides[sp.id] ?? {}
+    setMembresiaOverrides((prev) => ({
+      ...prev,
+      [sp.id]: { ...prev[sp.id], ...patch },
+    }))
+    try {
+      await actualizarMembresiaEventoSpeaker(eventoId, sp.id, patch)
+    } catch (err) {
+      setMembresiaOverrides((prev) => ({
+        ...prev,
+        [sp.id]: previo,
+      }))
+      toast.error(
+        `No se pudo guardar: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
+  }
+
+  function toggleEstadoFiltro(estado: EventoSpeakerEstado) {
+    setEstadosFiltro((prev) => {
+      const next = new Set(prev)
+      if (next.has(estado)) next.delete(estado)
+      else next.add(estado)
+      return next
+    })
+  }
 
   function campoActual(sp: Speaker, campo: CampoTexto): string {
     const ov = fieldOverrides[sp.id]?.[campo]
@@ -286,7 +420,13 @@ export function SpeakersTable({
 
   const filtrados = useMemo(() => {
     const term = busqueda.trim().toLowerCase()
+    const responsableFiltro =
+      filtros.find((f) => f.campo === '_responsable')?.valor ?? null
+    const filtrosSinResponsable = filtros.filter(
+      (f) => f.campo !== '_responsable',
+    )
     return speakers.filter((sp) => {
+      const row = membresiaActual(sp)
       if (
         term &&
         ![sp.nombre, sp.cargo, sp.empresa, sp.email]
@@ -295,12 +435,43 @@ export function SpeakersTable({
       ) {
         return false
       }
+      if (
+        !filaPasaProspeccion(
+          {
+            email: sp.email,
+            estadoEnEvento: sp.estadoEnEvento,
+            proximo_seguimiento_at: row.proximo_seguimiento_at ?? null,
+            responsable_id: row.responsable_id ?? null,
+            responsable_texto: row.responsable_texto ?? null,
+          },
+          {
+            estados: estadosFiltro,
+            pendientesHoy: chipPendientesHoy,
+            vencidos: chipVencidos,
+            sinEmail: chipSinEmail,
+            responsableKey:
+              typeof responsableFiltro === 'string' ? responsableFiltro : null,
+          },
+        )
+      ) {
+        return false
+      }
       return filaPasaFiltros(
-        (campo) => getValSpeaker(sp, campo, valoresPorSpeaker),
-        filtros,
+        (campo) => getValSpeaker(row, campo, valoresPorSpeaker),
+        filtrosSinResponsable,
       )
     })
-  }, [speakers, busqueda, filtros, valoresPorSpeaker])
+  }, [
+    speakers,
+    busqueda,
+    filtros,
+    valoresPorSpeaker,
+    estadosFiltro,
+    chipPendientesHoy,
+    chipVencidos,
+    chipSinEmail,
+    membresiaOverrides,
+  ])
 
   const totalCols = columnIds.length
 
@@ -785,6 +956,189 @@ export function SpeakersTable({
           </TableCell>
         )
       }
+      case 'responsable': {
+        const m = membresiaActual(sp)
+        const selectValue = m.responsable_id
+          ? m.responsable_id
+          : m.responsable_texto
+            ? RESPONSABLE_OTRO
+            : RESPONSABLE_NONE
+        return (
+          <TableCell key={columnId} className="min-w-[180px]">
+            {readOnly ? (
+              <Truncated value={m.responsable_texto ?? ''} />
+            ) : (
+              <div className="flex min-w-0 flex-col gap-1">
+                <Select
+                  value={selectValue}
+                  onValueChange={(v) => {
+                    if (v === RESPONSABLE_NONE) {
+                      void guardarMembresia(sp, {
+                        responsable_id: null,
+                        responsable_texto: null,
+                      })
+                      return
+                    }
+                    if (v === RESPONSABLE_OTRO) {
+                      void guardarMembresia(sp, {
+                        responsable_id: null,
+                        responsable_texto: m.responsable_texto ?? '',
+                      })
+                      return
+                    }
+                    const user = usuariosAgenda.find((u) => u.id === v)
+                    void guardarMembresia(sp, {
+                      responsable_id: v,
+                      responsable_texto: user?.nombre ?? m.responsable_texto,
+                    })
+                  }}
+                >
+                  <SelectTrigger
+                    className="h-8 w-[170px]"
+                    aria-label={`Responsable de ${sp.nombre}`}
+                  >
+                    <SelectValue placeholder="Sin responsable" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={RESPONSABLE_NONE}>
+                      Sin responsable
+                    </SelectItem>
+                    {usuariosAgenda.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.nombre || u.email}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={RESPONSABLE_OTRO}>Otro…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {selectValue === RESPONSABLE_OTRO && (
+                  <div className="min-w-0 max-w-[170px]">
+                    <InlineText
+                      value={m.responsable_texto ?? ''}
+                      placeholder="Nombre libre"
+                      onSave={(texto) =>
+                        guardarMembresia(sp, {
+                          responsable_id: null,
+                          responsable_texto: texto.trim() || null,
+                        })
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </TableCell>
+        )
+      }
+      case 'proximo_seguimiento': {
+        const m = membresiaActual(sp)
+        const ymd = timestampAYmdBogota(m.proximo_seguimiento_at) ?? ''
+        const nota = m.proximo_seguimiento_nota?.trim() ?? ''
+        return (
+          <TableCell key={columnId} className="min-w-[140px]">
+            {readOnly ? (
+              <span className="text-sm" title={nota || undefined}>
+                {ymd || '—'}
+              </span>
+            ) : (
+              <Input
+                type="date"
+                value={ymd}
+                title={nota || 'Próximo seguimiento (Bogotá)'}
+                onChange={(e) => {
+                  const next = e.target.value
+                  void guardarMembresia(sp, {
+                    proximo_seguimiento_at: next
+                      ? ymdATimestampBogota(next)
+                      : null,
+                  })
+                }}
+                className="h-7 w-[140px] text-xs"
+              />
+            )}
+          </TableCell>
+        )
+      }
+      case 'viaticos': {
+        const m = membresiaActual(sp)
+        return (
+          <TableCell key={columnId} className="min-w-[120px]">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                aria-label={`Requiere viáticos: ${sp.nombre}`}
+                checked={m.requiere_viaticos === true}
+                disabled={readOnly}
+                onCheckedChange={
+                  readOnly
+                    ? undefined
+                    : (checked) =>
+                        void guardarMembresia(sp, {
+                          requiere_viaticos: checked === true,
+                        })
+                }
+              />
+              {readOnly ? (
+                <Truncated value={m.viaticos_nota ?? ''} className="text-xs" />
+              ) : (
+                <div className="min-w-0 max-w-[100px]">
+                  <InlineText
+                    value={m.viaticos_nota ?? ''}
+                    placeholder="Nota"
+                    onSave={(nota) =>
+                      guardarMembresia(sp, {
+                        viaticos_nota: nota.trim() || null,
+                      })
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          </TableCell>
+        )
+      }
+      case 'pista_espacio': {
+        const m = membresiaActual(sp)
+        return (
+          <TableCell
+            key={columnId}
+            className="max-w-[140px] overflow-hidden text-muted-foreground"
+          >
+            {readOnly ? (
+              <Truncated value={m.pista_espacio ?? ''} />
+            ) : (
+              <div className="min-w-0 max-w-[140px]">
+                <InlineText
+                  value={m.pista_espacio ?? ''}
+                  onSave={(v) =>
+                    guardarMembresia(sp, {
+                      pista_espacio: v.trim() || null,
+                    })
+                  }
+                />
+              </div>
+            )}
+          </TableCell>
+        )
+      }
+      case 'notas_internas': {
+        const m = membresiaActual(sp)
+        const texto = m.notas_internas ?? ''
+        return (
+          <TableCell
+            key={columnId}
+            className="max-w-[180px] overflow-hidden text-muted-foreground"
+          >
+            <button
+              type="button"
+              className="block min-w-0 max-w-[180px] truncate text-left text-sm hover:underline"
+              title={texto || 'Editar en perfil'}
+              onClick={() => abrirEditar(sp)}
+            >
+              {texto || '—'}
+            </button>
+          </TableCell>
+        )
+      }
       case SPEAKERS_ACCIONES_ID:
         return (
           <TableCell key={columnId} className="text-right">
@@ -858,18 +1212,53 @@ export function SpeakersTable({
           />
           <ColumnOrderPopover
             columns={columnasPanel}
+            hiddenIds={hiddenColumns}
             onReorder={persistColumnOrder}
+            onToggleHidden={toggleHiddenColumn}
           />
         </div>
         <div className="flex items-center gap-2">
           {!readOnly && (
             <>
               <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
+              <Button variant="outline" onClick={() => setAltaRapidaOpen(true)}>
+                <Zap /> Alta rápida
+              </Button>
               <Button onClick={abrirAsociar}>
                 <UserPlus /> Asociar speaker
               </Button>
             </>
           )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ChipToggle
+            active={chipPendientesHoy}
+            onClick={() => setChipPendientesHoy((v) => !v)}
+            label="Pendientes hoy"
+          />
+          <ChipToggle
+            active={chipVencidos}
+            onClick={() => setChipVencidos((v) => !v)}
+            label="Vencidos"
+          />
+          <ChipToggle
+            active={chipSinEmail}
+            onClick={() => setChipSinEmail((v) => !v)}
+            label="Sin email"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {EVENTO_SPEAKER_ESTADOS.map((estado) => (
+            <ChipToggle
+              key={estado}
+              active={estadosFiltro.has(estado)}
+              onClick={() => toggleEstadoFiltro(estado)}
+              label={ESTADO_LABELS[estado]}
+            />
+          ))}
         </div>
       </div>
 
@@ -953,13 +1342,28 @@ export function SpeakersTable({
         />
       )}
 
+      {!readOnly && (
+        <AltaRapidaProspectoDialog
+          open={altaRapidaOpen}
+          onOpenChange={setAltaRapidaOpen}
+          eventoId={eventoId}
+          onCreated={() => {
+            setMembresiaOverrides({})
+            refetch()
+          }}
+        />
+      )}
+
       <SpeakerPerfilDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         mode={modo}
-        speaker={activo}
+        speaker={activo ? membresiaActual(activo) : null}
         eventoId={eventoId}
-        onSaved={refetch}
+        onSaved={() => {
+          setMembresiaOverrides({})
+          refetch()
+        }}
         readOnly={readOnly}
         asociarAlCrear
         mostrarToolkit
