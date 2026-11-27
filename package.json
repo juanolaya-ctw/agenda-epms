@@ -11,7 +11,8 @@
     "test:bloque1": "tsx --test scripts/crm-bloque1-unit.test.ts",
     "test:fase0": "tsx --test scripts/fase0-segmentacion.test.ts",
     "test:fase1": "tsx --test scripts/fase1-prospeccion.test.ts",
-    "test": "tsx --test scripts/crm-bloque1-unit.test.ts scripts/fase0-segmentacion.test.ts scripts/fase1-prospeccion.test.ts scripts/agenda-shape.test.ts"
+    "test:delete": "tsx --test scripts/speaker-delete.test.ts",
+    "test": "tsx --test scripts/crm-bloque1-unit.test.ts scripts/fase0-segmentacion.test.ts scripts/fase1-prospeccion.test.ts scripts/agenda-shape.test.ts scripts/speaker-delete.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
