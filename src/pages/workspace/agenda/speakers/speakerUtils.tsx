@@ -1,11 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import type { ChecklistItem, PropiedadCustom } from '@/hooks/useSpeakersData'
 
-const TOOLKIT_BASE_URL = 'https://speakers.govtechsummit.co'
-
-export function toolkitUrl(slug: string): string {
-  return `${TOOLKIT_BASE_URL}/${slug}`
-}
+export { toolkitUrl } from '@/lib/toolkitLink'
 
 export function asChecklist(value: unknown): ChecklistItem[] {
   if (!Array.isArray(value)) return []

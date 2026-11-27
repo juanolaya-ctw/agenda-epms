@@ -36,6 +36,7 @@ import {
   type Speaker,
   type SpeakerEditable,
 } from '@/hooks/useSpeakersData'
+import { planAltaSpeaker } from '@/lib/altaSpeaker'
 import { formatDiaLargo } from '../sesiones/format'
 import { NuevaPropiedadDialog } from './NuevaPropiedadDialog'
 import { asChecklist, iniciales, toolkitUrl } from './speakerUtils'
@@ -85,6 +86,12 @@ type SpeakerPerfilDialogProps = {
   readOnly?: boolean
   /** Tras crear en el workspace, asocia el speaker al evento. */
   asociarAlCrear?: boolean
+  /** Muestra el toolkit de esta membresía. El CRM global no lo muestra. */
+  mostrarToolkit?: boolean
+  /** Dominio https del toolkit de este evento. */
+  toolkitBaseUrl?: string | null
+  /** CRM: el email ya existe y hay que abrir esa ficha, no crear otra. */
+  onAbrirExistente?: (speaker: Speaker) => void
   /** Propiedades del evento ya cargadas por el padre (evita refetch). */
   propiedadesEvento?: PropiedadCustom[]
   /** Valores de este speaker ya cargados por el padre (evita refetch). */
@@ -100,6 +107,9 @@ export function SpeakerPerfilDialog({
   onSaved,
   readOnly = false,
   asociarAlCrear = false,
+  mostrarToolkit = false,
+  toolkitBaseUrl = null,
+  onAbrirExistente,
   propiedadesEvento,
   valoresDelSpeaker,
 }: SpeakerPerfilDialogProps) {
@@ -122,9 +132,18 @@ export function SpeakerPerfilDialog({
   const [nuevoItem, setNuevoItem] = useState<Record<string, string>>({})
 
   const speakerId = speaker?.id ?? null
-  const linkToolkit = speaker?.toolkit_slug
-    ? toolkitUrl(speaker.toolkit_slug)
+  const [recursos, setRecursos] = useState<{
+    toolkit_slug: string | null
+    link_pieza_fase1: string | null
+    link_pieza_fase2: string | null
+    link_pieza_fase3: string | null
+    estado_pieza: string | null
+  } | null>(null)
+
+  const slugToolkit = mostrarToolkit
+    ? (recursos?.toolkit_slug ?? speaker?.toolkit_slug ?? null)
     : null
+  const linkToolkit = toolkitUrl(toolkitBaseUrl, slugToolkit)
 
   useEffect(() => {
     if (open) {
@@ -159,6 +178,40 @@ export function SpeakerPerfilDialog({
   // La tabla ahora trae solo columnas ligeras; al abrir un perfil se hace
   // un point-lookup por PK para poblar el formulario completo (bio, doc,
   // teléfono, etc.). Una sola query indexada.
+  useEffect(() => {
+    if (!open || !mostrarToolkit || mode !== 'edit' || !speakerId) {
+      setRecursos(null)
+      return
+    }
+    let cancelled = false
+    supabase
+      .from('evento_speakers')
+      .select(
+        'toolkit_slug, link_pieza_fase1, link_pieza_fase2, link_pieza_fase3, estado_pieza',
+      )
+      .eq('evento_id', eventoId)
+      .eq('speaker_id', speakerId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        if (!data) {
+          setRecursos(null)
+          return
+        }
+        const row = data as {
+          toolkit_slug: string | null
+          link_pieza_fase1: string | null
+          link_pieza_fase2: string | null
+          link_pieza_fase3: string | null
+          estado_pieza: string | null
+        }
+        setRecursos(row)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, mostrarToolkit, mode, speakerId, eventoId])
+
   useEffect(() => {
     if (!open || mode !== 'edit' || !speakerId) return
     let cancelled = false
@@ -356,6 +409,31 @@ export function SpeakerPerfilDialog({
     }
   }
 
+  async function resolverEmailExistente(email: string): Promise<boolean> {
+    const existente = await speakerPorEmail(email)
+    const plan = planAltaSpeaker({
+      existenteId: existente?.id ?? null,
+      asociarAlEvento: asociarAlCrear,
+    })
+    if (!existente || plan.tipo === 'crear') return false
+    if (plan.tipo === 'asociar_existente') {
+      const { created } = await asociarSpeakerAEvento(eventoId, existente.id)
+      toast.success(
+        created
+          ? `«${existente.nombre}» ya existía en el directorio y se asoció al evento`
+          : `«${existente.nombre}» ya estaba asociado a este evento`,
+      )
+      onOpenChange(false)
+      onSaved()
+      return true
+    }
+    toast.success(
+      `«${existente.nombre}» ya está en el directorio. Se abrió su ficha.`,
+    )
+    onAbrirExistente?.(existente)
+    return true
+  }
+
   async function handleGuardar() {
     if (!form.nombre.trim()) {
       toast.error('El nombre es obligatorio.')
@@ -376,6 +454,11 @@ export function SpeakerPerfilDialog({
         await actualizarSpeaker(speaker.id, datos)
         toast.success('Speaker actualizado')
       } else {
+        if (emailTrim) {
+          const yaResuelto = await resolverEmailExistente(form.email)
+          if (yaResuelto) return
+        }
+
         let newId: string
         try {
           newId = await crearSpeaker(datos)
@@ -383,23 +466,10 @@ export function SpeakerPerfilDialog({
           const msg = err instanceof Error ? err.message : String(err)
           const esDuplicado =
             /duplicate|unique|already exists|speakers_email/i.test(msg)
-          if (!esDuplicado || !asociarAlCrear || !emailTrim) throw err
-
-          const existente = await speakerPorEmail(form.email)
-          if (!existente) throw err
-
-          const { created } = await asociarSpeakerAEvento(
-            eventoId,
-            existente.id,
-          )
-          toast.success(
-            created
-              ? `«${existente.nombre}» ya existía en el directorio y se asoció al evento`
-              : `«${existente.nombre}» ya estaba asociado a este evento`,
-          )
-          onOpenChange(false)
-          onSaved()
-          return
+          if (!esDuplicado || !emailTrim) throw err
+          const yaResuelto = await resolverEmailExistente(form.email)
+          if (yaResuelto) return
+          throw err
         }
 
         if (asociarAlCrear) {
@@ -507,7 +577,9 @@ export function SpeakerPerfilDialog({
             <DialogDescription>
               {mode === 'create' && asociarAlCrear
                 ? 'Se crea en el directorio global y se asocia a este evento. Si el email ya existe, se asociará el perfil existente.'
-                : 'Datos del pool global de speakers y su seguimiento en este evento.'}
+                : mode === 'create'
+                  ? 'Se crea en el directorio global. Si el email ya existe, se abre esa ficha.'
+                  : 'Datos del pool global de speakers y su seguimiento en este evento.'}
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -610,32 +682,58 @@ export function SpeakerPerfilDialog({
 
           {/* ── Columna derecha: participación + seguimiento ──────── */}
           <div className="flex flex-col gap-4 overflow-y-auto p-6">
-            <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Link del toolkit</h3>
-              {linkToolkit ? (
-                <>
-                  <p className="break-all rounded-md border border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
-                    {linkToolkit}
+            {mostrarToolkit && (
+              <div className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold">Toolkit de este evento</h3>
+                {linkToolkit ? (
+                  <>
+                    <p className="break-all rounded-md border border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+                      {linkToolkit}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-fit"
+                      onClick={() => void copiarToolkit()}
+                    >
+                      <Link />
+                      Copiar link ↗
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {slugToolkit
+                      ? 'Hay un identificador de toolkit, pero este evento no tiene dominio configurado.'
+                      : 'Sin toolkit en este evento.'}
                   </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-fit"
-                    onClick={() => void copiarToolkit()}
-                  >
-                    <Link />
-                    Copiar link ↗
-                  </Button>
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Pendiente de generar (speaker creado antes de esta feature).
-                </p>
-              )}
-            </div>
+                )}
+                {recursos?.estado_pieza && (
+                  <p className="text-xs text-muted-foreground">
+                    Estado de la pieza: {recursos.estado_pieza}
+                  </p>
+                )}
+                {[
+                  ['Fase 1', recursos?.link_pieza_fase1],
+                  ['Fase 2', recursos?.link_pieza_fase2],
+                  ['Fase 3', recursos?.link_pieza_fase3],
+                ].map(([fase, url]) =>
+                  url ? (
+                    <a
+                      key={fase}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="break-all text-xs text-secondary underline"
+                    >
+                      Pieza {fase}
+                    </a>
+                  ) : null,
+                )}
+              </div>
+            )}
 
-            <div className="border-t border-border" />
+            {mostrarToolkit && <div className="border-t border-border" />}
 
             {mode === 'create' || !speakerId ? (
               <p className="text-sm text-muted-foreground">
