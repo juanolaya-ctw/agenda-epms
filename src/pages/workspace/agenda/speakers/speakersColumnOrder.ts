@@ -1,12 +1,25 @@
 export const SPEAKERS_COLUMN_ORDER_KEY = 'speakersColumnOrder'
+export const SPEAKERS_COLUMN_HIDDEN_KEY = 'speakersColumnHidden'
 
 export const SPEAKERS_ACCIONES_ID = 'acciones'
+
+/** Columnas que no se pueden ocultar. */
+export const SPEAKERS_ALWAYS_VISIBLE = new Set<string>([
+  'foto',
+  'nombre',
+  SPEAKERS_ACCIONES_ID,
+])
 
 export const SPEAKERS_FIXED_COLUMNS = [
   { id: 'foto', label: 'Foto' },
   { id: 'foto_url', label: 'URL foto' },
   { id: 'nombre', label: 'Nombre' },
   { id: 'estado_evento', label: 'Estado (evento)' },
+  { id: 'responsable', label: 'Responsable' },
+  { id: 'proximo_seguimiento', label: 'Próximo seguimiento' },
+  { id: 'viaticos', label: 'Viáticos' },
+  { id: 'pista_espacio', label: 'Pista / Espacio' },
+  { id: 'notas_internas', label: 'Notas internas' },
   { id: 'cargo', label: 'Cargo' },
   { id: 'empresa', label: 'Empresa' },
   { id: 'pais', label: 'País' },
@@ -96,4 +109,41 @@ export function saveColumnOrder(ids: string[]): void {
   } catch {
     // localStorage no disponible
   }
+}
+
+export function loadHiddenColumns(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SPEAKERS_COLUMN_HIDDEN_KEY)
+    if (!raw) return new Set()
+    const parsed: unknown = JSON.parse(raw)
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((id) => typeof id === 'string')
+    ) {
+      return new Set()
+    }
+    return new Set(
+      parsed.filter((id) => !SPEAKERS_ALWAYS_VISIBLE.has(id)),
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+export function saveHiddenColumns(hidden: Set<string>): void {
+  try {
+    const ids = [...hidden].filter((id) => !SPEAKERS_ALWAYS_VISIBLE.has(id))
+    localStorage.setItem(SPEAKERS_COLUMN_HIDDEN_KEY, JSON.stringify(ids))
+  } catch {
+    // localStorage no disponible
+  }
+}
+
+export function visibleColumnIds(
+  order: string[],
+  hidden: Set<string>,
+): string[] {
+  return order.filter(
+    (id) => SPEAKERS_ALWAYS_VISIBLE.has(id) || !hidden.has(id),
+  )
 }
