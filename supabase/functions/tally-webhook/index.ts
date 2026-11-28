@@ -1,29 +1,35 @@
 // supabase/functions/tally-webhook/index.ts
-// Edge Function — Webhook de Tally, un formulario por evento.
+// Edge Function — Webhook de Tally por evento (Fase 5).
 // Deploy: supabase functions deploy tally-webhook --no-verify-jwt
+// (también se puede desplegar con otro slug para QA; el código no depende del nombre).
 //
 // Variables de entorno (Supabase Dashboard → Edge Functions → Secrets):
 //   SB_URL         → https://ydqbjyhcntszvrytdkml.supabase.co
 //   SB_SERVICE_KEY → service_role key (nunca la anon key)
 //
-// Webhook por evento (Settings del workspace, tras aplicar la migración):
-//   {SB_URL}/functions/v1/tally-webhook?token=<webhook_token>
+// Webhook por evento (Settings del workspace):
+//   {SB_URL}/functions/v1/<slug>?token=<webhook_token>
 // Sin token, el formId del payload (data.formId) se busca en
-// epms.tally_formularios. GovTech sigue en pbNMvy.
-// Un form no registrado no crea speaker.
+// epms.tally_formularios. GovTech (pbNMvy) sigue funcionando por formId.
+//
+// Requiere la migración 20261129_fase5_tally.sql (bloque 1a de grants
+// como mínimo). Sin ella, service_role no puede leer tally_formularios.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  claveEnvio,
+  extraerRespuestas,
+  generarToolkitSlug,
   normalizarEmailTally,
   parseTallySpeaker,
-  planificarIntake,
   resolverEventoTally,
   type FormularioTally,
   type TallyField,
 } from "../_shared/tallyIntake.ts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
+const MAX_BODY_BYTES = 256 * 1024;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
@@ -34,9 +40,14 @@ serve(async (req: Request) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  const rawText = await req.text();
+  if (new TextEncoder().encode(rawText).byteLength > MAX_BODY_BYTES) {
+    return json({ error: "Payload demasiado grande" }, 413);
+  }
+
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    body = JSON.parse(rawText) as Record<string, unknown>;
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
@@ -53,19 +64,60 @@ serve(async (req: Request) => {
     (typeof data.formId === "string" && data.formId) ||
     (typeof body.formId === "string" && body.formId) ||
     null;
+  const submissionId =
+    typeof data.submissionId === "string" ? data.submissionId : null;
+  const submittedAtRaw =
+    (typeof data.createdAt === "string" && data.createdAt) ||
+    (typeof body.createdAt === "string" && body.createdAt) ||
+    null;
+  const submittedAt = submittedAtRaw ? new Date(submittedAtRaw) : null;
+  const submittedAtIso =
+    submittedAt && !Number.isNaN(submittedAt.getTime())
+      ? submittedAt.toISOString()
+      : null;
 
   const supabase = createClient(
     Deno.env.get("SB_URL")!,
     Deno.env.get("SB_SERVICE_KEY")!,
   );
 
+  const clave = await claveEnvio(body, rawText);
+
+  // Early replay: evita re-alojar foto y re-llamar la RPC
+  const { data: existente, error: existErr } = await supabase
+    .schema("epms")
+    .from("tally_envios")
+    .select("id, estado, razon, speaker_id, evento_id")
+    .eq("clave", clave)
+    .maybeSingle();
+
+  if (existErr) {
+    console.error("Error leyendo tally_envios:", existErr.message);
+    return json({ error: "Error interno" }, 500);
+  }
+  if (existente) {
+    console.log("Tally reenvio", {
+      envio_id: existente.id,
+      evento_id: existente.evento_id,
+      estado: existente.estado,
+      razon: existente.razon,
+    });
+    return json({
+      status: "reenvio",
+      envio_id: existente.id,
+      estado: existente.estado,
+      speaker_id: existente.speaker_id,
+      evento_id: existente.evento_id,
+    });
+  }
+
   const { data: forms, error: formsError } = await supabase
     .schema("epms")
     .from("tally_formularios")
-    .select("evento_id, tally_form_id, webhook_token, activo");
+    .select("evento_id, tally_form_id, webhook_token, activo, mapeo_campos");
 
   if (formsError) {
-    console.error("Error leyendo tally_formularios:", formsError);
+    console.error("Error leyendo tally_formularios:", formsError.message);
     return json({ error: "No se pudieron leer los formularios Tally" }, 500);
   }
 
@@ -74,102 +126,160 @@ serve(async (req: Request) => {
     tallyFormId: row.tally_form_id as string,
     webhookToken: row.webhook_token as string,
     activo: row.activo !== false,
+    mapeoCampos:
+      row.mapeo_campos && typeof row.mapeo_campos === "object"
+        ? (row.mapeo_campos as Record<string, string>)
+        : null,
   }));
 
   const evento = resolverEventoTally({ token, formId, formularios });
+
   if (!evento.ok) {
-    console.warn("Tally sin evento:", evento.error, { formId });
-    return json({ error: evento.error }, evento.status);
-  }
-
-  const speaker = parseTallySpeaker(fields);
-  speaker.email = normalizarEmailTally(speaker.email);
-  if (!speaker.nombre || !speaker.email) {
-    console.error("Payload sin nombre o email:", JSON.stringify(speaker));
-    return json({ error: "nombre y email son obligatorios" }, 422);
-  }
-
-  const { data: existenteId, error: lookupError } = await supabase
-    .schema("epms")
-    .rpc("buscar_speaker_por_email", { p_email: speaker.email });
-
-  if (lookupError) {
-    console.error("Error al verificar duplicado:", lookupError);
-    return json({ error: "Error interno al verificar email" }, 500);
-  }
-
-  const plan = planificarIntake({
-    eventoId: evento.eventoId,
-    speaker,
-    existenteId: typeof existenteId === "string" ? existenteId : null,
-    shortId: crypto.randomUUID().slice(0, 6),
-  });
-
-  if (plan.accion === "duplicado") {
-    return await registrarDuplicado(supabase, body, plan);
-  }
-
-  if (plan.speaker.foto_url && plan.speaker.foto_url.includes("storage.tally.so")) {
-    plan.speaker.foto_url = await realojarFoto(
-      supabase,
-      plan.speaker.foto_url,
-      plan.speaker.email ?? "speaker",
-    );
-  }
-
-  const { data: inserted, error: insertError } = await supabase
-    .schema("epms")
-    .from("speakers")
-    .insert(plan.speaker)
-    .select("id")
-    .single();
-
-  if (insertError || !inserted) {
-    // Carrera: otro envío creó el mismo email. No se pisa la ficha.
-    if (insertError && /duplicate|unique/i.test(insertError.message)) {
-      const { data: idOtraVez } = await supabase
-        .schema("epms")
-        .rpc("buscar_speaker_por_email", { p_email: plan.speaker.email });
-      if (typeof idOtraVez === "string") {
-        return await registrarDuplicado(supabase, body, {
-          accion: "duplicado",
-          eventoId: plan.eventoId,
-          speakerId: idOtraVez,
-          email: plan.speaker.email ?? "",
-        });
-      }
+    if (
+      evento.motivo === "token_invalido" ||
+      evento.motivo === "sin_identificador"
+    ) {
+      console.warn("Tally rechazo sin guardar", { motivo: evento.motivo });
+      return json({ error: evento.error }, evento.status);
     }
-    console.error("Error al insertar speaker:", insertError);
-    return json(
-      { error: "Error al insertar speaker", detail: insertError?.message },
-      500,
-    );
-  }
 
-  const speakerId = inserted.id as string;
-  const membresia = await asegurarMembresia(supabase, plan.eventoId, speakerId, {
-    toolkitSlug: plan.toolkitSlug,
-  });
-  if (!membresia.ok) {
-    console.error("Speaker creado sin membresía:", speakerId, membresia.error);
+    // form_desconocido (no registrado o inactivo) → persistir y 422
+    const rpcDesc = await supabase.schema("epms").rpc("registrar_tally_envio", {
+      p_clave: clave,
+      p_form_id: formId,
+      p_evento_id: null,
+      p_submission_id: submissionId,
+      p_submitted_at: submittedAtIso,
+      p_payload: body,
+      p_campos: {},
+      p_respuestas: extraerRespuestas(fields),
+      p_toolkit_slug: null,
+      p_modo: "desconocido",
+    });
+    if (rpcDesc.error) {
+      console.error("RPC desconocido:", rpcDesc.error.message);
+      return json({ error: "Error interno" }, 500);
+    }
+    const r = rpcDesc.data as Record<string, unknown>;
+    console.warn("Tally formulario desconocido", {
+      envio_id: r.envio_id,
+      estado: r.estado,
+      razon: r.razon,
+    });
     return json(
       {
-        error: "Speaker creado, pero no se pudo asociar al evento",
-        speaker_id: speakerId,
-        detail: membresia.error,
+        error: evento.error,
+        envio_id: r.envio_id,
+        estado: r.estado,
       },
-      500,
+      422,
     );
   }
 
-  console.log(
-    `Speaker insertado: ${plan.speaker.nombre} <${plan.speaker.email}> evento ${plan.eventoId}`,
-  );
+  const speaker = parseTallySpeaker(fields, evento.mapeoCampos ?? null);
+  speaker.email = normalizarEmailTally(speaker.email);
+  const respuestas = extraerRespuestas(fields);
+
+  if (!speaker.nombre || !speaker.email) {
+    const rpcInv = await supabase.schema("epms").rpc("registrar_tally_envio", {
+      p_clave: clave,
+      p_form_id: formId,
+      p_evento_id: evento.eventoId,
+      p_submission_id: submissionId,
+      p_submitted_at: submittedAtIso,
+      p_payload: body,
+      p_campos: speaker,
+      p_respuestas: respuestas,
+      p_toolkit_slug: null,
+      p_modo: "invalido",
+    });
+    if (rpcInv.error) {
+      console.error("RPC invalido:", rpcInv.error.message);
+      return json({ error: "Error interno" }, 500);
+    }
+    const r = rpcInv.data as Record<string, unknown>;
+    console.warn("Tally payload invalido", {
+      envio_id: r.envio_id,
+      evento_id: evento.eventoId,
+      estado: r.estado,
+      razon: r.razon,
+    });
+    return json(
+      {
+        error: "nombre y email son obligatorios",
+        envio_id: r.envio_id,
+        estado: r.estado,
+      },
+      422,
+    );
+  }
+
+  if (speaker.foto_url && speaker.foto_url.includes("storage.tally.so")) {
+    speaker.foto_url = await realojarFoto(supabase, speaker.foto_url, clave);
+  }
+
+  const shortId = crypto.randomUUID().slice(0, 6);
+  const toolkitSlug = generarToolkitSlug(speaker.nombre, shortId);
+
+  const { data: rpcData, error: rpcError } = await supabase
+    .schema("epms")
+    .rpc("registrar_tally_envio", {
+      p_clave: clave,
+      p_form_id: formId,
+      p_evento_id: evento.eventoId,
+      p_submission_id: submissionId,
+      p_submitted_at: submittedAtIso,
+      p_payload: body,
+      p_campos: speaker,
+      p_respuestas: respuestas,
+      p_toolkit_slug: toolkitSlug,
+      p_modo: "procesar",
+    });
+
+  if (rpcError) {
+    console.error("RPC procesar:", rpcError.message);
+    return json({ error: "Error interno" }, 500);
+  }
+
+  const result = rpcData as {
+    envio_id: string;
+    estado: string;
+    razon: string | null;
+    speaker_id: string | null;
+    evento_id: string | null;
+    replay?: boolean;
+    speaker_creado?: boolean;
+  };
+
+  if (result.replay) {
+    console.log("Tally reenvio", {
+      envio_id: result.envio_id,
+      evento_id: result.evento_id,
+      estado: result.estado,
+      razon: result.razon,
+    });
+    return json({
+      status: "reenvio",
+      envio_id: result.envio_id,
+      estado: result.estado,
+      speaker_id: result.speaker_id,
+      evento_id: result.evento_id,
+    });
+  }
+
+  console.log("Tally ok", {
+    envio_id: result.envio_id,
+    evento_id: result.evento_id,
+    estado: result.estado,
+    razon: result.razon,
+  });
+
   return json({
     status: "ok",
-    message: `Speaker ${plan.speaker.nombre} registrado.`,
-    speaker_id: speakerId,
-    evento_id: plan.eventoId,
+    envio_id: result.envio_id,
+    estado: result.estado,
+    speaker_id: result.speaker_id,
+    evento_id: result.evento_id,
   });
 });
 
@@ -178,14 +288,21 @@ type SupabaseAdmin = ReturnType<typeof createClient>;
 async function realojarFoto(
   supabase: SupabaseAdmin,
   fotoUrl: string,
-  email: string,
+  clave: string,
 ): Promise<string> {
   try {
     const imgRes = await fetch(fotoUrl);
     if (!imgRes.ok) return fotoUrl;
     const blob = await imgRes.blob();
     const ext = blob.type.split("/")[1] || "jpg";
-    const filename = `speakers/${email}-${Date.now()}.${ext}`;
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(clave),
+    );
+    const hex = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const filename = `speakers/tally-${hex.slice(0, 8)}-${Date.now()}.${ext}`;
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from("speaker-fotos")
       .upload(filename, blob, { contentType: blob.type, upsert: true });
@@ -195,78 +312,10 @@ async function realojarFoto(
       .getPublicUrl(filename);
     return urlData.publicUrl || fotoUrl;
   } catch (e) {
-    console.error("Error re-alojando foto:", e);
+    console.error(
+      "Error re-alojando foto:",
+      e instanceof Error ? e.message : "unknown",
+    );
     return fotoUrl;
   }
-}
-
-async function asegurarMembresia(
-  supabase: SupabaseAdmin,
-  eventoId: string,
-  speakerId: string,
-  opts: { toolkitSlug?: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data: existing, error: existError } = await supabase
-    .schema("epms")
-    .from("evento_speakers")
-    .select("speaker_id, toolkit_slug")
-    .eq("evento_id", eventoId)
-    .eq("speaker_id", speakerId)
-    .maybeSingle();
-
-  if (existError) return { ok: false, error: existError.message };
-
-  if (!existing) {
-    const row: Record<string, string> = {
-      evento_id: eventoId,
-      speaker_id: speakerId,
-      estado: "PENDIENTE_CONTACTAR",
-    };
-    if (opts.toolkitSlug) row.toolkit_slug = opts.toolkitSlug;
-    const { error } = await supabase.schema("epms").from("evento_speakers").insert(row);
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
-  }
-
-  // Ya está en el evento: no se toca estado ni toolkit de esta ni de otra participación.
-  return { ok: true };
-}
-
-async function registrarDuplicado(
-  supabase: SupabaseAdmin,
-  body: Record<string, unknown>,
-  plan: { eventoId: string; speakerId: string; email: string },
-): Promise<Response> {
-  console.warn(
-    `Email duplicado: ${plan.email} evento ${plan.eventoId} — cola de revisión, sin pisar la ficha`,
-  );
-
-  const membresia = await asegurarMembresia(supabase, plan.eventoId, plan.speakerId, {});
-  if (!membresia.ok) {
-    console.error("No se pudo asegurar la membresía del duplicado:", membresia.error);
-    return json(
-      { error: "No se pudo asociar el speaker al evento", detail: membresia.error },
-      500,
-    );
-  }
-
-  const { error: dupError } = await supabase
-    .schema("epms")
-    .from("tally_duplicados_pendientes")
-    .insert({
-      email: plan.email,
-      evento_id: plan.eventoId,
-      payload_raw: body,
-    });
-
-  if (dupError) {
-    console.error("Error al guardar duplicado:", dupError);
-  }
-
-  return json({
-    status: "duplicado",
-    message: "Email ya registrado. Submit guardado en cola de revisión.",
-    speaker_id: plan.speakerId,
-    evento_id: plan.eventoId,
-  });
 }

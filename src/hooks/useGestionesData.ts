@@ -19,6 +19,7 @@ export type Gestion = {
   ocurrida_at: string
   proxima_at: string | null
   creado_por: string | null
+  tally_envio_id: string | null
   created_at: string
 }
 
@@ -40,12 +41,13 @@ function mapGestionRow(row: Record<string, unknown>): Gestion {
     ocurrida_at: row.ocurrida_at as string,
     proxima_at: (row.proxima_at as string | null) ?? null,
     creado_por: (row.creado_por as string | null) ?? null,
+    tally_envio_id: (row.tally_envio_id as string | null) ?? null,
     created_at: row.created_at as string,
   }
 }
 
 const GESTION_COLS =
-  'id, evento_id, speaker_id, tipo, nota, ocurrida_at, proxima_at, creado_por, created_at'
+  'id, evento_id, speaker_id, tipo, nota, ocurrida_at, proxima_at, creado_por, tally_envio_id, created_at'
 
 export async function listarGestionesEventoSpeaker(
   eventoId: string,

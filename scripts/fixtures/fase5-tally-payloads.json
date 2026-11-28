@@ -1,0 +1,116 @@
+{
+  "govtech_like": {
+    "eventId": "evt-test-gov-001",
+    "eventType": "FORM_RESPONSE",
+    "createdAt": "2026-11-28T12:00:00.000Z",
+    "data": {
+      "responseId": "resp-qa-01",
+      "submissionId": "sub-qa-01",
+      "respondentId": "respondent-qa-01",
+      "formId": "formQAGov",
+      "formName": "TEST QA GovTech Form",
+      "createdAt": "2026-11-28T12:00:00.000Z",
+      "fields": [
+        { "key": "question_name", "label": "", "type": "INPUT_TEXT", "value": "TEST QA Tally 01" },
+        { "key": "question_email", "label": "Email", "type": "INPUT_EMAIL", "value": "test.qa.tally.01@example.invalid" },
+        { "key": "question_phone", "label": "Phone", "type": "INPUT_PHONE_NUMBER", "value": "+57000000001" },
+        {
+          "key": "question_cargo",
+          "label": "Cargo / Rol Actual -&nbsp;Job Title / Current Role",
+          "type": "INPUT_TEXT",
+          "value": "CTO"
+        },
+        {
+          "key": "question_empresa",
+          "label": "Empresa / Organización -&nbsp;Company / Organization",
+          "type": "INPUT_TEXT",
+          "value": "Org QA Alpha"
+        },
+        {
+          "key": "question_tema",
+          "label": "Tema de interés",
+          "type": "MULTIPLE_CHOICE",
+          "value": ["opt_a", "opt_b"],
+          "options": [
+            { "id": "opt_a", "text": "IA pública" },
+            { "id": "opt_b", "text": "Datos abiertos" },
+            { "id": "opt_c", "text": "Otro" }
+          ]
+        },
+        {
+          "key": "question_foto",
+          "label": "Material Gráfico (OBLIGATORIO) /&nbsp;Media Assets (REQUIRED)",
+          "type": "FILE_UPLOAD",
+          "value": [{ "url": "https://storage.tally.so/fake/qa01.jpg" }]
+        },
+        {
+          "key": "question_empty",
+          "label": "Notas vacías",
+          "type": "TEXTAREA",
+          "value": ""
+        }
+      ]
+    }
+  },
+  "bootcamp_like": {
+    "eventId": "evt-test-boot-001",
+    "eventType": "FORM_RESPONSE",
+    "createdAt": "2026-11-28T13:00:00.000Z",
+    "data": {
+      "responseId": "resp-qa-02",
+      "submissionId": "sub-qa-02",
+      "respondentId": "respondent-qa-02",
+      "formId": "formQABoot",
+      "formName": "TEST QA Bootcamp Form",
+      "createdAt": "2026-11-28T13:00:00.000Z",
+      "fields": [
+        { "key": "question_name", "label": "", "type": "INPUT_TEXT", "value": "TEST QA Tally 02" },
+        { "key": "question_email", "label": "Correo", "type": "INPUT_EMAIL", "value": "test.qa.tally.02@example.invalid" },
+        {
+          "key": "question_org",
+          "label": "Organización / Media outlet",
+          "type": "INPUT_TEXT",
+          "value": "Org QA Beta"
+        },
+        {
+          "key": "question_role",
+          "label": "Rol en el medio",
+          "type": "INPUT_TEXT",
+          "value": "Editora"
+        },
+        {
+          "key": "question_taller",
+          "label": "Taller preferido",
+          "type": "DROPDOWN",
+          "value": ["t1"],
+          "options": [
+            { "id": "t1", "text": "Narrativa de datos" },
+            { "id": "t2", "text": "Podcast" }
+          ]
+        }
+      ]
+    }
+  },
+  "sin_submission": {
+    "eventId": "evt-fallback-1",
+    "eventType": "FORM_RESPONSE",
+    "data": {
+      "responseId": "resp-only-99",
+      "formId": "formQAGov",
+      "fields": [
+        { "type": "INPUT_TEXT", "label": "", "value": "TEST QA Tally 03" },
+        { "type": "INPUT_EMAIL", "value": "test.qa.tally.03@example.invalid" }
+      ]
+    }
+  },
+  "sin_ids": {
+    "eventType": "FORM_RESPONSE",
+    "data": {
+      "formId": "formQAGov",
+      "fields": [
+        { "type": "INPUT_TEXT", "label": "", "value": "TEST QA Tally 04" },
+        { "type": "INPUT_EMAIL", "value": "test.qa.tally.04@example.invalid" }
+      ]
+    }
+  }
+}

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { Gestion, GestionConEvento } from '@/hooks/useGestionesData'
 import { timestampAYmdBogota } from '@/lib/bogotaDate'
+import { autorGestion } from '@/lib/gestionAutor'
 import {
   GESTION_TIPO_LABELS,
   type GestionTipo,
@@ -49,8 +50,11 @@ export function GestionesList({
         const Icon = ICONOS[g.tipo] ?? CircleDot
         const ymd = timestampAYmdBogota(g.ocurrida_at) ?? '—'
         const proxima = timestampAYmdBogota(g.proxima_at)
-        const autor =
-          (g.creado_por && nombresPorUsuario[g.creado_por]) || '—'
+        const autor = autorGestion(
+          g.creado_por,
+          g.tally_envio_id,
+          nombresPorUsuario,
+        )
         const eventoNombre =
           mostrarEvento && 'eventoNombre' in g
             ? g.eventoNombre
