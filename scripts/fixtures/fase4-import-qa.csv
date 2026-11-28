@@ -1,0 +1,14 @@
+Nombre,Organización,Cargo,Ubicación,agenda,Estado,País,Contacto,Requiere viaticos ,Next step/ pending,Notas,Correo directo,Fecha last push,Linkedin,Fecha last push,Refencia contacto cercano,Fecha last push,Institucion / empresa,Fecha last push,email
+Test QA Import 01,Organización Demo,CEO,Main Stage,TRUE,no enviado,Colombia,Alex,,Follow up inicial,"Nota multilínea
+línea 2",TRUE,2026-10-15,FALSE,,,FALSE,,,persona01@example.com
+Test QA Import 02,Org Beta,CTO,Policy Lab,FALSE,enviado,Colombia,Juan,TRUE,Pendiente respuesta,Ok,FALSE,,TRUE,2026-11-01,FALSE,,,FALSE,,
+Test QA Import 03,Org Gamma,Director,,FALSE,confirmo,México,Liz,FALSE,,,FALSE,,FALSE,,TRUE,2026-09-20,FALSE,,
+Test QA Import 04,Org Delta,Analyst,,FALSE,en conversacion,Colombia,,,,"",FALSE,,FALSE,,FALSE,,TRUE,2026-10-01,
+Test QA Import 05,Org Epsilon,Advisor,,FALSE,no puede,Perú,,,,"",FALSE,,FALSE,,FALSE,,FALSE,,
+,Org Zeta,Intern,,FALSE,pendiente follow up,Colombia,,,,"",FALSE,,FALSE,,FALSE,,FALSE,,
+Test QA Import 07,Org Eta,VP,,FALSE,estado rarísimo xyz,Chile,,,,"",FALSE,,FALSE,,FALSE,,FALSE,,
+Test QA Import 08,Org Theta,Lead,,FALSE,confirmo pero quiere viaticos,Colombia,,,,"",FALSE,,FALSE,,FALSE,,FALSE,,
+Test QA Import 09,Org Iota,PM,,FALSE,enviado,Colombia,,,,"",TRUE,,FALSE,,FALSE,,FALSE,,
+Test QA Import 01,Org Otra,CEO,,FALSE,no enviado,Colombia,,,,"Homónimo distinto org",FALSE,,FALSE,,FALSE,,FALSE,,
+Test QA Import 10,Org Kappa,Dev,,FALSE,enviado,Colombia,,,,"Fecha sin checkbox",,2026-11-10,FALSE,,FALSE,,FALSE,,
+Test QA Import 11,Org Lambda,Ops,,FALSE,enviado,Colombia,,,,"Checkbox sin fecha",TRUE,,FALSE,,FALSE,,FALSE,,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Eye,
+  FileSpreadsheet,
   Flag,
   Link,
   NotebookPen,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -71,6 +73,7 @@ import {
 } from '@/components/table-filters/TableFilters'
 import { AsociarSpeakerDialog } from './AsociarSpeakerDialog'
 import { AltaRapidaProspectoDialog } from './AltaRapidaProspectoDialog'
+import { ImportSpeakersDialog } from './ImportSpeakersDialog'
 import { DesasociarSpeakerDialog } from './DesasociarSpeakerDialog'
 import { RegistrarGestionDialog } from './RegistrarGestionDialog'
 import { SpeakerPerfilDialog } from './SpeakerPerfilDialog'
@@ -196,6 +199,7 @@ export function SpeakersTable({
   readOnly = false,
 }: SpeakersTableProps) {
   const { usuario } = useAuth()
+  const { workspace } = useWorkspace()
   const esAgenda = usuario?.area === 'Agenda'
   const puedeGestiones = esAgenda && !readOnly
   const {
@@ -226,6 +230,7 @@ export function SpeakersTable({
     () => loadHiddenColumns(),
   )
   const [altaRapidaOpen, setAltaRapidaOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [estadosFiltro, setEstadosFiltro] = useState<Set<EventoSpeakerEstado>>(
     () => new Set(),
   )
@@ -1423,6 +1428,14 @@ export function SpeakersTable({
           {!readOnly && (
             <>
               <NuevaPropiedadDialog eventoId={eventoId} onCreada={refetch} />
+              {esAgenda && (
+                <Button
+                  variant="outline"
+                  onClick={() => setImportOpen(true)}
+                >
+                  <FileSpreadsheet /> Importar Excel/CSV
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setAltaRapidaOpen(true)}>
                 <Zap /> Alta rápida
               </Button>
@@ -1557,6 +1570,19 @@ export function SpeakersTable({
           onOpenChange={setAltaRapidaOpen}
           eventoId={eventoId}
           onCreated={() => {
+            setMembresiaOverrides({})
+            refetch()
+          }}
+        />
+      )}
+
+      {esAgenda && !readOnly && (
+        <ImportSpeakersDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          eventoId={eventoId}
+          eventoNombre={workspace?.nombre ?? 'EVENTO'}
+          onDone={() => {
             setMembresiaOverrides({})
             refetch()
           }}

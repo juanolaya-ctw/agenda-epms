@@ -31,3 +31,13 @@ dist-ssr
 # Supabase CLI
 supabase/.branches
 supabase/.temp
+
+# Spreadsheets con datos personales — solo fixtures/tests sintéticos
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+!scripts/fixtures/**
+!scripts/fixtures/**/*.csv
+!**/fixtures/**/*.csv
+!**/fixtures/**/*.xlsx

@@ -140,6 +140,7 @@ export function SpeakerPerfilDialog({
   const { usuario } = useAuth()
   const esAgenda = usuario?.area === 'Agenda'
   const [form, setForm] = useState<FormState>(() => initialForm(speaker))
+  const [actividadRefreshKey, setActividadRefreshKey] = useState(0)
   const [saving, setSaving] = useState(false)
   const [fotoUrl, setFotoUrl] = useState<string | null>(speaker?.foto_url ?? null)
   const [fotoPendiente, setFotoPendiente] = useState<File | null>(null)
@@ -617,6 +618,7 @@ export function SpeakerPerfilDialog({
         notas_internas: notasInternas.trim() || null,
       })
       toast.success('Prospección guardada')
+      setActividadRefreshKey((k) => k + 1)
       onSaved()
     } catch (err) {
       toast.error(
@@ -990,6 +992,7 @@ export function SpeakerPerfilDialog({
                       setSeguimientoYmd(next.seguimientoYmd)
                       setSeguimientoNota(next.seguimientoNota)
                       setEstadoEnEventoLocal(next.estadoEnEvento)
+                      setActividadRefreshKey((k) => k + 1)
                       onSaved()
                     }}
                   />
@@ -1000,6 +1003,7 @@ export function SpeakerPerfilDialog({
                     eventoId={
                       gestionesModo === 'evento' ? eventoId : undefined
                     }
+                    refreshKey={actividadRefreshKey}
                   />
                   <div className="border-t border-border" />
                 </>
