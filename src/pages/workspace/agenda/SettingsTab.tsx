@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   DndContext,
   DragOverlay,
@@ -35,8 +35,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
+import { timestampAFechaHoraBogota } from '@/lib/bogotaDate'
 import { supabase } from '@/lib/supabase'
+import {
+  bucketEstadoTallyEnvio,
+  labelEstadoTallyEnvio,
+  labelRazonTallyEnvio,
+} from '@/lib/tallyEnvioLabels'
+import {
+  construirWebhookUrl,
+  enmascararWebhookUrl,
+} from '@/lib/tallyWebhookUrl'
 import { validarToolkitBaseUrl } from '@/lib/toolkitLink'
 import { cn } from '@/lib/utils'
 import type { EstadoColor } from '@/hooks/useSesionesData'
@@ -46,6 +57,32 @@ import { estadoDotClass } from './sesiones/badges'
 type CatalogItem = { id: string; nombre: string }
 
 type CatalogTable = 'escenarios' | 'formatos' | 'tracks'
+
+type TallyEnvioRow = {
+  id: string
+  created_at: string
+  estado: string
+  razon: string | null
+  speaker_id: string | null
+  /** Solo el nombre del JSON campos (sin teléfono/documento). */
+  nombre: string | null
+}
+
+type ConteosEnviosTally = {
+  recibidos: number
+  vinculados: number
+  creados: number
+  por_revisar: number
+  invalidos: number
+}
+
+const CONTEOS_ENVIOS_VACIOS: ConteosEnviosTally = {
+  recibidos: 0,
+  vinculados: 0,
+  creados: 0,
+  por_revisar: 0,
+  invalidos: 0,
+}
 
 type EstadoRow = {
   id: string
@@ -393,7 +430,13 @@ export function SettingsTab() {
   const [tallyFormId, setTallyFormId] = useState('')
   const [tallyToken, setTallyToken] = useState<string | null>(null)
   const [tallyActivo, setTallyActivo] = useState(true)
+  const [mostrarToken, setMostrarToken] = useState(false)
   const [guardandoTally, setGuardandoTally] = useState(false)
+  const [envios, setEnvios] = useState<TallyEnvioRow[]>([])
+  const [conteosEnvios, setConteosEnvios] =
+    useState<ConteosEnviosTally>(CONTEOS_ENVIOS_VACIOS)
+  const [cargandoEnvios, setCargandoEnvios] = useState(false)
+  const [errorEnvios, setErrorEnvios] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [eliminando, setEliminando] = useState(false)
@@ -458,6 +501,7 @@ export function SettingsTab() {
           (eventoRow.data?.toolkit_base_url as string | null) ?? '',
         )
       }
+      setMostrarToken(false)
       if (!tallyRow.error && tallyRow.data) {
         const row = tallyRow.data as {
           tally_form_id: string
@@ -471,6 +515,51 @@ export function SettingsTab() {
         setTallyFormId('')
         setTallyToken(null)
         setTallyActivo(true)
+      }
+
+      setCargandoEnvios(true)
+      setErrorEnvios(null)
+      const [enviosRes, estadosRes] = await Promise.all([
+        supabase
+          .from('tally_envios')
+          .select(
+            'id, created_at, estado, razon, speaker_id, nombre:campos->>nombre',
+          )
+          .eq('evento_id', eventoId)
+          .order('created_at', { ascending: false })
+          .limit(20),
+        // Conteos del evento completo (independiente del limit 20)
+        supabase
+          .from('tally_envios')
+          .select('estado')
+          .eq('evento_id', eventoId),
+      ])
+      if (!cancelled) {
+        if (enviosRes.error || estadosRes.error) {
+          const msg =
+            enviosRes.error?.message ||
+            estadosRes.error?.message ||
+            'No se pudieron cargar los envíos'
+          setErrorEnvios(msg)
+          setEnvios([])
+          setConteosEnvios(CONTEOS_ENVIOS_VACIOS)
+          toast.error(`Envíos Tally: ${msg}`)
+        } else {
+          setEnvios((enviosRes.data as TallyEnvioRow[] | null) ?? [])
+          const next = { ...CONTEOS_ENVIOS_VACIOS }
+          for (const row of estadosRes.data ?? []) {
+            const b = bucketEstadoTallyEnvio(
+              (row as { estado: string }).estado,
+            )
+            if (b === 'recibidos') next.recibidos++
+            else if (b === 'vinculados') next.vinculados++
+            else if (b === 'creados') next.creados++
+            else if (b === 'por_revisar') next.por_revisar++
+            else if (b === 'invalidos') next.invalidos++
+          }
+          setConteosEnvios(next)
+        }
+        setCargandoEnvios(false)
       }
       if (esc.error) toast.error(`Escenarios: ${esc.error.message}`)
       if (fmt.error) toast.error(`Formatos: ${fmt.error.message}`)
@@ -574,8 +663,16 @@ export function SettingsTab() {
   }
 
   const webhookTally = tallyToken
-    ? `${String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')}/functions/v1/tally-webhook?token=${tallyToken}`
+    ? construirWebhookUrl(
+        String(import.meta.env.VITE_SUPABASE_URL ?? ''),
+        tallyToken,
+      )
     : null
+
+  const webhookVisible = useMemo(() => {
+    if (!webhookTally) return null
+    return mostrarToken ? webhookTally : enmascararWebhookUrl(webhookTally)
+  }, [webhookTally, mostrarToken])
 
   async function copiarWebhook() {
     if (!webhookTally) return
@@ -896,15 +993,30 @@ export function SettingsTab() {
           />
           Formulario activo
         </label>
-        {webhookTally ? (
+        {webhookTally && webhookVisible ? (
           <div className="space-y-2">
             <p className="text-xs font-medium">Webhook de este evento</p>
             <p className="break-all rounded-md bg-muted px-2.5 py-2 text-xs text-muted-foreground">
-              {webhookTally}
+              {webhookVisible}
             </p>
-            <Button type="button" variant="outline" size="sm" onClick={() => void copiarWebhook()}>
-              Copiar URL
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMostrarToken((v) => !v)}
+              >
+                {mostrarToken ? 'Ocultar' : 'Mostrar'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void copiarWebhook()}
+              >
+                Copiar URL
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               Pégala en Tally → Settings → Webhooks. El envío también se
               reconoce por el formId del payload si el token no viene en la
@@ -924,6 +1036,103 @@ export function SettingsTab() {
         >
           {guardandoTally ? 'Guardando…' : 'Guardar formulario'}
         </Button>
+
+        <div className="space-y-3 border-t border-border pt-4">
+          <h3 className="text-sm font-semibold">Envíos recibidos</h3>
+          {cargandoEnvios ? (
+            <p className="text-xs text-muted-foreground">Cargando…</p>
+          ) : errorEnvios ? (
+            <p className="text-xs text-destructive" role="alert">
+              No se pudieron cargar los envíos: {errorEnvios}
+            </p>
+          ) : envios.length === 0 &&
+            conteosEnvios.recibidos +
+              conteosEnvios.vinculados +
+              conteosEnvios.creados +
+              conteosEnvios.por_revisar +
+              conteosEnvios.invalidos ===
+              0 ? (
+            <p className="text-xs text-muted-foreground">Aún no hay envíos</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>Recibidos: {conteosEnvios.recibidos}</span>
+                <span>· Vinculados: {conteosEnvios.vinculados}</span>
+                <span>· Creados: {conteosEnvios.creados}</span>
+                <span>· Por revisar: {conteosEnvios.por_revisar}</span>
+                <span>· Inválidos: {conteosEnvios.invalidos}</span>
+              </div>
+              <div className="overflow-x-auto rounded-md border border-border">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5 font-medium">Fecha</th>
+                      <th className="px-2 py-1.5 font-medium">Nombre</th>
+                      <th className="px-2 py-1.5 font-medium">Estado</th>
+                      <th className="px-2 py-1.5 font-medium">Razón</th>
+                      <th className="px-2 py-1.5 font-medium">Speaker</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {envios.map((e) => {
+                      const porRevisar = e.estado === 'pendiente_revision'
+                      const nombre = e.nombre?.trim() || '—'
+                      return (
+                        <tr
+                          key={e.id}
+                          className={cn(
+                            'border-t border-border',
+                            porRevisar && 'bg-destructive/5',
+                          )}
+                        >
+                          <td className="px-2 py-1.5 whitespace-nowrap text-muted-foreground">
+                            {timestampAFechaHoraBogota(e.created_at)}
+                          </td>
+                          <td className="px-2 py-1.5 min-w-0 max-w-[10rem] truncate">
+                            {nombre}
+                            {porRevisar && (
+                              <p className="text-[10px] text-destructive">
+                                Pendiente de revisión: se resuelve en la
+                                próxima versión
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'font-normal',
+                                porRevisar && 'border-destructive/40',
+                              )}
+                            >
+                              {labelEstadoTallyEnvio(e.estado)}
+                            </Badge>
+                          </td>
+                          <td className="px-2 py-1.5 text-muted-foreground">
+                            {labelRazonTallyEnvio(e.razon)}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {e.speaker_id && eventoId ? (
+                              <Link
+                                to={`/workspace/${eventoId}/agenda/speakers`}
+                                className="text-secondary underline-offset-2 hover:underline"
+                                title={e.speaker_id}
+                              >
+                                Ver speakers
+                              </Link>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
       </section>
 
       <section className="space-y-6 rounded-xl border border-border bg-white p-6">

@@ -87,6 +87,7 @@ function gestionATimeline(
     ocurrida_at: g.ocurrida_at,
     proxima_at: g.proxima_at,
     creado_por: g.creado_por,
+    tally_envio_id: g.tally_envio_id,
     created_at: g.created_at,
     eventoNombre: 'eventoNombre' in g ? g.eventoNombre : null,
   }
