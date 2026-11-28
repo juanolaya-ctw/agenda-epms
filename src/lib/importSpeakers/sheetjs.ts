@@ -2,9 +2,8 @@
  * Carga SheetJS (xlsx) desde el tarball oficial del CDN.
  * Dynamic import → no entra al chunk principal de la app.
  *
- * Versión pinned: 0.18.5 del CDN oficial sheetjs.com (no el paquete npm
- * histórico con CVEs; el CDN sirve el build Community Edition actualizado).
- * Usamos la URL del tarball ESM.
+ * Versión pinned: 0.20.3 del CDN oficial sheetjs.com (no el paquete npm
+ * histórico xlsx@0.18.5 con CVEs). URL del tarball ESM abajo.
  */
 
 export type SheetJsWorkbook = {

@@ -57,7 +57,9 @@ import {
   cargarMembresiasEvento,
   cargarSpeakersParaMatch,
   sha256Hex,
+  type AplicarImportError,
 } from '@/hooks/useImportSpeakers'
+import type { FilaRpc } from '@/lib/importSpeakers'
 
 type Paso = 'archivo' | 'mapeo' | 'preview' | 'aplicar' | 'resultado'
 
@@ -130,6 +132,11 @@ export function ImportSpeakersDialog({
   const [resultado, setResultado] = useState<Record<string, number> | null>(
     null,
   )
+  const [rpcFilasPendientes, setRpcFilasPendientes] = useState<FilaRpc[] | null>(
+    null,
+  )
+  const [retryFrom, setRetryFrom] = useState(0)
+  const [errorParcial, setErrorParcial] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -150,6 +157,9 @@ export function ImportSpeakersDialog({
     setAplicando(false)
     setProgress({ done: 0, total: 0 })
     setResultado(null)
+    setRpcFilasPendientes(null)
+    setRetryFrom(0)
+    setErrorParcial(null)
   }, [open, eventoIdProp, eventoNombreProp])
 
   const hoja = parsed?.hojas[hojaIdx] ?? null
@@ -329,12 +339,14 @@ export function ImportSpeakersDialog({
     URL.revokeObjectURL(url)
   }
 
-  async function aplicar() {
+  async function aplicar(opts?: { startFrom?: number }) {
     if (!hoja || quedanRevisar || !confirmOk) return
     setPaso('aplicar')
     setAplicando(true)
-    try {
-      const rpcFilas = filasPlan
+    setErrorParcial(null)
+    let rpcFilas = rpcFilasPendientes
+    if (!rpcFilas) {
+      rpcFilas = filasPlan
         .map((fp) =>
           filaPlanARpc(fp, {
             estadoDefault,
@@ -343,7 +355,10 @@ export function ImportSpeakersDialog({
           }),
         )
         .filter((x): x is NonNullable<typeof x> => x != null)
-
+      setRpcFilasPendientes(rpcFilas)
+    }
+    try {
+      const startFrom = opts?.startFrom ?? retryFrom
       const res = await aplicarImportacion({
         eventoId,
         archivoNombre,
@@ -353,14 +368,25 @@ export function ImportSpeakersDialog({
           Object.entries(mapeo).map(([k, v]) => [k, v]),
         ),
         filas: rpcFilas,
+        startFrom,
         onProgress: (done, total) => setProgress({ done, total }),
       })
       setResultado(res.resumen)
+      setRetryFrom(0)
+      setRpcFilasPendientes(null)
       setPaso('resultado')
       onDone?.()
       toast.success('Importación aplicada')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const e = err as AplicarImportError
+      const msg = e instanceof Error ? e.message : String(err)
+      const done = e.offsetDone ?? 0
+      setRetryFrom(done)
+      setErrorParcial(
+        `Se detuvo tras ${done} de ${rpcFilas.length} filas RPC. ` +
+          `Los chunks anteriores ya quedaron persistidos. Reintentar el resto ` +
+          `crea un lote nuevo y es idempotente (no duplica gestiones ni speakers).`,
+      )
       toast.error(`Importación detenida: ${msg}`)
       setPaso('preview')
     } finally {
@@ -817,6 +843,22 @@ export function ImportSpeakersDialog({
                     Todavía hay filas en «revisar». Resolvelas o omítelas
                     antes de aplicar.
                   </p>
+                )}
+                {errorParcial && (
+                  <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                    <p>{errorParcial}</p>
+                    {retryFrom > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2"
+                        disabled={quedanRevisar || !confirmOk || aplicando}
+                        onClick={() => void aplicar({ startFrom: retryFrom })}
+                      >
+                        Reintentar resto (desde {retryFrom})
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

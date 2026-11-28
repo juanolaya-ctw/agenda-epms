@@ -240,6 +240,9 @@ DECLARE
   v_memb_changed boolean;
   v_new_datos jsonb;
   v_occurs_at timestamptz;
+  v_prev_imp jsonb;
+  v_prev_cmp jsonb;
+  v_new_cmp jsonb;
 BEGIN
   IF epms.mi_area() IS DISTINCT FROM 'Agenda' THEN
     RAISE EXCEPTION 'Solo Agenda puede importar'
@@ -261,6 +264,19 @@ BEGIN
 
   IF p_filas IS NULL OR jsonb_typeof(p_filas) <> 'array' THEN
     RAISE EXCEPTION 'p_filas debe ser un arreglo JSON';
+  END IF;
+
+  IF jsonb_array_length(p_filas) > 100 THEN
+    RAISE EXCEPTION 'Máximo 100 filas por llamada a importar_speakers_lote';
+  END IF;
+
+  -- p_evento_id debe coincidir con el lote (ambos null = DIRECTORIO, o mismo uuid)
+  IF EXISTS (
+    SELECT 1 FROM epms.import_lotes l
+    WHERE l.id = p_lote_id
+      AND l.evento_id IS DISTINCT FROM p_evento_id
+  ) THEN
+    RAISE EXCEPTION 'p_evento_id no coincide con import_lotes.evento_id del lote';
   END IF;
 
   PERFORM set_config('epms.cambio_origen', 'import_excel', true);
@@ -330,7 +346,10 @@ BEGIN
         END IF;
       END IF;
 
-      -- crear: re-check existencia
+      -- crear: re-check SOLO por email (índice único lower(btrim(email))).
+      -- NO matchear por nombre+empresa en el servidor: la UI puede haber elegido
+      -- «crear» a propósito (persona distinta / homónimo). Un LIMIT 1 por nombre
+      -- fusionaría en silencio con el candidato equivocado.
       IF v_accion = 'crear' THEN
         v_found_id := NULL;
         IF v_email IS NOT NULL THEN
@@ -338,16 +357,6 @@ BEGIN
           FROM epms.speakers s
           WHERE s.email IS NOT NULL
             AND lower(btrim(s.email)) = v_email
-          LIMIT 1;
-        END IF;
-        IF v_found_id IS NULL AND v_nombre_norm IS NOT NULL THEN
-          SELECT s.id INTO v_found_id
-          FROM epms.speakers s
-          WHERE epms.normalizar_texto_match(s.nombre) = v_nombre_norm
-            AND (
-              (v_empresa_norm IS NULL AND epms.normalizar_texto_match(s.empresa) IS NULL)
-              OR epms.normalizar_texto_match(s.empresa) = v_empresa_norm
-            )
           LIMIT 1;
         END IF;
         IF v_found_id IS NOT NULL THEN
@@ -443,7 +452,7 @@ BEGIN
             notas_internas, pista_espacio, datos_prospeccion
           ) VALUES (
             p_evento_id, v_speaker_id, v_estado, v_estado_motivo,
-            coalesce(v_requiere_viaticos, false),
+            v_requiere_viaticos,
             v_responsable_texto, v_proximo_nota,
             v_notas_internas, v_pista,
             CASE
@@ -490,19 +499,28 @@ BEGIN
             v_memb.pista_espacio := v_pista;
             v_memb_changed := true;
           END IF;
-          IF v_requiere_viaticos IS NOT NULL
-             AND (v_memb.requiere_viaticos IS NULL OR v_memb.requiere_viaticos IS NOT TRUE) THEN
-            IF v_memb.requiere_viaticos IS DISTINCT FROM v_requiere_viaticos THEN
-              v_memb.requiere_viaticos := v_requiere_viaticos;
-              v_memb_changed := true;
-            END IF;
+          -- requiere_viaticos: solo rellenar si hub es NULL (false ≠ vacío)
+          IF v_requiere_viaticos IS NOT NULL AND v_memb.requiere_viaticos IS NULL THEN
+            v_memb.requiere_viaticos := v_requiere_viaticos;
+            v_memb_changed := true;
           END IF;
 
-          v_new_datos := coalesce(v_memb.datos_prospeccion, '{}'::jsonb)
-            || jsonb_build_object('import_excel', v_datos);
-          IF v_new_datos IS DISTINCT FROM v_memb.datos_prospeccion THEN
-            v_memb.datos_prospeccion := v_new_datos;
-            v_memb_changed := true;
+          -- Snapshot: no pisar si el contenido relevante (sin importado_at/avisos) es igual
+          IF v_datos IS NOT NULL AND v_datos <> '{}'::jsonb THEN
+            v_prev_imp := coalesce(v_memb.datos_prospeccion, '{}'::jsonb)->'import_excel';
+            v_prev_cmp := CASE
+              WHEN v_prev_imp IS NULL THEN NULL
+              ELSE (v_prev_imp - 'importado_at' - 'avisos')
+            END;
+            v_new_cmp := (v_datos - 'importado_at' - 'avisos');
+            IF v_prev_cmp IS DISTINCT FROM v_new_cmp THEN
+              v_new_datos := coalesce(v_memb.datos_prospeccion, '{}'::jsonb)
+                || jsonb_build_object('import_excel', v_datos);
+              IF v_new_datos IS DISTINCT FROM v_memb.datos_prospeccion THEN
+                v_memb.datos_prospeccion := v_new_datos;
+                v_memb_changed := true;
+              END IF;
+            END IF;
           END IF;
 
           IF v_memb_changed THEN

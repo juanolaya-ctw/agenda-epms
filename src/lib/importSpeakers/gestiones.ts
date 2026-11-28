@@ -1,6 +1,11 @@
 import type { GestionTipo } from '@/lib/gestionTipos'
+import { EMAIL_RE } from '@/lib/speakerEmail'
 import type { AvisoImport, CanalSnapshot, GestionPlan } from './tipos'
-import { parseBoolCelda, parseFechaYmd } from './normalize'
+import {
+  avisoFechaSospechosa,
+  parseBoolCelda,
+  parseFechaYmd,
+} from './normalize'
 
 export type CanalInput = {
   tipo: GestionTipo
@@ -62,23 +67,33 @@ export function construirGestionesDeCanales(
     const bool = parseBoolCelda(input.checkboxRaw)
     const fecha = parseFechaYmd(input.fechaRaw)
 
-    // Email / texto raro en checkbox
+    // Email / texto raro en checkbox — no se usa como email salvo aprobación UI
     if (
       bool == null &&
       input.checkboxRaw != null &&
       String(input.checkboxRaw).trim() !== '' &&
       typeof input.checkboxRaw !== 'boolean'
     ) {
-      avisos.push({
-        codigo: 'canal_checkbox_raro',
-        mensaje: `Canal ${tipo}: valor de checkbox no booleano («${String(input.checkboxRaw).slice(0, 40)}»); se ignora el marcado`,
-      })
+      const raw = String(input.checkboxRaw).trim()
+      if (EMAIL_RE.test(raw.toLowerCase())) {
+        avisos.push({
+          codigo: 'email_detectado_en_otra_columna',
+          mensaje: `Canal ${tipo}: email detectado en otra columna («${raw.slice(0, 40)}»); no se usa como email salvo que lo apruebes en esa fila`,
+        })
+      } else {
+        avisos.push({
+          codigo: 'canal_checkbox_raro',
+          mensaje: `Canal ${tipo}: valor de checkbox no booleano («${raw.slice(0, 40)}»); se ignora el marcado`,
+        })
+      }
     }
 
     const marcado = bool === true
     canales[tipo] = { marcado, fecha }
 
     if (fecha) {
+      const sospechosa = avisoFechaSospechosa(fecha)
+      if (sospechosa) avisos.push(sospechosa)
       // fecha con o sin checkbox marcado → se crea la gestión
       if (!marcado) {
         avisos.push({

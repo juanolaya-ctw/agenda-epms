@@ -44,6 +44,19 @@ describe('parseFechaYmd', () => {
     assert.equal(parseFechaYmd('15/10/2026'), '2026-10-15')
     assert.equal(parseFechaYmd(true), null)
   })
+
+  it('Date medianoche UTC no se corre de día (Bogotá)', () => {
+    // SheetJS cellDates: 2026-10-15T00:00:00.000Z → en Bogotá es 14 a las 19:00
+    const d = new Date('2026-10-15T00:00:00.000Z')
+    assert.equal(parseFechaYmd(d), '2026-10-15')
+  })
+
+  it('serial Excel offline → YMD UTC', () => {
+    // 2026-10-15 = días desde 1899-12-30
+    const epoch = Date.UTC(1899, 11, 30)
+    const serial = (Date.UTC(2026, 9, 15) - epoch) / 86400000
+    assert.equal(parseFechaYmd(serial), '2026-10-15')
+  })
 })
 
 describe('mapearEstadoExcel', () => {
@@ -85,6 +98,29 @@ describe('gestiones de canales', () => {
       importClave('e1', 's1', 'correo', '2026-10-15'),
       'e1:s1:correo:2026-10-15',
     )
+  })
+
+  it('email en checkbox → aviso email_detectado_en_otra_columna', () => {
+    const r = construirGestionesDeCanales([
+      {
+        tipo: 'correo',
+        checkboxRaw: 'alguien@example.com',
+        fechaRaw: '2026-10-15',
+      },
+    ])
+    assert.ok(
+      r.avisos.some((a) => a.codigo === 'email_detectado_en_otra_columna'),
+    )
+    assert.equal(r.canales.correo.marcado, false)
+    assert.equal(r.gestiones.length, 1)
+  })
+
+  it('fecha anterior a 2026 → fecha_sospechosa', () => {
+    const r = construirGestionesDeCanales([
+      { tipo: 'correo', checkboxRaw: true, fechaRaw: '2025-03-01' },
+    ])
+    assert.ok(r.avisos.some((a) => a.codigo === 'fecha_sospechosa'))
+    assert.equal(r.gestiones.length, 1)
   })
 })
 
@@ -243,11 +279,119 @@ describe('parse CSV + mapeo + plan (fixture)', () => {
     const bulk = bulkActualizarNombreEmpresa(plan.filas)
     const after = bulk.find(
       (f) =>
-        f.match.motivo === 'nombre_empresa' && f.match.nivel === 'alta',
+        f.match.motivo === 'nombre_empresa' &&
+        f.match.nivel === 'alta' &&
+        !f.homonimoEnArchivo,
     )
     assert.equal(after!.accion, 'actualizar')
 
     assert.ok(plan.resumen.gruposHomonimos >= 1)
+  })
+
+  it('bulkActualizarNombreEmpresa excluye homónimos intra-archivo', () => {
+    const csv = [
+      'Nombre,Organización,Estado',
+      'Ana Pérez,Acme,enviado',
+      'Ana Pérez,Acme,enviado',
+    ].join('\n')
+    const hoja = parseCsv(csv)
+    const mapeo = autodetectarMapeo(hoja.headers)
+    const existentes = [
+      {
+        id: 'sp-ana',
+        nombre: 'Ana Pérez',
+        empresa: 'Acme',
+        cargo: null,
+        email: null,
+        pais: null,
+      },
+    ]
+    const plan = construirPlan(hoja.filas, mapeo, existentes, [], {
+      estadoDefault: 'PENDIENTE_CONTACTAR',
+      archivoNombre: 'hom.csv',
+      hojaNombre: 'CSV',
+    })
+    assert.ok(plan.filas.every((f) => f.homonimoEnArchivo))
+    assert.ok(plan.filas.every((f) => f.accion === 'revisar'))
+    const bulk = bulkActualizarNombreEmpresa(plan.filas)
+    assert.ok(
+      bulk.every((f) => f.accion === 'revisar'),
+      'homónimos no pasan a actualizar vía bulk',
+    )
+  })
+
+  it('re-run idéntico → sin cambios / omitir (gestiones no bloquean)', () => {
+    const csv =
+      'Nombre,Organización,Estado,Correo directo,Fecha last push\n' +
+      'Test QA Import 02,Org Beta,enviado,TRUE,2026-10-15\n'
+    const hoja = parseCsv(csv)
+    const mapeo = autodetectarMapeo(hoja.headers)
+    const existentes = [
+      {
+        id: 'sp-exist',
+        nombre: 'Test QA Import 02',
+        empresa: 'Org Beta',
+        cargo: 'CTO',
+        email: 'ya@example.com',
+        pais: 'Colombia',
+      },
+    ]
+    const membresias = [
+      {
+        speaker_id: 'sp-exist',
+        estado: 'CONTACTADO' as const,
+        estado_motivo: null,
+        responsable_texto: null,
+        proximo_seguimiento_nota: null,
+        notas_internas: null,
+        pista_espacio: null,
+        requiere_viaticos: false,
+        datos_prospeccion: {
+          import_excel: {
+            archivo: 'rerun.csv',
+            hoja: 'CSV',
+            fila: 2,
+            importado_at: '2026-11-01T00:00:00.000Z',
+            nombre: 'Test QA Import 02',
+            empresa: 'Org Beta',
+            cargo: null,
+            pais: null,
+            contacto_raw: null,
+            ubicacion_raw: null,
+            estado_raw: 'enviado',
+            agenda: null,
+            canales: {
+              correo: { marcado: true, fecha: '2026-10-15' },
+              linkedin: { marcado: false, fecha: null },
+              referencia: { marcado: false, fecha: null },
+              institucion: { marcado: false, fecha: null },
+            },
+            avisos: [],
+          },
+        },
+      },
+    ]
+    // Primera vez: email match → actualizar (email en hub)
+    // Forzamos match por email
+    existentes[0]!.email = 'ya@example.com'
+    // Sin email en CSV → match nombre+empresa → revisar; usamos acción vía email
+    // Añadimos email a CSV match
+    const csv2 =
+      'Nombre,Organización,Estado,email,Correo directo,Fecha last push\n' +
+      'Test QA Import 02,Org Beta,enviado,ya@example.com,TRUE,2026-10-15\n'
+    const hoja2 = parseCsv(csv2)
+    const mapeo2 = autodetectarMapeo(hoja2.headers)
+    const plan = construirPlan(hoja2.filas, mapeo2, existentes, membresias, {
+      estadoDefault: 'PENDIENTE_CONTACTAR',
+      archivoNombre: 'rerun.csv',
+      hojaNombre: 'CSV',
+    })
+    assert.equal(plan.filas.length, 1)
+    const fp = plan.filas[0]!
+    assert.equal(fp.match.motivo, 'email')
+    assert.ok(fp.fila.gestiones.length >= 1, 'tiene gestiones en plan')
+    assert.equal(fp.sinCambios, true)
+    assert.equal(fp.accion, 'omitir')
   })
 
   it('CSV con ;', () => {
@@ -269,8 +413,8 @@ describe('email + enmascarar', () => {
   })
 })
 
-describe('parse xlsx (SheetJS CDN, opcional)', () => {
-  it('genera y lee un xlsx mínimo en memoria', async () => {
+describe('parse xlsx (SheetJS CDN)', () => {
+  it('genera y lee un xlsx mínimo en memoria', async (t) => {
     let XLSX: {
       utils: {
         aoa_to_sheet: (aoa: unknown[][]) => unknown
@@ -285,7 +429,7 @@ describe('parse xlsx (SheetJS CDN, opcional)', () => {
       )
       XLSX = (mod as { default?: typeof XLSX }).default ?? (mod as typeof XLSX)
     } catch {
-      // Sin red en el entorno de test: skip suave
+      t.skip('SheetJS CDN no disponible (sin red)')
       return
     }
     const aoa = [

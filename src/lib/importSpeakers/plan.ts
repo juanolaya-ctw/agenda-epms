@@ -319,12 +319,13 @@ function buildDiffs(
 
   if (fila.requiereViaticos != null) {
     const hubV = memb?.requiere_viaticos
-    if (hubV == null || hubV === false) {
+    // Solo rellenar si hub es NULL; false del hub se conserva
+    if (hubV == null) {
       diffs.push({
         campo: 'requiere_viaticos',
-        hub: hubV == null ? null : String(hubV),
+        hub: null,
         excel: String(fila.requiereViaticos),
-        accion: hubV === fila.requiereViaticos ? 'igual' : 'rellenar',
+        accion: 'rellenar',
       })
     } else if (hubV !== fila.requiereViaticos) {
       diffs.push({
@@ -333,31 +334,51 @@ function buildDiffs(
         excel: String(fila.requiereViaticos),
         accion: 'conservar',
       })
+    } else {
+      diffs.push({
+        campo: 'requiere_viaticos',
+        hub: String(hubV),
+        excel: String(fila.requiereViaticos),
+        accion: 'igual',
+      })
     }
   }
 
   return diffs
 }
 
+/** Contenido estable del snapshot (sin timestamps ni avisos volátiles). */
+export function snapshotComparable(
+  snap: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!snap || typeof snap !== 'object') return null
+  const { importado_at: _i, avisos: _a, ...rest } = snap
+  return rest
+}
+
 function sinCambiosReales(
   accion: AccionImport,
   diffs: DiffCampo[],
-  gestiones: FilaNormalizada['gestiones'],
+  _gestiones: FilaNormalizada['gestiones'],
   memb: MembresiaExistente | null,
-  filaIdx: number,
+  fila: FilaNormalizada,
+  _opciones: OpcionesPlan,
 ): boolean {
-  if (accion === 'omitir' || accion === 'revisar') return false
-  if (accion === 'crear') return false
+  if (accion === 'omitir' || accion === 'revisar' || accion === 'crear')
+    return false
   const cambios = diffs.some(
     (d) => d.accion === 'rellenar' || d.accion === 'sobrescribir',
   )
   if (cambios) return false
-  if (gestiones.length > 0) return false
   if (!memb) return false
   const prev = memb.datos_prospeccion?.import_excel as
-    | { fila?: number }
+    | Record<string, unknown>
     | undefined
-  if (!prev || prev.fila !== filaIdx) return false
+  if (!prev || prev.fila !== fila.filaIdx) return false
+  // Misma fila ya importada, sin diffs de write: gestiones serían
+  // ON CONFLICT DO NOTHING → omitir (no generan timeline ruidoso).
+  void _gestiones
+  void _opciones
   return true
 }
 
@@ -430,7 +451,8 @@ export function construirPlan(
       diffs,
       fila.gestiones,
       memb,
-      fila.filaIdx,
+      fila,
+      opciones,
     )
     // Re-run idéntico: omitir por defecto
     if (sinCambios && (accion === 'actualizar' || accion === 'crear')) {
@@ -499,20 +521,28 @@ export function resumirPlan(
   return resumen
 }
 
-/** Aplica acción masiva: actualizar todos los alta nombre+empresa en revisar. */
+/**
+ * Acción masiva: actualizar todos los alta nombre+empresa en revisar.
+ * Excluye homónimos intra-archivo (evitar dos filas → mismo speaker_id).
+ */
 export function bulkActualizarNombreEmpresa(filas: FilaPlan[]): FilaPlan[] {
+  const seenSpeaker = new Set<string>()
   return filas.map((fp) => {
     if (
       fp.accion === 'revisar' &&
       fp.match.nivel === 'alta' &&
       fp.match.motivo === 'nombre_empresa' &&
       fp.match.candidatos.length === 1 &&
-      !fp.fila.error
+      !fp.fila.error &&
+      !fp.homonimoEnArchivo
     ) {
+      const sid = fp.match.candidatos[0]!.id
+      if (seenSpeaker.has(sid)) return fp
+      seenSpeaker.add(sid)
       return {
         ...fp,
         accion: 'actualizar' as const,
-        speakerId: fp.match.candidatos[0]!.id,
+        speakerId: sid,
       }
     }
     return fp

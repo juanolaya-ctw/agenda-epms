@@ -76,14 +76,38 @@ export function parseBoolCelda(value: unknown): boolean | null {
   return null
 }
 
+/** True si el Date es «solo fecha» (medianoche UTC o local). */
+function esMedianocheSoloFecha(d: Date): boolean {
+  return (
+    (d.getUTCHours() === 0 &&
+      d.getUTCMinutes() === 0 &&
+      d.getUTCSeconds() === 0 &&
+      d.getUTCMilliseconds() === 0) ||
+    (d.getHours() === 0 &&
+      d.getMinutes() === 0 &&
+      d.getSeconds() === 0 &&
+      d.getMilliseconds() === 0)
+  )
+}
+
 /**
  * Normaliza fechas a YYYY-MM-DD (día civil).
  * Acepta Date, serial Excel (días desde 1899-12-30), ISO, DD/MM/YYYY, DD-MM-YYYY.
+ *
+ * SheetJS cellDates entrega medianoche UTC (p.ej. 2026-10-15T00:00:00.000Z).
+ * En America/Bogota eso es el día anterior con getters locales → usamos UTC
+ * cuando es solo-fecha.
  */
 export function parseFechaYmd(value: unknown): string | null {
   if (value == null || value === '') return null
   if (typeof value === 'boolean') return null
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    if (esMedianocheSoloFecha(value)) {
+      const y = value.getUTCFullYear()
+      const m = String(value.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(value.getUTCDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
     const y = value.getFullYear()
     const m = String(value.getMonth() + 1).padStart(2, '0')
     const d = String(value.getDate()).padStart(2, '0')
@@ -118,10 +142,42 @@ export function parseFechaYmd(value: unknown): string | null {
   const parsed = Date.parse(s)
   if (!Number.isNaN(parsed)) {
     const d = new Date(parsed)
+    if (esMedianocheSoloFecha(d) || /T00:00:00(\.0+)?Z$/i.test(s)) {
+      const y = d.getUTCFullYear()
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(d.getUTCDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
     const y = d.getFullYear()
     const m = String(d.getMonth() + 1).padStart(2, '0')
     const day = String(d.getDate()).padStart(2, '0')
     return `${y}-${m}-${day}`
+  }
+  return null
+}
+
+/** Aviso si la fecha cae fuera del rango operativo (se importa igual). */
+export function avisoFechaSospechosa(
+  ymd: string,
+  hoyYmd?: string,
+): { codigo: string; mensaje: string } | null {
+  if (ymd < '2026-01-01') {
+    return {
+      codigo: 'fecha_sospechosa',
+      mensaje: `Fecha ${ymd} anterior a 2026-01-01; se importa igual`,
+    }
+  }
+  const hoy =
+    hoyYmd ??
+    (() => {
+      const n = new Date()
+      return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`
+    })()
+  if (ymd > hoy) {
+    return {
+      codigo: 'fecha_sospechosa',
+      mensaje: `Fecha ${ymd} posterior a hoy (${hoy}); se importa igual`,
+    }
   }
   return null
 }

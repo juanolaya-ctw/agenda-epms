@@ -117,6 +117,15 @@ export async function cerrarImportLote(
   if (error) throw new Error(error.message)
 }
 
+export type AplicarImportError = Error & {
+  loteId?: string
+  resultados?: ResultadoFilaRpc[]
+  resumen?: Record<string, number>
+  parcial?: true
+  /** Índice en el array de filas donde falló (chunks previos ya persistidos). */
+  offsetDone?: number
+}
+
 export async function aplicarImportacion(args: {
   eventoId: string | null
   archivoNombre: string
@@ -124,6 +133,8 @@ export async function aplicarImportacion(args: {
   hoja: string
   mapeo: Record<string, unknown>
   filas: FilaRpc[]
+  /** Reintentar solo el resto (idempotente: nuevo lote, gestiones ON CONFLICT). */
+  startFrom?: number
   onProgress?: (done: number, total: number) => void
 }): Promise<{
   loteId: string
@@ -131,6 +142,8 @@ export async function aplicarImportacion(args: {
   resultados: ResultadoFilaRpc[]
   parcial: boolean
 }> {
+  const startFrom = Math.max(0, args.startFrom ?? 0)
+  const filas = args.filas.slice(startFrom)
   const loteId = await crearImportLote({
     eventoId: args.eventoId,
     archivoNombre: args.archivoNombre,
@@ -141,11 +154,10 @@ export async function aplicarImportacion(args: {
 
   const resultados: ResultadoFilaRpc[] = []
   let resumen: Record<string, number> = {}
-  let parcial = false
   const total = args.filas.length
 
-  for (let i = 0; i < args.filas.length; i += CHUNK) {
-    const chunk = args.filas.slice(i, i + CHUNK)
+  for (let i = 0; i < filas.length; i += CHUNK) {
+    const chunk = filas.slice(i, i + CHUNK)
     try {
       const res = await importarSpeakersLote({
         loteId,
@@ -154,19 +166,26 @@ export async function aplicarImportacion(args: {
       })
       resultados.push(...(res.resultados ?? []))
       resumen = res.resumen_lote ?? resumen
-      args.onProgress?.(Math.min(i + chunk.length, total), total)
-    } catch (err) {
-      parcial = true
-      await cerrarImportLote(loteId, 'parcial').catch(() => undefined)
-      throw Object.assign(
-        err instanceof Error ? err : new Error(String(err)),
-        { loteId, resultados, resumen, parcial: true as const },
+      args.onProgress?.(
+        Math.min(startFrom + i + chunk.length, total),
+        total,
       )
+    } catch (err) {
+      await cerrarImportLote(loteId, 'parcial').catch(() => undefined)
+      const base = err instanceof Error ? err : new Error(String(err))
+      const wrapped: AplicarImportError = Object.assign(base, {
+        loteId,
+        resultados,
+        resumen,
+        parcial: true as const,
+        offsetDone: startFrom + i,
+      })
+      throw wrapped
     }
   }
 
   await cerrarImportLote(loteId, 'completado')
-  return { loteId, resumen, resultados, parcial }
+  return { loteId, resumen, resultados, parcial: false }
 }
 
 export { CHUNK as IMPORT_CHUNK_SIZE }
