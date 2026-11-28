@@ -20,6 +20,8 @@ type ActividadSectionProps = {
   modo: 'evento' | 'global'
   speakerId: string
   eventoId?: string
+  /** Incrementar para forzar refetch (p. ej. tras guardar prospección/gestión). */
+  refreshKey?: number
 }
 
 function Chip({
@@ -50,6 +52,7 @@ export function ActividadSection({
   modo,
   speakerId,
   eventoId,
+  refreshKey = 0,
 }: ActividadSectionProps) {
   const [cambios, setCambios] = useState<SpeakerCambio[]>([])
   const [gestiones, setGestiones] = useState<GestionTimelineInput[]>([])
@@ -100,7 +103,7 @@ export function ActividadSection({
     return () => {
       cargaGen.current += 1
     }
-  }, [cargar])
+  }, [cargar, refreshKey])
 
   useEffect(() => {
     setAmbito(modo === 'global' ? 'todos' : 'este_evento')

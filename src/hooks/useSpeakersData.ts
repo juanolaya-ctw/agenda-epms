@@ -255,12 +255,42 @@ function membresiaExtrasFromEmbed(
   }
 }
 
-function normalizeEditableEmail(
+/** Campos de texto de ficha: '' → null para no generar «— → —» en historial. */
+const SPEAKER_TEXT_NULLABLE: (keyof SpeakerEditable)[] = [
+  'nombre',
+  'cargo',
+  'empresa',
+  'pais',
+  'ciudad',
+  'email',
+  'telefono',
+  'linkedin_url',
+  'tipo_documento',
+  'numero_documento',
+  'email_secundario',
+  'bio',
+]
+
+function emptyToNullPayload(
   datos: Partial<SpeakerEditable>,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = { ...datos }
+  for (const key of SPEAKER_TEXT_NULLABLE) {
+    if (!(key in datos)) continue
+    const v = datos[key]
+    if (typeof v === 'string' && v.trim() === '') payload[key] = null
+  }
+  return payload
+}
+
+function normalizeEditableEmail(
+  datos: Partial<SpeakerEditable>,
+): Record<string, unknown> {
+  const payload = emptyToNullPayload(datos)
   if (!('email' in datos)) return payload
-  const normalized = normalizeSpeakerEmail(datos.email)
+  const normalized = normalizeSpeakerEmail(
+    typeof datos.email === 'string' ? datos.email : null,
+  )
   if (!isValidSpeakerEmail(normalized)) {
     throw new Error('Email inválido')
   }

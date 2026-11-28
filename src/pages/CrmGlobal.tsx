@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, Pencil, Trash2, UserPlus } from 'lucide-react'
+import {
+  ArrowLeft,
+  Download,
+  FileSpreadsheet,
+  Pencil,
+  Trash2,
+  UserPlus,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { InlineText } from '@/components/InlineText'
 import { Navbar } from '@/components/layout/Navbar'
+import { useAuth } from '@/contexts/AuthContext'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,6 +51,7 @@ import {
 } from '@/components/table-filters/TableFilters'
 import { EliminarSpeakerDialog } from '@/pages/workspace/agenda/speakers/EliminarSpeakerDialog'
 import { downloadSpeakersCsv } from '@/pages/workspace/agenda/speakers/exportSpeakersCsv'
+import { ImportSpeakersDialog } from '@/pages/workspace/agenda/speakers/ImportSpeakersDialog'
 import { SpeakerPerfilDialog } from '@/pages/workspace/agenda/speakers/SpeakerPerfilDialog'
 import { FuenteBadge, iniciales } from '@/pages/workspace/agenda/speakers/speakerUtils'
 import {
@@ -210,7 +219,9 @@ function EventosCell({
 
 export function CrmGlobal() {
   const navigate = useNavigate()
+  const { usuario } = useAuth()
   const { workspace, workspaces } = useWorkspace()
+  const esAgenda = usuario?.area === 'Agenda'
   const eventoId = workspace?.id ?? workspaces[0]?.id ?? ''
   const { speakers, propiedades, loading, error, refetch } = useSpeakersData(
     null,
@@ -222,6 +233,7 @@ export function CrmGlobal() {
   const [activo, setActivo] = useState<Speaker | null>(null)
   const [speakerAEliminar, setSpeakerAEliminar] = useState<Speaker | null>(null)
   const [filtros, setFiltros] = useState<FiltroActivo[]>([])
+  const [importOpen, setImportOpen] = useState(false)
 
   const filterColumns: FiltroColumna[] = useMemo(
     () => [
@@ -337,6 +349,15 @@ export function CrmGlobal() {
               >
                 <Download /> Exportar CSV
               </Button>
+              {esAgenda && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setImportOpen(true)}
+                >
+                  <FileSpreadsheet /> Importar Excel/CSV
+                </Button>
+              )}
               <Button onClick={abrirCrear}>
                 <UserPlus /> Agregar speaker
               </Button>
@@ -568,6 +589,20 @@ export function CrmGlobal() {
         }}
         propiedadesEvento={propiedades}
       />
+
+      {esAgenda && (
+        <ImportSpeakersDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          eventoId={null}
+          eventoNombre="DIRECTORIO"
+          eventosOpciones={workspaces.map((w) => ({
+            id: w.id,
+            nombre: w.nombre,
+          }))}
+          onDone={refetch}
+        />
+      )}
     </div>
   )
 }

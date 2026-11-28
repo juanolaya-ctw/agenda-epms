@@ -41,5 +41,11 @@ export function FuenteBadge({ fuente }: { fuente: string | null }) {
     )
   if (fuente === 'admin_manual')
     return <Badge className="bg-muted text-muted-foreground">Manual</Badge>
+  if (fuente === 'import_sheet')
+    return (
+      <Badge className="border border-secondary/50 bg-secondary/15 text-foreground">
+        Import Excel
+      </Badge>
+    )
   return <span className="text-xs text-muted-foreground">{fuente ?? '—'}</span>
 }
