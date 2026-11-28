@@ -307,6 +307,15 @@ export async function claveEnvio(
   return `sha256:${hex}`
 }
 
+/**
+ * true si conviene consultar tally_envios por clave (replay).
+ * false para token_invalido / sin_identificador (422 sin tocar BD de envíos).
+ */
+export function debeBuscarReenvio(resolucion: ResolucionEvento): boolean {
+  if (resolucion.ok) return true
+  return resolucion.motivo === "form_desconocido"
+}
+
 export function resolverEventoTally(input: {
   token: string | null
   formId: string | null

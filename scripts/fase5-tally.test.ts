@@ -21,6 +21,7 @@ import {
 } from '../src/lib/tallyWebhookUrl'
 import {
   claveEnvio,
+  debeBuscarReenvio,
   extraerRespuestas,
   normalizarEmailTally,
   parseTallySpeaker,
@@ -244,7 +245,7 @@ describe('enmascarar webhook token', () => {
 })
 
 describe('autorGestion', () => {
-  it('Tally / Sistema / nombre de usuario', () => {
+  it('gestión creado_por null + tally_envio_id → Tally; null sin envío → Sistema; con usuario → nombre', () => {
     assert.equal(autorGestion(null, 'envio-1', {}), 'Tally')
     assert.equal(autorGestion(null, null, {}), 'Sistema')
     assert.equal(
@@ -252,6 +253,42 @@ describe('autorGestion', () => {
       'Alex Rivera',
     )
     assert.equal(autorGestion('u-missing', 'envio-9', {}), 'Equipo')
+  })
+})
+
+describe('debeBuscarReenvio', () => {
+  it('true si ok o form_desconocido; false si token_invalido o sin_identificador', () => {
+    assert.equal(
+      debeBuscarReenvio({ ok: true, eventoId: 'e1' }),
+      true,
+    )
+    assert.equal(
+      debeBuscarReenvio({
+        ok: false,
+        status: 422,
+        error: 'x',
+        motivo: 'form_desconocido',
+      }),
+      true,
+    )
+    assert.equal(
+      debeBuscarReenvio({
+        ok: false,
+        status: 422,
+        error: 'x',
+        motivo: 'token_invalido',
+      }),
+      false,
+    )
+    assert.equal(
+      debeBuscarReenvio({
+        ok: false,
+        status: 422,
+        error: 'x',
+        motivo: 'sin_identificador',
+      }),
+      false,
+    )
   })
 })
 
@@ -268,8 +305,9 @@ describe('labels tally_envios + actor Actividad', () => {
     assert.ok(Object.keys(TALLY_ENVIO_RAZON_LABELS).length >= 8)
   })
 
-  it('Actividad: actor_id null + origen tally → Tally', () => {
+  it('Actividad: actor_id null + origen tally → Tally (cambios); gestiones usan autorGestion', () => {
     assert.equal(nombreActorActividad(null, 'tally', {}), 'Tally')
     assert.equal(nombreActorActividad(null, 'sistema', {}), 'Sistema')
+    assert.equal(autorGestion(null, 'envio-t', {}), 'Tally')
   })
 })

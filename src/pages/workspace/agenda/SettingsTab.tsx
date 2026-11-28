@@ -64,7 +64,24 @@ type TallyEnvioRow = {
   estado: string
   razon: string | null
   speaker_id: string | null
-  campos: { nombre?: string | null } | null
+  /** Solo el nombre del JSON campos (sin teléfono/documento). */
+  nombre: string | null
+}
+
+type ConteosEnviosTally = {
+  recibidos: number
+  vinculados: number
+  creados: number
+  por_revisar: number
+  invalidos: number
+}
+
+const CONTEOS_ENVIOS_VACIOS: ConteosEnviosTally = {
+  recibidos: 0,
+  vinculados: 0,
+  creados: 0,
+  por_revisar: 0,
+  invalidos: 0,
 }
 
 type EstadoRow = {
@@ -416,7 +433,10 @@ export function SettingsTab() {
   const [mostrarToken, setMostrarToken] = useState(false)
   const [guardandoTally, setGuardandoTally] = useState(false)
   const [envios, setEnvios] = useState<TallyEnvioRow[]>([])
+  const [conteosEnvios, setConteosEnvios] =
+    useState<ConteosEnviosTally>(CONTEOS_ENVIOS_VACIOS)
   const [cargandoEnvios, setCargandoEnvios] = useState(false)
+  const [errorEnvios, setErrorEnvios] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [eliminando, setEliminando] = useState(false)
@@ -498,18 +518,46 @@ export function SettingsTab() {
       }
 
       setCargandoEnvios(true)
-      const enviosRes = await supabase
-        .from('tally_envios')
-        .select('id, created_at, estado, razon, speaker_id, campos')
-        .eq('evento_id', eventoId)
-        .order('created_at', { ascending: false })
-        .limit(20)
+      setErrorEnvios(null)
+      const [enviosRes, estadosRes] = await Promise.all([
+        supabase
+          .from('tally_envios')
+          .select(
+            'id, created_at, estado, razon, speaker_id, nombre:campos->>nombre',
+          )
+          .eq('evento_id', eventoId)
+          .order('created_at', { ascending: false })
+          .limit(20),
+        // Conteos del evento completo (independiente del limit 20)
+        supabase
+          .from('tally_envios')
+          .select('estado')
+          .eq('evento_id', eventoId),
+      ])
       if (!cancelled) {
-        if (enviosRes.error) {
-          // Tabla puede no existir aún si la migración no se aplicó
+        if (enviosRes.error || estadosRes.error) {
+          const msg =
+            enviosRes.error?.message ||
+            estadosRes.error?.message ||
+            'No se pudieron cargar los envíos'
+          setErrorEnvios(msg)
           setEnvios([])
+          setConteosEnvios(CONTEOS_ENVIOS_VACIOS)
+          toast.error(`Envíos Tally: ${msg}`)
         } else {
           setEnvios((enviosRes.data as TallyEnvioRow[] | null) ?? [])
+          const next = { ...CONTEOS_ENVIOS_VACIOS }
+          for (const row of estadosRes.data ?? []) {
+            const b = bucketEstadoTallyEnvio(
+              (row as { estado: string }).estado,
+            )
+            if (b === 'recibidos') next.recibidos++
+            else if (b === 'vinculados') next.vinculados++
+            else if (b === 'creados') next.creados++
+            else if (b === 'por_revisar') next.por_revisar++
+            else if (b === 'invalidos') next.invalidos++
+          }
+          setConteosEnvios(next)
         }
         setCargandoEnvios(false)
       }
@@ -625,25 +673,6 @@ export function SettingsTab() {
     if (!webhookTally) return null
     return mostrarToken ? webhookTally : enmascararWebhookUrl(webhookTally)
   }, [webhookTally, mostrarToken])
-
-  const conteosEnvios = useMemo(() => {
-    const c = {
-      recibidos: 0,
-      vinculados: 0,
-      creados: 0,
-      por_revisar: 0,
-      invalidos: 0,
-    }
-    for (const e of envios) {
-      const b = bucketEstadoTallyEnvio(e.estado)
-      if (b === 'recibidos') c.recibidos++
-      else if (b === 'vinculados') c.vinculados++
-      else if (b === 'creados') c.creados++
-      else if (b === 'por_revisar') c.por_revisar++
-      else if (b === 'invalidos') c.invalidos++
-    }
-    return c
-  }, [envios])
 
   async function copiarWebhook() {
     if (!webhookTally) return
@@ -1012,7 +1041,17 @@ export function SettingsTab() {
           <h3 className="text-sm font-semibold">Envíos recibidos</h3>
           {cargandoEnvios ? (
             <p className="text-xs text-muted-foreground">Cargando…</p>
-          ) : envios.length === 0 ? (
+          ) : errorEnvios ? (
+            <p className="text-xs text-destructive" role="alert">
+              No se pudieron cargar los envíos: {errorEnvios}
+            </p>
+          ) : envios.length === 0 &&
+            conteosEnvios.recibidos +
+              conteosEnvios.vinculados +
+              conteosEnvios.creados +
+              conteosEnvios.por_revisar +
+              conteosEnvios.invalidos ===
+              0 ? (
             <p className="text-xs text-muted-foreground">Aún no hay envíos</p>
           ) : (
             <>
@@ -1037,10 +1076,7 @@ export function SettingsTab() {
                   <tbody>
                     {envios.map((e) => {
                       const porRevisar = e.estado === 'pendiente_revision'
-                      const nombre =
-                        e.campos && typeof e.campos === 'object'
-                          ? (e.campos.nombre ?? '—')
-                          : '—'
+                      const nombre = e.nombre?.trim() || '—'
                       return (
                         <tr
                           key={e.id}

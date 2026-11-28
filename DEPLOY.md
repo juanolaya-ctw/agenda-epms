@@ -1,17 +1,42 @@
 # Instrucciones de despliegue — EPMS
 
-## Schema SQL + Edge Function tally-webhook (Fase 5)
+## Schema SQL + Edge Function tally-webhook
 
 ---
 
-## Paso 1 — Aplicar la migración Fase 5
+## Paso 1 — Schema base (`epms-schema.sql`)
 
 1. Ir a [Supabase Dashboard](https://supabase.com/dashboard/project/ydqbjyhcntszvrytdkml)
 2. SQL Editor → New Query
-3. Pegar el contenido completo de `supabase/migrations/20261129_fase5_tally.sql`
+3. Pegar el contenido completo de `epms-schema.sql`
 4. Ejecutar (Run)
+5. Verificar que no haya errores — si alguna tabla ya existe con ese nombre en otro schema, el `CREATE SCHEMA IF NOT EXISTS epms` la aísla correctamente
 
-**Importante:** el bloque **1a** (grants de `service_role`) es independiente y puede aplicarse solo como hotfix. Sin él, la función desplegada (v17 / Fase 0) responde 500 al leer `tally_formularios`.
+**Verificación post-ejecución:**
+```sql
+-- Debe devolver 13 tablas del schema epms
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'epms'
+ORDER BY table_name;
+```
+
+Tablas esperadas: `escenarios`, `eventos`, `formatos`, `propiedades_custom`, `requests`, `sesion_speakers`, `sesiones`, `slots`, `speakers`, `tally_duplicados_pendientes`, `tracks`, `usuarios`, `valores_propiedades`
+
+> En entornos ya provisionados este paso ya está hecho. No borrar ni saltar la documentación del schema base.
+
+---
+
+## Paso 2 — Aplicar la migración Fase 5
+
+1. SQL Editor → New Query
+2. Pegar el contenido completo de `supabase/migrations/20261129_fase5_tally.sql`
+3. Ejecutar (Run)
+
+**Importante:** el bloque **1a** (grants de `service_role`) es independiente y puede aplicarse solo como hotfix. En prod ya se aplicó como `20261128_hotfix_tally_service_role_grants` — no reaplicarlo. Sin esos grants, la función responde 500 al leer `tally_formularios`.
+
+Follow-up opcional (search_path en el trigger inmutable):
+`supabase/migrations/20261130_fase5_tally_inmutable_search_path.sql`
 
 **Verificación mínima:**
 ```sql
@@ -29,9 +54,12 @@ SELECT has_function_privilege(
 ); -- debe ser false
 ```
 
+QA de la RPC (solo datos TEST; lo corre el owner, no el agente):
+`scripts/fase5-tally-qa.sql`
+
 ---
 
-## Paso 2 — Desplegar la Edge Function
+## Paso 3 — Desplegar la Edge Function
 
 ### Prerequisito: Supabase CLI instalado y proyecto vinculado
 ```bash
@@ -58,11 +86,11 @@ Variables **reales** que lee el código:
 - `SB_URL` = `https://ydqbjyhcntszvrytdkml.supabase.co`
 - `SB_SERVICE_KEY` = service_role key (Settings → API → service_role)
 
-⚠️ Nunca usar la anon key. No uses `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` (nombres viejos del DEPLOY; el código no los lee).
+⚠️ Nunca usar la anon key. No uses `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` (nombres viejos; el código no los lee).
 
 ---
 
-## Paso 3 — Configurar el webhook en Tally
+## Paso 4 — Configurar el webhook en Tally y verificar
 
 Cada evento tiene su propio formulario en `epms.tally_formularios` y su URL:
 
@@ -76,7 +104,7 @@ El token se copia desde Settings del workspace (Agenda). También se reconoce el
 2. Pegar la URL (con o sin `?token=`)
 3. Submit de prueba
 
-### Verificar
+### Verificar en `tally_envios`
 ```sql
 SELECT id, estado, razon, speaker_id, evento_id, created_at
 FROM epms.tally_envios
@@ -90,6 +118,6 @@ Los envíos nuevos **ya no** van a `tally_duplicados_pendientes` (obsoleta desde
 
 ## Notas
 
-- **Idempotencia:** Tally reintenta si no recibe 2xx. Misma `clave` → `200 { status: "reenvio" }` sin nuevas gestiones ni cambios.
+- **Idempotencia:** Tally reintenta si no recibe 2xx. Misma `clave` → `200 { status: "reenvio" }` sin nuevas gestiones ni cambios (ni re-alojar foto).
 - **Foto:** si la URL es de `storage.tally.so`, se re-aloja en el bucket `speaker-fotos` con nombre `speakers/tally-<8chars>-<ts>.<ext>` (sin email).
-- **Orders de deploy:** 1) migración 2) función 3) verificar. Sin el bloque 1a, cualquier envío falla.
+- **Orden de deploy:** 1) schema base (si aplica) 2) migración Fase 5 3) función 4) verificar. Sin el bloque 1a, cualquier envío falla.

@@ -19,6 +19,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   claveEnvio,
+  debeBuscarReenvio,
   extraerRespuestas,
   generarToolkitSlug,
   normalizarEmailTally,
@@ -33,6 +34,13 @@ const MAX_BODY_BYTES = 256 * 1024;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
+/** Log de error sin PII: solo code o literal corto. */
+function errCode(err: { code?: string } | null | undefined): string {
+  return err?.code && String(err.code).trim() !== ""
+    ? String(err.code)
+    : "unknown";
 }
 
 serve(async (req: Request) => {
@@ -83,7 +91,36 @@ serve(async (req: Request) => {
 
   const clave = await claveEnvio(body, rawText);
 
-  // Early replay: evita re-alojar foto y re-llamar la RPC
+  const { data: forms, error: formsError } = await supabase
+    .schema("epms")
+    .from("tally_formularios")
+    .select("evento_id, tally_form_id, webhook_token, activo, mapeo_campos");
+
+  if (formsError) {
+    console.error("Error leyendo tally_formularios:", errCode(formsError));
+    return json({ error: "No se pudieron leer los formularios Tally" }, 500);
+  }
+
+  const formularios: FormularioTally[] = (forms ?? []).map((row) => ({
+    eventoId: row.evento_id as string,
+    tallyFormId: row.tally_form_id as string,
+    webhookToken: row.webhook_token as string,
+    activo: row.activo !== false,
+    mapeoCampos:
+      row.mapeo_campos && typeof row.mapeo_campos === "object"
+        ? (row.mapeo_campos as Record<string, string>)
+        : null,
+  }));
+
+  const evento = resolverEventoTally({ token, formId, formularios });
+
+  if (!evento.ok && !debeBuscarReenvio(evento)) {
+    // token_invalido | sin_identificador → 422 sin consultar envíos ni RPC
+    console.warn("Tally rechazo sin guardar", { motivo: evento.motivo });
+    return json({ error: evento.error }, evento.status);
+  }
+
+  // Replay solo si el token/formulario permiten persistir
   const { data: existente, error: existErr } = await supabase
     .schema("epms")
     .from("tally_envios")
@@ -92,7 +129,7 @@ serve(async (req: Request) => {
     .maybeSingle();
 
   if (existErr) {
-    console.error("Error leyendo tally_envios:", existErr.message);
+    console.error("Error leyendo tally_envios:", errCode(existErr));
     return json({ error: "Error interno" }, 500);
   }
   if (existente) {
@@ -111,38 +148,7 @@ serve(async (req: Request) => {
     });
   }
 
-  const { data: forms, error: formsError } = await supabase
-    .schema("epms")
-    .from("tally_formularios")
-    .select("evento_id, tally_form_id, webhook_token, activo, mapeo_campos");
-
-  if (formsError) {
-    console.error("Error leyendo tally_formularios:", formsError.message);
-    return json({ error: "No se pudieron leer los formularios Tally" }, 500);
-  }
-
-  const formularios: FormularioTally[] = (forms ?? []).map((row) => ({
-    eventoId: row.evento_id as string,
-    tallyFormId: row.tally_form_id as string,
-    webhookToken: row.webhook_token as string,
-    activo: row.activo !== false,
-    mapeoCampos:
-      row.mapeo_campos && typeof row.mapeo_campos === "object"
-        ? (row.mapeo_campos as Record<string, string>)
-        : null,
-  }));
-
-  const evento = resolverEventoTally({ token, formId, formularios });
-
   if (!evento.ok) {
-    if (
-      evento.motivo === "token_invalido" ||
-      evento.motivo === "sin_identificador"
-    ) {
-      console.warn("Tally rechazo sin guardar", { motivo: evento.motivo });
-      return json({ error: evento.error }, evento.status);
-    }
-
     // form_desconocido (no registrado o inactivo) → persistir y 422
     const rpcDesc = await supabase.schema("epms").rpc("registrar_tally_envio", {
       p_clave: clave,
@@ -157,7 +163,7 @@ serve(async (req: Request) => {
       p_modo: "desconocido",
     });
     if (rpcDesc.error) {
-      console.error("RPC desconocido:", rpcDesc.error.message);
+      console.error("RPC desconocido:", errCode(rpcDesc.error));
       return json({ error: "Error interno" }, 500);
     }
     const r = rpcDesc.data as Record<string, unknown>;
@@ -194,7 +200,7 @@ serve(async (req: Request) => {
       p_modo: "invalido",
     });
     if (rpcInv.error) {
-      console.error("RPC invalido:", rpcInv.error.message);
+      console.error("RPC invalido:", errCode(rpcInv.error));
       return json({ error: "Error interno" }, 500);
     }
     const r = rpcInv.data as Record<string, unknown>;
@@ -237,7 +243,7 @@ serve(async (req: Request) => {
     });
 
   if (rpcError) {
-    console.error("RPC procesar:", rpcError.message);
+    console.error("RPC procesar:", errCode(rpcError));
     return json({ error: "Error interno" }, 500);
   }
 
@@ -311,11 +317,8 @@ async function realojarFoto(
       .from("speaker-fotos")
       .getPublicUrl(filename);
     return urlData.publicUrl || fotoUrl;
-  } catch (e) {
-    console.error(
-      "Error re-alojando foto:",
-      e instanceof Error ? e.message : "unknown",
-    );
+  } catch {
+    console.error("Error re-alojando foto:", "unknown");
     return fotoUrl;
   }
 }

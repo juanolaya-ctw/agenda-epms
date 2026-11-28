@@ -24,6 +24,7 @@ export type GestionTimelineInput = {
   ocurrida_at: string
   proxima_at: string | null
   creado_por: string | null
+  tally_envio_id: string | null
   created_at: string
   eventoNombre?: string | null
 }

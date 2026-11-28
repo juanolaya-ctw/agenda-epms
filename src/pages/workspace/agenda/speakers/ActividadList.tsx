@@ -2,6 +2,7 @@ import { CircleDot, History, NotebookPen } from 'lucide-react'
 import { formatCambioValores } from '@/lib/actividadFormat'
 import { labelOrigenActividad } from '@/lib/actividadLabels'
 import { timestampAFechaHoraBogota, timestampAYmdBogota } from '@/lib/bogotaDate'
+import { autorGestion } from '@/lib/gestionAutor'
 import { GESTION_TIPO_LABELS } from '@/lib/gestionTipos'
 import {
   mensajeVacioActividad,
@@ -35,9 +36,9 @@ export function ActividadList({
             timestampAFechaHoraBogota(g.created_at) ??
             timestampAYmdBogota(g.ocurrida_at) ??
             '—'
-          const autor = nombreActorActividad(
+          const autor = autorGestion(
             g.creado_por,
-            'edicion_equipo',
+            g.tally_envio_id,
             nombresPorUsuario,
           )
           const proxima = timestampAYmdBogota(g.proxima_at)
