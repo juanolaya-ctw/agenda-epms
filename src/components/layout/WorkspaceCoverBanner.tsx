@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Image as ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { COVER_ACCEPT, validarCoverFile } from '@/lib/coverUpload'
 import { supabase } from '@/lib/supabase'
 import { useWorkspace } from '@/contexts/WorkspaceContext'
 
@@ -24,6 +25,12 @@ export function WorkspaceCoverBanner({ eventoId }: WorkspaceCoverBannerProps) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+
+    const invalid = validarCoverFile(file)
+    if (invalid) {
+      toast.error(invalid)
+      return
+    }
 
     const ext =
       file.name.split('.').pop()?.toLowerCase() ||
@@ -75,7 +82,7 @@ export function WorkspaceCoverBanner({ eventoId }: WorkspaceCoverBannerProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={COVER_ACCEPT}
         className="hidden"
         onChange={onFileChange}
       />

@@ -4,6 +4,7 @@ import { Image as ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useWorkspace, type Workspace } from '@/contexts/WorkspaceContext'
+import { COVER_ACCEPT, validarCoverFile } from '@/lib/coverUpload'
 import { isUuid } from '@/lib/isUuid'
 import { areaToRoute, workspaceHomePath } from '@/lib/workspaceRoutes'
 import { supabase } from '@/lib/supabase'
@@ -62,6 +63,12 @@ export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
     if (!file) return
     if (!isUuid(workspace.id)) {
       toast.error('Este workspace no está sincronizado con Supabase')
+      return
+    }
+
+    const invalid = validarCoverFile(file)
+    if (invalid) {
+      toast.error(invalid)
       return
     }
 
@@ -127,7 +134,7 @@ export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={COVER_ACCEPT}
           className="hidden"
           onChange={onFileChange}
         />

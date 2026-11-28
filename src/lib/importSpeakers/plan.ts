@@ -356,30 +356,33 @@ export function snapshotComparable(
   return rest
 }
 
-function sinCambiosReales(
-  accion: AccionImport,
-  diffs: DiffCampo[],
-  _gestiones: FilaNormalizada['gestiones'],
-  memb: MembresiaExistente | null,
-  fila: FilaNormalizada,
-  _opciones: OpcionesPlan,
-): boolean {
-  if (accion === 'omitir' || accion === 'revisar' || accion === 'crear')
-    return false
-  const cambios = diffs.some(
-    (d) => d.accion === 'rellenar' || d.accion === 'sobrescribir',
-  )
-  if (cambios) return false
-  if (!memb) return false
-  const prev = memb.datos_prospeccion?.import_excel as
+/**
+ * Re-run idéntico: membresía ya tiene import_excel de esta fila con el mismo
+ * snapshot estable (sin importado_at/avisos) y hay un único speaker candidato.
+ * Aplica también a matches por nombre (que de otro modo quedarían en «revisar»).
+ * Varios candidatos o snapshot distinto → no aplica (sigue en revisar).
+ */
+export function esReRunSinCambios(args: {
+  candidatoUnico: boolean
+  memb: MembresiaExistente | null
+  fila: FilaNormalizada
+  opciones: OpcionesPlan
+}): boolean {
+  if (args.fila.error) return false
+  if (!args.candidatoUnico) return false
+  if (!args.memb) return false
+  const prev = args.memb.datos_prospeccion?.import_excel as
     | Record<string, unknown>
     | undefined
-  if (!prev || prev.fila !== fila.filaIdx) return false
-  // Misma fila ya importada, sin diffs de write: gestiones serían
-  // ON CONFLICT DO NOTHING → omitir (no generan timeline ruidoso).
-  void _gestiones
-  void _opciones
-  return true
+  if (!prev || prev.fila !== args.fila.filaIdx) return false
+  const nuevo = snapshotComparable(
+    buildSnapshot(args.fila, args.opciones) as unknown as Record<
+      string,
+      unknown
+    >,
+  )
+  const anterior = snapshotComparable(prev)
+  return JSON.stringify(nuevo) === JSON.stringify(anterior)
 }
 
 export type PlanCompleto = {
@@ -425,37 +428,32 @@ export function construirPlan(
       if (i !== first) accion = 'revisar'
     }
 
-    const speakerId =
-      accion === 'actualizar' && match.candidatos.length === 1
-        ? match.candidatos[0]!.id
-        : match.nivel === 'alta' && match.motivo === 'email'
-          ? match.candidatos[0]?.id ?? null
-          : null
+    const candidatoUnico = match.candidatos.length === 1
+    const resolvedSpeakerId = candidatoUnico
+      ? match.candidatos[0]!.id
+      : accion === 'actualizar' && match.nivel === 'alta' && match.motivo === 'email'
+        ? match.candidatos[0]?.id ?? null
+        : null
 
     const speaker =
-      speakerId != null
-        ? speakersExistentes.find((s) => s.id === speakerId) ?? null
+      resolvedSpeakerId != null
+        ? speakersExistentes.find((s) => s.id === resolvedSpeakerId) ?? null
         : null
-    const memb = speakerId ? membBySpeaker.get(speakerId) ?? null : null
+    const memb = resolvedSpeakerId
+      ? membBySpeaker.get(resolvedSpeakerId) ?? null
+      : null
     const sobrescribirEstado = false
-    const resolvedSpeakerId =
-      accion === 'actualizar'
-        ? speakerId
-        : match.candidatos.length === 1
-          ? match.candidatos[0]!.id
-          : null
     const diffs = buildDiffs(fila, speaker, memb, sobrescribirEstado)
-    let accionFinal = accion
-    const sinCambios = sinCambiosReales(
-      accion,
-      diffs,
-      fila.gestiones,
+
+    // Re-run idéntico (también por nombre): omitir si snapshot coincide
+    const sinCambios = esReRunSinCambios({
+      candidatoUnico,
       memb,
       fila,
       opciones,
-    )
-    // Re-run idéntico: omitir por defecto
-    if (sinCambios && (accion === 'actualizar' || accion === 'crear')) {
+    })
+    let accionFinal = accion
+    if (sinCambios) {
       accionFinal = 'omitir'
     }
 

@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
-import { FileSpreadsheet, Loader2, Upload } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import {
+  ChevronDown,
+  ChevronRight,
+  FileSpreadsheet,
+  Loader2,
+  Upload,
+} from 'lucide-react'
 import { toast } from 'sonner'
+import { GESTION_TIPO_LABELS } from '@/lib/gestionTipos'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -126,6 +133,9 @@ export function ImportSpeakersDialog({
   const [page, setPage] = useState(0)
   const [confirmText, setConfirmText] = useState('')
   const [sobrescribirEstadoGlobal, setSobrescribirEstadoGlobal] = useState(false)
+  const [expandedFilas, setExpandedFilas] = useState<Set<number>>(
+    () => new Set(),
+  )
 
   const [aplicando, setAplicando] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
@@ -154,6 +164,7 @@ export function ImportSpeakersDialog({
     setPage(0)
     setConfirmText('')
     setSobrescribirEstadoGlobal(false)
+    setExpandedFilas(new Set())
     setAplicando(false)
     setProgress({ done: 0, total: 0 })
     setResultado(null)
@@ -694,6 +705,7 @@ export function ImportSpeakersDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8" />
                       <TableHead>#</TableHead>
                       <TableHead>Nombre</TableHead>
                       <TableHead>Org</TableHead>
@@ -704,100 +716,193 @@ export function ImportSpeakersDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pageItems.map(({ fp, i }) => (
-                      <TableRow key={fp.fila.filaIdx}>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {fp.fila.filaIdx}
-                          {fp.homonimoEnArchivo && (
-                            <span className="ml-1 text-destructive">≈</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="min-w-0 max-w-[10rem] truncate text-sm">
-                          {fp.fila.nombre ?? '—'}
-                          {fp.fila.error && (
-                            <p className="text-xs text-destructive">
-                              {fp.fila.error}
-                            </p>
-                          )}
-                          {fp.sinCambios && (
-                            <p className="text-xs text-muted-foreground">
-                              sin cambios
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-[8rem] truncate text-xs">
-                          {fp.fila.empresa ?? '—'}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <span className="text-muted-foreground">
-                            {fp.fila.estadoRaw ?? '—'}
-                          </span>
-                          {' → '}
-                          {ESTADO_LABELS[fp.fila.estadoHub]}
-                        </TableCell>
-                        <TableCell>
-                          <MatchBadge nivel={fp.match.nivel} />
-                          {fp.match.candidatos.length > 0 && (
-                            <p className="mt-0.5 max-w-[10rem] truncate text-[10px] text-muted-foreground">
-                              {fp.match.candidatos[0]!.nombre}
-                              {fp.match.candidatos[0]!.email
-                                ? ` · ${enmascararEmail(fp.match.candidatos[0]!.email)}`
-                                : ''}
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Select
-                              value={fp.accion}
-                              onValueChange={(v) =>
-                                setAccion(i, v as AccionImport)
-                              }
-                              disabled={!!fp.fila.error}
-                            >
-                              <SelectTrigger className="h-8 w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="crear">crear</SelectItem>
-                                <SelectItem value="actualizar">
-                                  actualizar
-                                </SelectItem>
-                                <SelectItem value="omitir">omitir</SelectItem>
-                                <SelectItem value="revisar">revisar</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            {(fp.accion === 'actualizar' ||
-                              fp.accion === 'revisar') &&
-                              fp.match.candidatos.length > 1 && (
+                    {pageItems.map(({ fp, i }) => {
+                      const openDiff = expandedFilas.has(fp.fila.filaIdx)
+                      return (
+                        <Fragment key={fp.fila.filaIdx}>
+                          <TableRow>
+                            <TableCell className="w-8 px-1">
+                              <button
+                                type="button"
+                                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-expanded={openDiff}
+                                aria-label={
+                                  openDiff
+                                    ? 'Ocultar diff'
+                                    : 'Ver diff y gestiones'
+                                }
+                                onClick={() =>
+                                  setExpandedFilas((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(fp.fila.filaIdx))
+                                      next.delete(fp.fila.filaIdx)
+                                    else next.add(fp.fila.filaIdx)
+                                    return next
+                                  })
+                                }
+                              >
+                                {openDiff ? (
+                                  <ChevronDown className="size-3.5" />
+                                ) : (
+                                  <ChevronRight className="size-3.5" />
+                                )}
+                              </button>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {fp.fila.filaIdx}
+                              {fp.homonimoEnArchivo && (
+                                <span className="ml-1 text-destructive">≈</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="min-w-0 max-w-[10rem] truncate text-sm">
+                              {fp.fila.nombre ?? '—'}
+                              {fp.fila.error && (
+                                <p className="text-xs text-destructive">
+                                  {fp.fila.error}
+                                </p>
+                              )}
+                              {fp.sinCambios && (
+                                <p className="text-xs text-muted-foreground">
+                                  sin cambios
+                                </p>
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-[8rem] truncate text-xs">
+                              {fp.fila.empresa ?? '—'}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <span className="text-muted-foreground">
+                                {fp.fila.estadoRaw ?? '—'}
+                              </span>
+                              {' → '}
+                              {ESTADO_LABELS[fp.fila.estadoHub]}
+                            </TableCell>
+                            <TableCell>
+                              <MatchBadge nivel={fp.match.nivel} />
+                              {fp.match.candidatos.length > 0 && (
+                                <p className="mt-0.5 max-w-[10rem] truncate text-[10px] text-muted-foreground">
+                                  {fp.match.candidatos[0]!.nombre}
+                                  {fp.match.candidatos[0]!.email
+                                    ? ` · ${enmascararEmail(fp.match.candidatos[0]!.email)}`
+                                    : ''}
+                                </p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
                                 <Select
-                                  value={fp.speakerId ?? ''}
-                                  onValueChange={(v) => setCandidato(i, v)}
+                                  value={fp.accion}
+                                  onValueChange={(v) =>
+                                    setAccion(i, v as AccionImport)
+                                  }
+                                  disabled={!!fp.fila.error}
                                 >
-                                  <SelectTrigger className="h-8 w-40">
-                                    <SelectValue placeholder="Candidato" />
+                                  <SelectTrigger className="h-8 w-32">
+                                    <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {fp.match.candidatos.map((c) => (
-                                      <SelectItem key={c.id} value={c.id}>
-                                        {c.nombre}
-                                        {c.empresa ? ` · ${c.empresa}` : ''}
-                                        {c.email
-                                          ? ` · ${enmascararEmail(c.email)}`
-                                          : ''}
-                                      </SelectItem>
-                                    ))}
+                                    <SelectItem value="crear">crear</SelectItem>
+                                    <SelectItem value="actualizar">
+                                      actualizar
+                                    </SelectItem>
+                                    <SelectItem value="omitir">
+                                      omitir
+                                    </SelectItem>
+                                    <SelectItem value="revisar">
+                                      revisar
+                                    </SelectItem>
                                   </SelectContent>
                                 </Select>
-                              )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-[12rem] text-[10px] text-muted-foreground">
-                          {fp.fila.avisos.map((a) => a.codigo).join(', ') ||
-                            '—'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                                {(fp.accion === 'actualizar' ||
+                                  fp.accion === 'revisar') &&
+                                  fp.match.candidatos.length > 1 && (
+                                    <Select
+                                      value={fp.speakerId ?? ''}
+                                      onValueChange={(v) => setCandidato(i, v)}
+                                    >
+                                      <SelectTrigger className="h-8 w-40">
+                                        <SelectValue placeholder="Candidato" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {fp.match.candidatos.map((c) => (
+                                          <SelectItem key={c.id} value={c.id}>
+                                            {c.nombre}
+                                            {c.empresa ? ` · ${c.empresa}` : ''}
+                                            {c.email
+                                              ? ` · ${enmascararEmail(c.email)}`
+                                              : ''}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-[12rem] text-[10px] text-muted-foreground">
+                              {fp.fila.avisos.map((a) => a.codigo).join(', ') ||
+                                '—'}
+                            </TableCell>
+                          </TableRow>
+                          {openDiff && (
+                            <TableRow className="bg-muted/40 hover:bg-muted/40">
+                              <TableCell colSpan={8} className="px-4 py-3">
+                                <div className="grid gap-3 text-xs sm:grid-cols-2">
+                                  <div className="min-w-0 space-y-1">
+                                    <p className="font-medium text-foreground">
+                                      Diff de campos
+                                    </p>
+                                    {fp.diffs.length === 0 ? (
+                                      <p className="text-muted-foreground">
+                                        Sin diffs
+                                      </p>
+                                    ) : (
+                                      <ul className="space-y-0.5 text-muted-foreground">
+                                        {fp.diffs.map((d) => (
+                                          <li key={d.campo}>
+                                            <span className="text-foreground">
+                                              {d.campo}
+                                            </span>
+                                            {': '}
+                                            <span className="line-through opacity-70">
+                                              {d.hub ?? '∅'}
+                                            </span>
+                                            {' → '}
+                                            <span>{d.excel ?? '∅'}</span>
+                                            <span className="ml-1 text-[10px] uppercase tracking-wide">
+                                              ({d.accion})
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 space-y-1">
+                                    <p className="font-medium text-foreground">
+                                      Gestiones a crear
+                                    </p>
+                                    {fp.gestionesACrear.length === 0 ? (
+                                      <p className="text-muted-foreground">
+                                        Ninguna
+                                      </p>
+                                    ) : (
+                                      <ul className="space-y-0.5 text-muted-foreground">
+                                        {fp.gestionesACrear.map((g) => (
+                                          <li key={`${g.tipo}-${g.fecha}`}>
+                                            {GESTION_TIPO_LABELS[g.tipo] ??
+                                              g.tipo}{' '}
+                                            · {g.fecha}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>

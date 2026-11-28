@@ -394,6 +394,72 @@ describe('parse CSV + mapeo + plan (fixture)', () => {
     assert.equal(fp.accion, 'omitir')
   })
 
+  it('re-run por nombre (sin email) → 3 × omitir / 0 revisar', () => {
+    const csv =
+      'Nombre,Organización,Estado,Correo directo,Fecha last push\n' +
+      'Alice Uno,Org Alpha,enviado,TRUE,2026-10-01\n' +
+      'Bob Dos,Org Beta,enviado,TRUE,2026-10-02\n' +
+      'Carol Tres,Org Gamma,enviado,TRUE,2026-10-03\n'
+    const hoja = parseCsv(csv)
+    const mapeo = autodetectarMapeo(hoja.headers)
+    const opts = {
+      estadoDefault: 'PENDIENTE_CONTACTAR' as const,
+      archivoNombre: 'nombres.csv',
+      hojaNombre: 'CSV',
+    }
+    const planCrear = construirPlan(hoja.filas, mapeo, [], [], opts)
+    assert.equal(planCrear.filas.length, 3)
+    assert.ok(planCrear.filas.every((f) => f.accion === 'crear'))
+
+    const speakers = planCrear.filas.map((fp, i) => ({
+      id: `sp-nombre-${i}`,
+      nombre: fp.fila.nombre!,
+      empresa: fp.fila.empresa,
+      cargo: fp.fila.cargo,
+      email: null as string | null,
+      pais: fp.fila.pais,
+    }))
+    const membresias = planCrear.filas.map((fp, i) => ({
+      speaker_id: `sp-nombre-${i}`,
+      estado: fp.fila.estadoHub,
+      estado_motivo: fp.fila.estadoMotivo,
+      responsable_texto: fp.fila.responsableTexto,
+      proximo_seguimiento_nota: fp.fila.proximoSeguimientoNota,
+      notas_internas: fp.fila.notasInternas,
+      pista_espacio: fp.fila.pistaEspacio,
+      requiere_viaticos: fp.fila.requiereViaticos,
+      datos_prospeccion: {
+        import_excel: {
+          archivo: opts.archivoNombre,
+          hoja: opts.hojaNombre,
+          fila: fp.fila.filaIdx,
+          importado_at: '2026-11-01T00:00:00.000Z',
+          nombre: fp.fila.nombre ?? '',
+          empresa: fp.fila.empresa,
+          cargo: fp.fila.cargo,
+          pais: fp.fila.pais,
+          contacto_raw: fp.fila.responsableTexto,
+          ubicacion_raw: fp.fila.pistaEspacio,
+          estado_raw: fp.fila.estadoRaw,
+          agenda: fp.fila.agenda,
+          canales: fp.fila.canales,
+          avisos: [{ codigo: 'previo', mensaje: 'ignorado en compare' }],
+        },
+      },
+    }))
+
+    const reRun = construirPlan(hoja.filas, mapeo, speakers, membresias, opts)
+    assert.equal(reRun.filas.length, 3)
+    assert.equal(reRun.resumen.omitir, 3)
+    assert.equal(reRun.resumen.revisar, 0)
+    for (const fp of reRun.filas) {
+      assert.equal(fp.match.motivo, 'nombre_empresa')
+      assert.equal(fp.match.candidatos.length, 1)
+      assert.equal(fp.sinCambios, true)
+      assert.equal(fp.accion, 'omitir')
+    }
+  })
+
   it('CSV con ;', () => {
     const csv = 'Nombre;Organización;Estado\nPersona Ficticia 99;Org Demo;enviado\n'
     const hoja = parseCsv(csv)
